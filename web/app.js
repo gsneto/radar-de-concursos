@@ -1,11 +1,42 @@
-/* Radar de Concursos — interface sem dependências.
- * Consome apenas GET /api/concursos (API local) e renderiza com APIs textuais
- * seguras (textContent / createElement), sem injetar HTML a partir de dados da API.
+/* Radar de Concursos — central de inteligência documental (sem dependências).
+ * Consome apenas as rotas GET locais (/api/concursos, /api/concursos/identidades
+ * e /api/concursos/{uuid}/detalhes) e renderiza com APIs textuais seguras
+ * (textContent / createElement), sem injetar HTML a partir de dados da API.
  */
 (function (global) {
   'use strict';
 
   var UNKNOWN = 'Desconhecido';
+
+  // Rótulos de estado de campo sustentados pelos dados reais do backend.
+  var FIELD_STATE = {
+    extraido: {label: 'Extraído', variant: 'extracted'},
+    ambiguo: {label: 'Ambíguo', variant: 'ambiguous'},
+    pendente_revisao: {label: 'Pendente de revisão', variant: 'ambiguous'},
+    validado: {label: 'Validado', variant: 'validated'},
+    rejeitado: {label: 'Rejeitado', variant: 'conflict'},
+    desconhecido: {label: 'Desconhecido', variant: 'unknown'}
+  };
+
+  var COVERAGE_LABEL = {
+    nao_auditada: 'Não auditada',
+    parcial: 'Parcial',
+    auditada_ate: 'Auditada até a data indicada'
+  };
+
+  var DOC_STATE_LABEL = {
+    localizado: 'Localizado',
+    baixado: 'Baixado',
+    inacessivel: 'Inacessível',
+    invalido: 'Inválido',
+    substituido: 'Substituído'
+  };
+
+  var KIND_LABEL = {
+    edital: 'Edital',
+    retificacao: 'Retificação',
+    outro: 'Documento'
+  };
 
   function isMissing(value) {
     return value === null || value === undefined || value === '';
@@ -23,7 +54,7 @@
   }
 
   // Datas conhecidas vêm em ISO YYYY-MM-DD; exibimos DD/MM/YYYY. Demais formatos
-  // (ou inesperados) são exibidos sem transformação, sem ganhar/ perder informação.
+  // (ou inesperados) são exibidos sem transformação, sem ganhar/perder informação.
   function formatDate(value) {
     if (isMissing(value)) return UNKNOWN;
     var s = String(value);
@@ -43,6 +74,18 @@
     return typeof value === 'string' && /^https:\/\//i.test(value.trim());
   }
 
+  // Identificadores técnicos são reduzidos a um prefixo legível; o valor completo
+  // permanece disponível em detalhes secundários para rastreabilidade.
+  function shortId(value) {
+    if (isMissing(value)) return UNKNOWN;
+    var s = String(value);
+    return s.length > 12 ? s.slice(0, 8) : s;
+  }
+
+  function stateInfo(state) {
+    return FIELD_STATE[state] || {label: formatText(state), variant: 'unknown'};
+  }
+
   function el(document, tag, className, text) {
     var node = document.createElement(tag);
     if (className) node.className = className;
@@ -50,8 +93,17 @@
     return node;
   }
 
+  function badge(document, text, variant) {
+    return el(document, 'span', 'badge badge--' + variant, text);
+  }
+
+  function stateBadge(document, state) {
+    var info = stateInfo(state);
+    return badge(document, info.label, info.variant);
+  }
+
   function makeLink(document, url, text) {
-    var a = el(document, 'a', 'card__link', text);
+    var a = el(document, 'a', 'link', text);
     a.setAttribute('href', url);
     a.setAttribute('target', '_blank');
     a.setAttribute('rel', 'noopener noreferrer');
@@ -60,8 +112,8 @@
 
   // value pode ser string (definida como textContent) ou elemento (ex.: link).
   function addPair(document, dl, label, value) {
-    var dt = el(document, 'dt', 'card__dt', label);
-    var dd = el(document, 'dd', 'card__dd');
+    var dt = el(document, 'dt', 'kv__k', label);
+    var dd = el(document, 'dd', 'kv__v');
     if (typeof value === 'string') {
       dd.textContent = value;
     } else {
@@ -86,79 +138,245 @@
     return UNKNOWN;
   }
 
+  function group(document, title, pairs) {
+    var section = el(document, 'section', 'group');
+    section.appendChild(el(document, 'h4', 'group__title', title));
+    var dl = el(document, 'dl', 'kv');
+    pairs.forEach(function (pair) { addPair(document, dl, pair[0], pair[1]); });
+    section.appendChild(dl);
+    return section;
+  }
+
   function renderRecordCard(document, record) {
     var article = el(document, 'article', 'card');
 
     var header = el(document, 'div', 'card__header');
+    var idrow = el(document, 'div', 'card__idrow');
     if (!isMissing(record.competition_id)) {
-      header.appendChild(el(document, 'span', 'card__id', String(record.competition_id)));
+      idrow.appendChild(el(document, 'span', 'chip chip--id', String(record.competition_id)));
     }
+    idrow.appendChild(el(document, 'span', 'card__agency', formatText(record.agency)));
+    header.appendChild(idrow);
     header.appendChild(el(document, 'h3', 'card__title', formatText(record.competition)));
     article.appendChild(header);
 
-    var dl = el(document, 'dl', 'card__dl');
-
-    addPair(document, dl, 'Órgão', formatText(record.agency));
-    addPair(document, dl, 'Cargo', formatText(record.role));
-    addPair(document, dl, 'Escolaridade', formatText(record.education));
-
-    // Modalidades de vaga mantidas separadas, sem somar.
-    addPair(document, dl, 'Vagas imediatas', formatCount(record.immediate_vacancies));
-    addPair(document, dl, 'Cadastro de reserva', formatCount(record.reserve_vacancies));
-    addPair(document, dl, 'Vagas indígenas', formatCount(record.indigenous_vacancies));
-
-    addPair(document, dl, 'Início das inscrições', formatDate(record.registration_start));
-    addPair(document, dl, 'Fim das inscrições', formatDate(record.registration_end));
-    addPair(document, dl, 'Inscrições segundo o período do artigo', formatText(record.registration_status));
-    addPair(document, dl, 'Data da prova', formatDate(record.exam_date));
-
-    // Local de prova distinto de local de exercício.
-    addPair(document, dl, 'Local de prova', formatText(record.exam_location));
-    addPair(document, dl, 'Local de exercício', formatText(record.work_location));
-
-    addPair(document, dl, 'Fonte', sourceValue(document, record));
-    addPair(document, dl, 'Evidência', evidenceValue(document, record));
-    addPair(document, dl, 'Artigo consultado em', formatVerifiedAt(record.verified_at));
-
-    article.appendChild(dl);
+    var groups = el(document, 'div', 'card__groups');
+    groups.appendChild(group(document, 'Identificação', [
+      ['Cargo', formatText(record.role)],
+      ['Escolaridade', formatText(record.education)]
+    ]));
+    groups.appendChild(group(document, 'Vagas', [
+      ['Vagas imediatas', formatCount(record.immediate_vacancies)],
+      ['Cadastro de reserva', formatCount(record.reserve_vacancies)],
+      ['Vagas indígenas', formatCount(record.indigenous_vacancies)]
+    ]));
+    groups.appendChild(group(document, 'Datas', [
+      ['Início das inscrições', formatDate(record.registration_start)],
+      ['Fim das inscrições', formatDate(record.registration_end)],
+      ['Inscrições segundo o período do artigo', formatText(record.registration_status)],
+      ['Data da prova', formatDate(record.exam_date)]
+    ]));
+    groups.appendChild(group(document, 'Locais', [
+      ['Local de prova', formatText(record.exam_location)],
+      ['Local de exercício', formatText(record.work_location)]
+    ]));
+    groups.appendChild(group(document, 'Proveniência', [
+      ['Fonte', sourceValue(document, record)],
+      ['Evidência', evidenceValue(document, record)],
+      ['Artigo consultado em', formatVerifiedAt(record.verified_at)]
+    ]));
+    article.appendChild(groups);
     return article;
+  }
+
+  function evidenceBlock(document, evidence) {
+    var wrap = el(document, 'div', 'evidence');
+    if (!evidence || isMissing(evidence.quote)) {
+      wrap.appendChild(el(document, 'p', 'muted', 'Sem trecho de evidência.'));
+      return wrap;
+    }
+    wrap.appendChild(el(document, 'blockquote', 'evidence__quote', '“' + evidence.quote + '”'));
+    var meta = [];
+    if (!isMissing(evidence.document_id)) meta.push('Documento ' + shortId(evidence.document_id));
+    if (!isMissing(evidence.version_id)) meta.push('Versão ' + shortId(evidence.version_id));
+    if (!isMissing(evidence.page_number)) meta.push('Página ' + evidence.page_number);
+    if (!isMissing(evidence.locator)) meta.push(String(evidence.locator));
+    if (meta.length) wrap.appendChild(el(document, 'p', 'evidence__meta', meta.join(' · ')));
+    return wrap;
+  }
+
+  function docTitleMap(documents) {
+    var map = {};
+    (documents || []).forEach(function (doc) { map[doc.id] = doc; });
+    return map;
+  }
+
+  function documentOrigin(document, byId, documentId) {
+    if (isMissing(documentId)) return UNKNOWN;
+    var doc = byId[documentId];
+    return doc && !isMissing(doc.title) ? doc.title : ('Documento ' + shortId(documentId));
+  }
+
+  function renderDocumentsColumn(document, documents) {
+    var column = el(document, 'div', 'panel__col');
+    column.appendChild(el(document, 'h5', 'panel__subtitle', 'Documentos e versões'));
+    if (!documents || documents.length === 0) {
+      column.appendChild(el(document, 'p', 'muted', 'Nenhum documento cadastrado.'));
+      return column;
+    }
+    var byId = docTitleMap(documents);
+    documents.forEach(function (item) {
+      var row = el(document, 'article', 'doc');
+      var head = el(document, 'div', 'doc__head');
+      head.appendChild(el(document, 'strong', 'doc__title', formatText(item.title)));
+      head.appendChild(badge(document, KIND_LABEL[item.kind] || formatText(item.kind), 'kind'));
+      head.appendChild(badge(document, DOC_STATE_LABEL[item.state] || formatText(item.state), 'neutral'));
+      row.appendChild(head);
+
+      if (isHttpsUrl(item.official_url)) {
+        row.appendChild(makeLink(document, item.official_url, 'Abrir documento oficial'));
+      }
+      (item.related_document_ids || []).forEach(function (related) {
+        row.appendChild(el(document, 'p', 'doc__related',
+          'Vinculado a: ' + documentOrigin(document, byId, related)));
+      });
+      (item.versions || []).forEach(function (version) {
+        var line = el(document, 'div', 'version');
+        line.appendChild(el(document, 'span', 'version__id', 'Versão ' + shortId(version.id)));
+        line.appendChild(badge(document, 'Extração: ' + formatText(version.extraction_state), 'neutral'));
+        if (!isMissing(version.error_code)) {
+          line.appendChild(badge(document, formatText(version.error_code), 'conflict'));
+        }
+        row.appendChild(line);
+      });
+      (item.download_attempts || []).forEach(function (attempt) {
+        if (attempt.state === 'falhou') {
+          row.appendChild(el(document, 'p', 'error-text',
+            'Falha em tentativa de download' + (attempt.error_code ? ': ' + attempt.error_code : '')));
+        }
+      });
+      column.appendChild(row);
+    });
+    return column;
+  }
+
+  function renderConflicts(document, conflicts, byId, roles) {
+    if (!conflicts || conflicts.length === 0) return null;
+    var roleNames = {};
+    (roles || []).forEach(function (role) { roleNames[role.id] = role.name; });
+    var wrap = el(document, 'div', 'conflicts');
+    wrap.appendChild(el(document, 'h5', 'panel__subtitle', 'Conflitos entre documentos'));
+    conflicts.forEach(function (conflict) {
+      var item = el(document, 'div', 'conflict');
+      var head = el(document, 'div', 'conflict__head');
+      head.appendChild(el(document, 'span', 'conflict__field', formatText(conflict.field_name)));
+      head.appendChild(badge(document, 'Conflito', 'conflict'));
+      var scope;
+      if (conflict.scope_label) {
+        scope = conflict.scope_label;
+      } else if (conflict.scope_type === 'role') {
+        scope = roleNames[conflict.role_id] || ('Cargo ' + shortId(conflict.role_id));
+      } else if (conflict.scope_type === 'contest') {
+        scope = 'Escopo do concurso';
+      } else {
+        scope = 'Escopo não identificado';
+      }
+      head.appendChild(el(document, 'span', 'conflict__scope', scope));
+      item.appendChild(head);
+      (conflict.values || []).forEach(function (value) {
+        var row = el(document, 'div', 'conflict__value');
+        row.appendChild(el(document, 'span', 'conflict__val', String(value.value)));
+        row.appendChild(el(document, 'span', 'conflict__origin',
+          documentOrigin(document, byId, value.document_id)));
+        item.appendChild(row);
+      });
+      wrap.appendChild(item);
+    });
+    return wrap;
+  }
+
+  function renderFacts(document, details, byId) {
+    var column = el(document, 'div', 'panel__col');
+    column.appendChild(el(document, 'h5', 'panel__subtitle', 'Fatos e evidências'));
+
+    var conflicts = renderConflicts(document, details.conflicts, byId, details.roles);
+    if (conflicts) column.appendChild(conflicts);
+
+    var proposals = details.proposals || [];
+    if (proposals.length === 0) {
+      column.appendChild(el(document, 'p', 'muted', 'Nenhuma proposta extraída.'));
+    }
+    proposals.forEach(function (proposal) {
+      var row = el(document, 'div', 'fact');
+      var head = el(document, 'div', 'fact__head');
+      head.appendChild(el(document, 'span', 'fact__field', formatText(proposal.field_name)));
+      head.appendChild(el(document, 'span', 'fact__value', String(proposal.value)));
+      head.appendChild(stateBadge(document, proposal.state));
+      row.appendChild(head);
+      if (proposal.reconciled_role_id) {
+        row.appendChild(el(document, 'p', 'fact__note',
+          'Cargo reconciliado: ' + shortId(proposal.reconciled_role_id)));
+      }
+      if (!isMissing(proposal.ambiguity_reason)) {
+        row.appendChild(el(document, 'p', 'fact__note', 'Motivo: ' + proposal.ambiguity_reason));
+      }
+      row.appendChild(evidenceBlock(document, proposal.evidence));
+      column.appendChild(row);
+    });
+
+    (details.current_values || []).forEach(function (selection) {
+      var row = el(document, 'div', selection.active ? 'fact fact--current' : 'fact');
+      var head = el(document, 'div', 'fact__head');
+      head.appendChild(el(document, 'span', 'fact__field', formatText(selection.field_name)));
+      head.appendChild(badge(document, selection.active ? 'Valor vigente' : 'Seleção histórica',
+        selection.active ? 'validated' : 'unknown'));
+      row.appendChild(head);
+      if (!isMissing(selection.selected_by)) {
+        row.appendChild(el(document, 'p', 'fact__note', 'Selecionado por ' + selection.selected_by));
+      }
+      row.appendChild(evidenceBlock(document, selection.evidence));
+      column.appendChild(row);
+    });
+    return column;
+  }
+
+  function renderReconciliations(document, reconciliations, roles) {
+    if (!reconciliations || reconciliations.length === 0) return null;
+    var names = {};
+    (roles || []).forEach(function (role) { names[role.id] = role.name; });
+    var wrap = el(document, 'div', 'recons');
+    wrap.appendChild(el(document, 'h5', 'panel__subtitle', 'Reconciliação de cargos'));
+    reconciliations.forEach(function (recon) {
+      var row = el(document, 'div', 'recon');
+      row.appendChild(el(document, 'span', 'recon__label', formatText(recon.label)));
+      row.appendChild(el(document, 'span', 'recon__arrow', '→'));
+      row.appendChild(el(document, 'span', 'recon__role',
+        names[recon.role_id] || ('Cargo ' + shortId(recon.role_id))));
+      wrap.appendChild(row);
+    });
+    return wrap;
   }
 
   function renderDocumentDetails(document, details) {
     var section = el(document, 'section', 'documents');
     var coverage = details.coverage || {};
-    var coverageLabels = {nao_auditada: 'Não auditada', parcial: 'Parcial', auditada_ate: 'Auditada até a data indicada'};
-    section.appendChild(el(document, 'h4', 'documents__heading', 'Histórico documental'));
-    section.appendChild(el(document, 'p', 'documents__status', 'Cobertura: ' +
-      (coverageLabels[coverage.state] || 'Desconhecida') + (coverage.checked_at ? ' · ' + coverage.checked_at : '')));
-    if (!details.documents || details.documents.length === 0) {
-      section.appendChild(el(document, 'p', 'documents__muted', 'Nenhum documento cadastrado.'));
+    var heading = el(document, 'div', 'documents__header');
+    heading.appendChild(el(document, 'h4', 'documents__heading', 'Histórico documental'));
+    heading.appendChild(badge(document, 'Cobertura: ' + (COVERAGE_LABEL[coverage.state] || 'Desconhecida'),
+      coverage.state === 'auditada_ate' ? 'validated' : (coverage.state === 'parcial' ? 'ambiguous' : 'unknown')));
+    section.appendChild(heading);
+    if (coverage.checked_at) {
+      section.appendChild(el(document, 'p', 'documents__status', 'Conferido em ' + coverage.checked_at));
     }
-    (details.documents || []).forEach(function (item) {
-      var row = el(document, 'div', 'documents__item');
-      row.appendChild(el(document, 'strong', null, item.title));
-      row.appendChild(el(document, 'span', null, ' · ' + item.kind + ' · ' + item.state));
-      if (isHttpsUrl(item.official_url)) row.appendChild(makeLink(document, item.official_url, 'Abrir documento oficial'));
-      (item.versions || []).forEach(function (version) {
-        row.appendChild(el(document, 'p', 'documents__muted',
-          'Versão ' + version.id + ' · Extração: ' + version.extraction_state));
-      });
-      (item.download_attempts || []).filter(function (attempt) { return attempt.state === 'falhou'; })
-        .forEach(function () { row.appendChild(el(document, 'p', 'documents__error', 'Falha em tentativa de download.')); });
-      section.appendChild(row);
-    });
-    (details.proposals || []).forEach(function (proposal) {
-      if (!proposal.evidence || !proposal.evidence.quote || !proposal.evidence.version_id) return;
-      section.appendChild(el(document, 'p', 'documents__proposal',
-        proposal.field_name + ': ' + proposal.value + ' · ' + proposal.state +
-         ' · Versão ' + proposal.evidence.version_id + ' · “' + proposal.evidence.quote + '”'));
-    });
-    (details.current_values || []).forEach(function (selection) {
-      if (!selection.evidence || !selection.evidence.quote) return;
-      section.appendChild(el(document, 'p', selection.active ? 'documents__status' : 'documents__muted',
-        (selection.active ? 'Valor vigente' : 'Seleção histórica') + ': ' + selection.field_name +
-        ' · Versão ' + selection.evidence.version_id + ' · “' + selection.evidence.quote + '”'));
-    });
+
+    var recons = renderReconciliations(document, details.role_reconciliations, details.roles);
+    if (recons) section.appendChild(recons);
+
+    var byId = docTitleMap(details.documents);
+    var grid = el(document, 'div', 'panel');
+    grid.appendChild(renderDocumentsColumn(document, details.documents));
+    grid.appendChild(renderFacts(document, details, byId));
+    section.appendChild(grid);
     return section;
   }
 
@@ -175,11 +393,13 @@
       var card = container.children[index];
       var identity = matchIdentity(record, identities);
       if (!identity) {
-        card.appendChild(el(document, 'p', 'documents__muted', 'Histórico documental ainda não sincronizado.'));
+        card.appendChild(el(document, 'p', 'muted', 'Histórico documental ainda não sincronizado.'));
         return;
       }
-      var button = el(document, 'button', 'button', 'Ver histórico documental');
+      var footer = el(document, 'div', 'card__docs');
+      var button = el(document, 'button', 'button button--ghost', 'Ver histórico documental');
       button.setAttribute('type', 'button');
+      button.setAttribute('aria-expanded', 'false');
       var panel = el(document, 'div', 'documents__panel');
       button.addEventListener('click', function () {
         button.disabled = true;
@@ -191,13 +411,15 @@
           }).then(function (details) {
             clearContainer(panel);
             panel.appendChild(renderDocumentDetails(document, details));
+            button.setAttribute('aria-expanded', 'true');
           }).catch(function (err) {
             panel.textContent = 'Histórico documental indisponível. Tente novamente.';
             showError(err);
           }).finally(function () { button.disabled = false; });
       });
-      card.appendChild(button);
-      card.appendChild(panel);
+      footer.appendChild(button);
+      footer.appendChild(panel);
+      card.appendChild(footer);
     });
   }
 
@@ -261,8 +483,11 @@
           }).catch(function (err) {
             showError(err);
             data.forEach(function (_, index) {
-              doc.getElementById('competition-list').children[index].appendChild(
-                el(doc, 'p', 'documents__error', 'Histórico documental indisponível. A lista do artigo continua visível.'));
+              var card = doc.getElementById('competition-list').children[index];
+              if (card) {
+                card.appendChild(el(doc, 'p', 'error-text',
+                  'Histórico documental indisponível. A lista do artigo continua visível.'));
+              }
             });
           });
       }
@@ -288,6 +513,7 @@
     formatDate: formatDate,
     formatVerifiedAt: formatVerifiedAt,
     isHttpsUrl: isHttpsUrl,
+    shortId: shortId,
     renderRecordCard: renderRecordCard,
     renderDocumentDetails: renderDocumentDetails,
     matchIdentity: matchIdentity,

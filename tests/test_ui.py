@@ -98,6 +98,12 @@ class TestHtmlStructure(unittest.TestCase):
         self.assertIn('href="styles.css"', html)
         self.assertIn('src="app.js"', html)
 
+    def test_favicon_declared_without_external_resource(self):
+        html = read(INDEX_PATH)
+        self.assertIn('rel="icon"', html)
+        self.assertIn("data:image/svg+xml", html)
+        self.assertNotIn("favicon.ico", html)
+
     def test_no_hardcoded_production_data(self):
         html = read(INDEX_PATH)
         # Nenhum dado real/candidato fictício embutido na página.
@@ -135,6 +141,12 @@ class TestAppStatic(unittest.TestCase):
         js = read(APP_PATH)
         self.assertIn("Desconhecido", js)
 
+    def test_renders_document_intelligence_fields(self):
+        js = read(APP_PATH)
+        for field in ("conflicts", "role_reconciliations", "related_document_ids",
+                      "document_id", "reconciled_role_id", "current_values"):
+            self.assertIn(field, js, "app.js deve apresentar %r" % field)
+
 
 class TestStylesStatic(unittest.TestCase):
     """Responsividade e acessibilidade do styles.css."""
@@ -150,6 +162,11 @@ class TestStylesStatic(unittest.TestCase):
     def test_reduced_motion_respected(self):
         css = read(STYLES_PATH)
         self.assertIn("prefers-reduced-motion", css)
+
+    def test_hidden_states_are_suppressed(self):
+        css = read(STYLES_PATH)
+        # O estado com hidden deve ser oculto mesmo com display: flex no .state.
+        self.assertIn(".state[hidden]", css)
 
 
 # ---------------------------------------------------------------------------
@@ -349,6 +366,42 @@ const selectedDetails = Radar.renderDocumentDetails(doc, {
 assert.ok(flattenText(selectedDetails).includes('Valor vigente'), 'seleção humana válida deve ficar visível');
 assert.ok(flattenText(selectedDetails).includes('12 vagas'), 'evidência da seleção deve ficar visível');
 assert.ok(flattenText(selectedDetails).includes('Seleção histórica'), 'seleção substituída não deve parecer vigente');
+
+// Painel de inteligência: conflitos, reconciliações, vínculos e proveniência.
+const richDetails = Radar.renderDocumentDetails(doc, {
+  coverage: {state: 'parcial'},
+  roles: [{id: 'role-1', name: 'Professor de Educação Infantil'}],
+  role_reconciliations: [{label: 'Prof. Nivel II Infantil', role_id: 'role-1'}],
+  documents: [
+    {id: 'doc-edital', kind: 'edital', title: 'Edital 001', official_url: 'https://g.gov/e.pdf',
+     state: 'baixado', versions: [{id: 'ver-edital', extraction_state: 'parcial'}], related_document_ids: []},
+    {id: 'doc-retif', kind: 'retificacao', title: 'Retificação 001', official_url: 'https://g.gov/r.pdf',
+     state: 'baixado', versions: [{id: 'ver-retif', extraction_state: 'parcial'}], related_document_ids: ['doc-edital']}
+  ],
+  proposals: [{id: 'p1', field_name: 'immediate_vacancies', value: 107, state: 'extraido',
+    evidence: {quote: '107 vagas', version_id: 'ver-edital', document_id: 'doc-edital'}}],
+  current_values: [],
+  conflicts: [{field_name: 'indigenous_vacancies', scope_type: 'contest', role_id: null, scope_label: null,
+    values: [
+      {proposal_id: 'p1', value: 3, version_id: 'ver-edital', document_id: 'doc-edital'},
+      {proposal_id: 'p2', value: 4, version_id: 'ver-retif', document_id: 'doc-retif'}
+    ]},
+    {field_name: 'immediate_vacancies', scope_type: 'role', role_id: 'role-1', scope_label: null,
+    values: [
+      {proposal_id: 'p3', value: 69, version_id: 'ver-edital', document_id: 'doc-edital'},
+      {proposal_id: 'p4', value: 70, version_id: 'ver-retif', document_id: 'doc-retif'}
+    ]}]
+});
+const richText = flattenText(richDetails);
+assert.ok(richText.includes('Conflito'), 'conflito sinalizado');
+assert.ok(richText.includes('indigenous_vacancies'), 'campo em conflito visível');
+assert.ok(richText.includes('Professor de Educação Infantil'), 'cargo reconciliado e escopo do conflito visível');
+assert.ok(richText.includes('Escopo do concurso'), 'escopo do concurso rotulado');
+assert.ok(richText.includes('Edital 001') && richText.includes('Retificação 001'), 'origem do conflito pelo título do documento');
+assert.ok(richText.includes('Reconciliação de cargos'), 'seção de reconciliação presente');
+assert.ok(richText.includes('Professor de Educação Infantil'), 'cargo reconciliado visível');
+assert.ok(richText.includes('Vinculado a'), 'vínculo entre documentos visível');
+assert.ok(richText.includes('Documento doc-edit') || richText.includes('doc-edital') || richText.includes('Documento doc-'), 'documento de origem da evidência identificável');
 
 console.log('OK');
 """
