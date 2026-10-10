@@ -1,0 +1,44 @@
+# Jev opcional no orquestrador — especificação de desenho
+
+Data: 2026-10-09. Estado: desenho discutido e aprovado em conversa; especificação escrita aguardando revisão.
+
+## Resultado pretendido
+
+Avaliar Jev da TypeSafe AI como *aconselhador opcional* de decisões estruturadas para o orquestrador Radar de Concursos. O usuário continua conversando só com `orquestrador`, que toma todas as decisões finais, redige os prompts, aciona especialistas via `task`, inspeciona arquivos e verifica testes. A integração nunca altera o modelo principal `inferhub/cb/gpt-5.5`, não cria um quinto subagente e não toma decisões irreversíveis. Sem acesso autenticado ou benefício mensurável sobre o fluxo atual, o Radar opera normalmente sem Jev.
+
+## Evidências e estado inicial
+
+- Projeto: `C:\Users\anton\OneDrive\Desktop\radar-de-concursos`, Git local `radar-configuracao`, sem commits e com arquivos ainda não rastreados. Inspecionar antes de editar e não sobrescrever alterações. Não fazer commit, push ou merge sem instrução explícita.
+- OpenCode CLI 1.18.35; há configuração do agente primário e quatro especialistas em `.opencode/agents/`. Documentação oficial de OpenCode descreve ferramentas locais em `.opencode/tools/<nome>.ts`, argumentos validados por schema e permissão por nome da ferramenta.
+- Documentação oficial TypeSafe ([Jev e agentes](https://docs.typesafe.ai/introduction/coding-agents), [início rápido](https://docs.typesafe.ai/introduction/quickstart), [modelos](https://docs.typesafe.ai/models)) afirma que Jev **não** implementa chat ou tool-calling do OpenCode. O serviço usa `POST https://api.typesafe.ai/v1/systemone`, `Authorization: Bearer`, `state`, `model` e perguntas `choice`, `score`, `noul`. A versão anunciada era `jev-1.13.0`, alias móvel `jev-latest`, preço publicado US$ 0,042 por milhão de tokens de entrada; preço e acesso da conta não foram confirmados.
+- A partir do PC, `GET /v1/systemone` respondeu HTTP 405 e `GET /v1/models` sem autenticação respondeu HTTP 403: isso comprova conectividade limitada, **não** uma chamada Jev bem-sucedida. `TYPESAFE_API_KEY` não está definido no ambiente inspecionado; não havia `.env` no projeto nem no kit local verificado. O SDK `typesafe-sdk` 0.7.2 existe no ambiente Python `OpenCode-PC`, assim como um `jev_kit.py` fora do repositório, mas nenhum foi comprovado como dependência deste projeto. Não copiar segredos nem depender de caminhos pessoais para instalação reproduzível.
+
+## Abordagens e decisão
+
+1. **Recomendado: ferramenta local opcional com teste sem rede e comparação antes da adoção.** Fazer uma linha de base com casos sintéticos, especificar perguntas tipadas, implementar um adaptador local mínimo isolado com entrada/saída validadas, timeout e fallback. Testar o adaptador sem credencial com respostas simuladas do protocolo; executar teste remoto curto **somente** se houver credencial fornecida por canal seguro e autorização de uso de serviço pago. Mantê-lo fora do fluxo obrigatório até comparação real.
+2. Consultar Jev por script manual sem ferramenta: menor custo de engenharia, mas não permite utilização regular pelo orquestrador. Usar como alternativa se a ferramenta local exigir complexidade ou dependências desproporcionais.
+3. Serviço, MCP ou plugin que intercepta toda conversa: aumenta superfície, custo e risco sem necessidade. Descartado para esta fase.
+
+## Componentes, contratos e fluxo
+
+1. **Linha de base sem Jev:** reunir casos sintéticos com expectativa explícita de agente, dependência de tarefas, risco, critérios de aceitação e próxima ação. Usar o orquestrador atual sem Jev sobre exatamente esses casos; medir acerto por comparação com expectativas e registrar latência e custo quando a fonte de cobrança permitir. Não atribuir custo zero ao orquestrador. Casos cobrem tarefa simples, cruzamento backend/frontend, coletor de fonte ambígua, alteração destrutiva e critério de aceitação insuficiente.
+2. **Interface de decisão:** uma chamada auxilia uma decisão específica (rotear; avaliar independência; classificar risco; avaliar critérios de aceitação; recomendar `continuar`, `repetir`, `bloquear` ou `solicitar_intervencao`). Entrada é uma síntese curta e anonimizada do pedido, fatos já verificados e opções/contratos relevantes; não enviar código integral, dados pessoais, credenciais nem documentos oficiais completos. A ferramenta não recebe comandos a executar e não executa ações de Git, rede arbitrária ou edição.
+3. **Adaptador opcional:** ferramenta local `jev_decision` em `.opencode/tools/jev_decision.ts` (ou forma mais simples, compatível com a versão, após validação). Usa a API oficial `systemone` ou SDK sustentado, sem introduzir serviço residente. Credencial apenas por `TYPESAFE_API_KEY` do processo; nunca no repositório, argumentos, URL ou logs. Se não há credencial, retornar status tipado `unavailable` sem fazer chamada externa. Não registrar conteúdo sensível. Se autenticado, usar modelo validado da conta; a identidade efetiva vem de `response.model`. Timeout curto, limites de tamanho e tratamento tipado de falha/429/erro de esquema.
+4. **Esquemas tipados:** validar tipo de consulta e limites dos campos de entrada; validar resposta externa (identificador, escolha dentre opções permitidas, números finitos de probabilidade/confiança entre 0 e 1, score em faixa e perguntas esperadas) e normalizar um envelope: `status` (`ok`/`unavailable`/`error`), `source` (`jev`/`fallback`), `model` se conhecido, `recommendation`, `confidence` se aplicável, `reason` curto gerado por regras locais e `usage.input_tokens` se presente. Resposta inválida gera fallback, nunca decisão aprovada. O fallback **não finge pontuação nem saída do Jev**: informa ausência e devolve para o julgamento do orquestrador e regras do projeto.
+5. **Política de segurança:** uma recomendação é opinião, não autorização. Antes de agir, o orquestrador confronta contratos, Git, evidências e aprovação humana. Operações destrutivas, alteração de dados reais, merge, push, publicação e uso não autorizado de credenciais/serviços exigem aprovação independentemente de probabilidades. Quando há incerteza ou falha de modelo, o orquestrador usa o fluxo atual e registra a limitação. Prompts dos agentes nunca são gerados pelo Jev.
+6. **Ativação e comparação:** enquanto não houver chave/autorização e comparação com os mesmos casos, a ferramenta é apenas experimental, invocada deliberadamente em ensaios e nunca chamada obrigatória a cada pedido. Caso a rota falhe ou o ganho em qualidade/tempo/custo não justifique, documentar resultado e continuar sem Jev. Medir custo publicado estimado com `usage.input_tokens` separadamente de faturamento real; comparar chamadas adicionais com o custo/latência totais do fluxo base, não só preço por token. Sem medição remota, relatar `não comparável` para qualidade/latência/custo de Jev.
+
+## Testes e evidência
+
+- Verificar esquema local com casos positivos e negativos: agente desconhecido, tarefas dependentes pelo mesmo contrato, risco alto com confiança alta, critérios ausentes, retorno externo inválido, erro de rede, timeout, falta de chave, parâmetros maliciosos e resposta sem uso de tokens. As regras de aprovação não podem ser contornadas pela resposta do modelo.
+- Conferir que o OpenCode carrega a ferramenta em processo novo, que `jev_decision` não substitui o agente primário e que, sem chave, retorna `unavailable` com fallback e sem POST. Testes que simulam API comprovam apenas adaptador/esquema, não o comportamento real de Jev.
+- Se houver chave/autorização, fazer chamada autenticada restrita a conteúdo sintético, conferir `response.model` e formato, registrar código de sucesso, tokens, latência e eventuais custos estimados sem imprimir chave/resposta bruta sensível; repetir casos suficientes para comparação. Sem chave, registrar teste remoto `não realizado`, não inventar benefício.
+- Verificar regressão: agentes anteriores permanecem carregados e o fluxo sem Jev continua funcional; usar a prova de delegação documental já existente quando pertinente. Descrever comandos executados, resultados, falhas e pendências em documento de avaliação, sem alterar configurações globais.
+
+## Critérios de aceitação
+
+- Documentação distingue endpoint alcançável, credencial existente, modelo anunciado, rota autenticada e ferramenta local realmente exercitada.
+- O orquestrador continua principal e funciona sem Jev; uma recomendação de Jev não inicia nem aprova operações de risco.
+- Saídas e entradas da ferramenta são tipadas/validadas; faltas de chave, erros e respostas inválidas têm fallback explícito.
+- Comparação usa mesmos casos e métricas honestas; nenhum teste, custo ou melhora é declarado sem evidência.
+- Se não for possível validar acesso ou justificar a infraestrutura, manter a ferramenta experimental ou optar pela alternativa manual/documentada; não torná-la obrigatória.

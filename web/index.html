@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Radar de Concursos</title>
+  <meta name="description" content="Veja os dados extraídos de um artigo oficial, sua fonte e a data da consulta ao artigo.">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="masthead">
+    <div class="masthead__inner">
+      <p class="masthead__kicker">Acompanhamento de vagas oficiais</p>
+      <h1 class="masthead__title">Radar de Concursos</h1>
+      <p class="masthead__lede">
+        Dados extraídos de um artigo oficial, com link para a fonte
+        e data da consulta ao artigo.
+      </p>
+    </div>
+  </header>
+
+  <main id="main-content" class="layout">
+    <div id="live" class="visually-hidden" role="status" aria-live="polite"></div>
+
+    <section class="notice" aria-label="Aviso sobre a atualidade dos dados">
+      <p>
+        A data exibida indica apenas quando o <strong>artigo foi consultado</strong>.
+        O histórico documental pode estar incompleto; propostas extraídas exigem revisão humana.
+        A situação atual do concurso e das inscrições não foi verificada.
+        Confirme os dados nos documentos oficiais antes de tomar qualquer decisão.
+      </p>
+    </section>
+
+    <section class="results" aria-labelledby="results-title">
+      <h2 id="results-title" class="results__title">Concursos</h2>
+
+      <div id="state-loading" class="state" role="status">
+        <p class="state__text">Carregando concursos…</p>
+      </div>
+
+      <div id="state-error" class="state state--error" hidden>
+        <p class="state__text">Não foi possível carregar os dados da API local.</p>
+        <p class="state__hint">Verifique se o servidor local está em execução e tente novamente.</p>
+        <button id="retry-button" type="button" class="button">Tentar novamente</button>
+      </div>
+
+      <div id="state-empty" class="state state--empty" hidden>
+        <p class="state__text">Nenhum concurso disponível no momento.</p>
+        <p class="state__hint">Os dados aparecem aqui após a coleta da fonte oficial.</p>
+      </div>
+
+      <div id="state-data" class="state" hidden>
+        <ul id="competition-list" class="competition-list"></ul>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer__inner">
+      <p>
+        Radar de Concursos — dados de fonte pública, sem garantia de atualidade.
+        Informação extraída por meios automatizados não é confirmação oficial.
+      </p>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
