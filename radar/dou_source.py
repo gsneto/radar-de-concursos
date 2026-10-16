@@ -176,8 +176,66 @@ def to_candidate(item: dict, observation_id: str, discovered_at: str) -> dict:
     }
 
 
-def discover(html: str, observation_id: str, discovered_at: str | None = None) -> list[dict]:
-    """Matérias relevantes da edição como candidatos documentais (deduplicadas por URL)."""
+def _balanced_div(html: str, start_tag_index: int) -> str:
+    """Devolve o conteúdo interno de um `<div>` a partir do índice do seu `<`."""
+    open_end = html.find(">", start_tag_index)
+    depth = 1
+    index = open_end + 1
+    while index < len(html) and depth > 0:
+        next_open = html.find("<div", index)
+        next_close = html.find("</div", index)
+        if next_close == -1:
+            break
+        if next_open != -1 and next_open < next_close:
+            depth += 1
+            index = next_open + 4
+        else:
+            depth -= 1
+            index = next_close + 5
+    return html[open_end + 1:next_close if depth == 0 else len(html)]
+
+
+def extract_article_body(html: str) -> bytes:
+    """Extrai o ato oficial completo de ``<div class="texto-dou">``.
+
+    A página do artigo traz o texto integral do ato (a matéria do JSON é truncada);
+    o conteúdo fica dentro de `div.texto-dou`. Falha fechado quando ausente.
+    """
+    if not isinstance(html, str) or not html:
+        raise ValueError("página do artigo vazia")
+    marker = html.find('class="texto-dou"')
+    if marker == -1:
+        raise ValueError("conteúdo oficial (texto-dou) ausente")
+    div_start = html.rfind("<div", 0, marker)
+    if div_start == -1:
+        raise ValueError("conteúdo oficial (texto-dou) ausente")
+    body = _balanced_div(html, div_start).strip()
+    if not body:
+        raise ValueError("conteúdo oficial vazio")
+    return body.encode("utf-8")
+
+
+def fetch_article(url: str, opener=None) -> bytes:
+    """Baixa a página do artigo e devolve o ato oficial completo (texto-dou)."""
+    if not isinstance(url, str) or not url.startswith(DOU_ARTICLE_BASE):
+        raise ValueError("URL de artigo do DOU inválida")
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "text/html,*/*;q=0.8"})
+    if opener is None:
+        opener = urllib.request.urlopen
+    with opener(request, timeout=TIMEOUT_SECONDS) as response:
+        body = response.read(MAX_BYTES + 1)
+    if len(body) > MAX_BYTES:
+        raise ValueError("artigo excede o limite de bytes")
+    return extract_article_body(decode_body(body))
+
+
+def discover(html: str, observation_id: str, discovered_at: str | None = None,
+             article_fetcher=None) -> list[dict]:
+    """Matérias relevantes da edição como candidatos documentais (deduplicadas por URL).
+
+    Quando ``article_fetcher`` é fornecido, busca o ato oficial completo de cada
+    matéria e o usa como conteúdo; se a busca falhar, mantém o conteúdo do JSON.
+    """
     discovered_at = discovered_at or datetime.now(timezone.utc).isoformat()
     edition = parse_edition(html)
     seen: set[str] = set()
@@ -193,6 +251,11 @@ def discover(html: str, observation_id: str, discovered_at: str | None = None) -
         if url in seen:
             continue
         seen.add(url)
+        if article_fetcher is not None:
+            try:
+                candidate["inline_content"] = article_fetcher(url)
+            except (OSError, ValueError):
+                pass  # falha de rede/parse: mantém o conteúdo (truncado) do JSON
         candidates.append(candidate)
     return candidates
 
@@ -210,8 +273,12 @@ def fetch_edition(section: str = DOU_SECTION, day: str | None = None, opener=Non
     return decode_body(body)
 
 
-def dou_source(day: str | None = None) -> dict:
-    """Fonte de monitoramento do DOU (Seção 3), com identidade própria."""
+def dou_source(day: str | None = None, article_fetcher=None) -> dict:
+    """Fonte de monitoramento do DOU (Seção 3), com identidade própria.
+
+    Com ``article_fetcher`` (ex.: ``fetch_article``), cada matéria é enriquecida com
+    o ato oficial completo; sem ele, usa o conteúdo (truncado) do JSON.
+    """
     def fetch():
         return fetch_edition(DOU_SECTION, day)
 
@@ -223,5 +290,6 @@ def dou_source(day: str | None = None) -> dict:
         "agency": DOU_AGENCY,
         "inline": True,
         "fetch": fetch,
-        "discover": lambda html, observation_id: discover(html, observation_id),
+        "discover": lambda html, observation_id: discover(
+            html, observation_id, article_fetcher=article_fetcher),
     }

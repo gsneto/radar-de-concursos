@@ -647,6 +647,52 @@ def ensure_observation(db_path, source_url: str, competition_id: str) -> str:
         conn.close()
 
 
+def ensure_role(db_path, contest_id: str, observation_id: str, name: str,
+                specialty: str | None = None) -> str:
+    """Garante identidade de cargo para um concurso, de forma idempotente.
+
+    Cria ``cargos_identidade`` + ``observacoes_cargo`` a partir do rótulo do próprio
+    documento (nunca por similaridade com outro cargo). O cargo fica vinculado à
+    observação, o que permite que propostas do documento apontem para uma identidade
+    própria. Reexecutar com o mesmo ``(contest_id, name, specialty)`` devolve o id
+    existente.
+    """
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("nome do cargo obrigatório")
+    specialty = specialty.strip() if isinstance(specialty, str) and specialty.strip() else None
+    conn = connect_documents(db_path)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        if conn.execute("PRAGMA user_version").fetchone()[0] not in _READABLE_VERSIONS:
+            raise ValueError("migração documental pendente")
+        if not conn.execute("SELECT 1 FROM concursos_identidade WHERE id=?", (contest_id,)).fetchone():
+            raise ValueError("concurso inexistente")
+        if not conn.execute("SELECT 1 FROM observacoes_concurso WHERE id=? AND contest_id=?",
+                            (observation_id, contest_id)).fetchone():
+            raise ValueError("observação inexistente para o concurso")
+        existing = conn.execute(
+            "SELECT id FROM cargos_identidade WHERE contest_id=? AND name=? AND specialty IS ?",
+            (contest_id, name.strip(), specialty),
+        ).fetchone()
+        if existing:
+            role_id = existing[0]
+        else:
+            role_id = str(uuid4())
+            conn.execute("INSERT INTO cargos_identidade VALUES (?,?,?,?,?)",
+                         (role_id, contest_id, name.strip(), specialty, _now()))
+        if not conn.execute("SELECT 1 FROM observacoes_cargo WHERE observation_id=? AND role=?",
+                            (observation_id, name.strip())).fetchone():
+            conn.execute("INSERT INTO observacoes_cargo VALUES (?,?,?,?,?)",
+                         (str(uuid4()), role_id, observation_id, name.strip(), _now()))
+        conn.commit()
+        return role_id
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def list_competition_identities(db_path) -> list[dict]:
     if not Path(db_path).exists():
         raise ValueError("migração documental pendente")

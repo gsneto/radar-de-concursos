@@ -21,7 +21,7 @@ from uuid import uuid4
 
 from radar.collector import collect, fetch_official
 from radar.document_store import migrate_document_schema, sync_v1_identifiers
-from radar.document_store import connect_documents, record_analysis, link_amendment
+from radar.document_store import connect_documents, record_analysis, link_amendment, ensure_role
 from radar.document_discovery import register_manual_url
 from radar.document_download import download_document
 from radar.document_extract import extract_blocks
@@ -203,6 +203,16 @@ def build_parser() -> argparse.ArgumentParser:
     monitor_parser.add_argument('--analyze', action='store_true',
         help='extrai blocos e propostas das versões novas (nunca valida)')
     monitor_parser.set_defaults(func=_cmd_monitor)
+
+    role_parser = subparsers.add_parser('documents-role',
+        help='registra identidade de cargo de um concurso a partir do rótulo do documento')
+    role_parser.add_argument('--db', required=True)
+    role_parser.add_argument('--contest-id', required=True)
+    role_parser.add_argument('--observation-id', required=True)
+    role_parser.add_argument('--name', required=True)
+    role_parser.add_argument('--specialty', default=None)
+    role_parser.set_defaults(func=lambda args: print(ensure_role(
+        args.db, args.contest_id, args.observation_id, args.name, args.specialty)))
 
     return parser
 

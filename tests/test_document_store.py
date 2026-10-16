@@ -216,3 +216,41 @@ class MigrationTest(unittest.TestCase):
                 contest_id='c', role_id='r', field_name='immediate_vacancies',
                 value_json='1', value_type='integer', extraction_method='manual',
                 evidence=dict(block_index=0, quote='1 vaga imediata', start_offset=0, end_offset=15))])
+
+
+class EnsureRoleTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.db = str(Path(self.tmp.name) / "radar.sqlite3")
+        migrate_document_schema(self.db)
+        from radar.document_store import ensure_observation
+        self.obs = ensure_observation(self.db, "https://guajaramirim.ro.gov.br/a/", "DOU-S3")
+        with closing(sqlite3.connect(self.db)) as conn:
+            self.contest = conn.execute(
+                "SELECT contest_id FROM observacoes_concurso WHERE id=?", (self.obs,)).fetchone()[0]
+
+    def test_ensure_role_is_idempotent(self):
+        from radar.document_store import ensure_role
+        first = ensure_role(self.db, self.contest, self.obs, "Professor de Educação Infantil")
+        second = ensure_role(self.db, self.contest, self.obs, "Professor de Educação Infantil")
+        self.assertEqual(first, second)
+        with closing(sqlite3.connect(self.db)) as conn:
+            self.assertEqual(conn.execute("SELECT count(*) FROM cargos_identidade").fetchone()[0], 1)
+            self.assertEqual(conn.execute("SELECT count(*) FROM observacoes_cargo").fetchone()[0], 1)
+
+    def test_ensure_role_rejects_unknown_contest_and_observation(self):
+        from radar.document_store import ensure_role
+        with self.assertRaises(ValueError):
+            ensure_role(self.db, "no-contest", self.obs, "Cargo")
+        with self.assertRaises(ValueError):
+            ensure_role(self.db, self.contest, "no-obs", "Cargo")
+
+    def test_ensure_role_requires_name(self):
+        from radar.document_store import ensure_role
+        with self.assertRaises(ValueError):
+            ensure_role(self.db, self.contest, self.obs, "  ")
+
+
+if __name__ == "__main__":
+    unittest.main()

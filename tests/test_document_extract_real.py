@@ -49,6 +49,19 @@ class RealEditalExtractTest(unittest.TestCase):
         self.assertNotIn(3, ambiguous_indigenous)
         self.assertTrue(all(p["role_id"] is None for p in proposals))
 
+    def test_simple_vagas_table_yields_per_role_immediate(self):
+        # Nova capacidade: vagas imediatas por cargo do quadro de cotas (VAGAS TOTAIS);
+        # "69 + CR*" na tabela simples dá 69 e não vira reserva.
+        per_role = sorted(json.loads(p["value_json"]) for p in self._proposals()
+                          if p["field_name"] == "immediate_vacancies" and p["ambiguity_reason"])
+        self.assertEqual(per_role, [3, 3, 32, 69])
+        self.assertFalse(any(p["field_name"] == "reserve_vacancies" for p in self._proposals()))
+
+    def test_total_107_is_not_duplicated_across_tables(self):
+        totals = [p for p in self._proposals()
+                  if p["field_name"] == "immediate_vacancies" and p["ambiguity_reason"] is None]
+        self.assertEqual([json.loads(p["value_json"]) for p in totals], [107])
+
     def test_registration_period_in_full_text_form(self):
         proposals = self._proposals()
         dates = {p["field_name"]: json.loads(p["value_json"]) for p in proposals

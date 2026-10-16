@@ -70,3 +70,15 @@ class DocumentExtractTest(unittest.TestCase):
             extract_blocks(pdf, 'application/pdf', max_pages=1)
         with self.assertRaisesRegex(ValueError, 'sem texto'):
             extract_blocks(pdf, 'application/pdf', max_pages=2)
+
+    def test_simple_vagas_table_produces_per_role_immediate(self):
+        # Documento cujo único quadro é CARGO | VAGAS: nova capacidade da Fase 8.
+        html = ('<table><tr><td>CARGO</td><td>VAGAS</td></tr>'
+                '<tr><td>Professor de Matemática</td><td>12</td></tr>'
+                '<tr><td>Professor de Física</td><td>8</td></tr></table>')
+        proposals = extract_field_proposals(extract_blocks(html.encode(), 'text/html'), 'v', 'c')
+        values = sorted(json.loads(p['value_json']) for p in proposals
+                        if p['field_name'] == 'immediate_vacancies')
+        self.assertEqual(values, [8, 12])
+        labels = sorted(p['ambiguity_reason'] for p in proposals)
+        self.assertEqual(len(labels), 2)

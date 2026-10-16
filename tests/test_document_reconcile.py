@@ -99,3 +99,39 @@ class ReconcileRoleTest(unittest.TestCase):
         self.assertIsNone(totals[0]["role_id"])
         self.assertIsNone(totals[0]["ambiguity_reason"])
         self.assertIsNone(totals[0]["reconciled_role_id"])
+
+
+class EnsureRoleReconcileTest(unittest.TestCase):
+    """Fluxo completo de atribuição: criar cargo do documento e reconciliar o rótulo."""
+
+    def test_role_created_from_document_label_can_be_reconciled_and_selected(self):
+        from radar.document_store import ensure_observation, ensure_role
+        with tempfile.TemporaryDirectory() as temp:
+            db = str(Path(temp) / "db.sqlite3")
+            migrate_document_schema(db)
+            obs = ensure_observation(db, "https://guajaramirim.ro.gov.br/a/", "X/2026")
+            with closing(sqlite3.connect(db)) as conn:
+                contest = conn.execute("SELECT contest_id FROM observacoes_concurso WHERE id=?",
+                                       (obs,)).fetchone()[0]
+            annex = (Path(__file__).parent / "fixtures" / "documents"
+                     / "edital-guajara-anexo-i.html").read_bytes()
+            url = "https://guajaramirim.ro.gov.br/edital.html"
+            doc = register_document(db, dict(observation_id=obs, kind="edital", official_url=url,
+                title="Edital", discovery_url=url, discovery_method="manual",
+                discovered_at="2026-10-10T00:00:00+00:00"))
+            version = record_version(db, doc, annex, dict(fetched_at="2026-10-10T01:00:00+00:00",
+                fetched_url=url, content_type="text/html"))
+            blocks = extract_blocks(annex, "text/html; charset=utf-8")
+            record_analysis(db, version, blocks,
+                            extract_field_proposals(blocks, version, contest, None))
+            proposal = next(p for p in get_competition_details(db, contest)["proposals"]
+                            if p["field_name"] == "immediate_vacancies" and p["value"] == 69)
+            label = proposal["ambiguity_reason"][len(LABEL_PREFIX):]
+            role_id = ensure_role(db, contest, obs, label)
+            reconcile_role_label(db, contest, label, role_id, "Ana", "cargo do próprio documento")
+            review_proposal(db, proposal["id"], "validado", "Ana", "conferido no quadro")
+            select_current_value(db, proposal["id"], "Ana", "escolha humana")
+            values = get_competition_details(db, contest)["current_values"]
+            entry = next(v for v in values if v["proposal_id"] == proposal["id"])
+            self.assertEqual(entry["role_id"], role_id)
+            self.assertTrue(entry["active"])

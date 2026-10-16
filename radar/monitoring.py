@@ -31,14 +31,15 @@ def _now() -> str:
 
 def default_sources() -> list[dict]:
     """Fontes oficiais autorizadas: Guajará-Mirim (artigo) e DOU (Seção 3)."""
-    from radar.dou_source import dou_source
+    from radar.dou_source import dou_source, fetch_article
     return [
         {
             "source_url": SOURCE_URL,
             "fetch": fetch_official,
             "discover": lambda html, observation_id: discover_documents(html, SOURCE_URL, observation_id),
         },
-        dou_source(),
+        # DOU: enriquece cada matéria com o ato oficial completo (texto-dou).
+        dou_source(article_fetcher=fetch_article),
     ]
 
 

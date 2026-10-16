@@ -76,39 +76,36 @@ def _registration_dates(block_text: str):
 
 
 def _table_proposals(blocks: list[dict], contest_id: str, role_id: str | None) -> list[dict]:
-    """Lê o quadro de cotas por cargo, sem replicar o total nem herdar o cargo do documento."""
-    header_index = None
-    for index, block in enumerate(blocks):
-        cells = [cell.strip().upper() for cell in block['text'].split('|')]
-        if any('VAGAS TOTAIS' in cell for cell in cells) and any('INDÍGENA' in cell for cell in cells):
-            header_index = index
-            table = block.get('table')
-            total_column = next(i for i, cell in enumerate(cells) if 'VAGAS TOTAIS' in cell)
-            indigenous_column = next(i for i, cell in enumerate(cells) if 'INDÍGENA' in cell)
-            width = len(cells)
-            break
-    if header_index is None:
+    """Lê o quadro de vagas mais completo do documento, por tabela.
+
+    Agrupa as linhas por tabela e usa o extrator genérico (`vacancy_tables`) apenas
+    na tabela com mais modalidades mapeadas — evita somar o mesmo fato declarado em
+    duas tabelas. Só se aplica a documento de escopo do concurso (``role_id is None``).
+    """
+    if role_id is not None:
         return []
-    proposals = []
-    for index in range(header_index + 1, len(blocks)):
-        block = blocks[index]
-        if block.get('table') != table:
-            break
-        cells = [cell.strip() for cell in block['text'].split('|')]
-        if len(cells) != width:
+    from radar import vacancy_tables
+    groups: list[list[dict]] = []
+    current_table = None
+    group: list[dict] = []
+    for index, block in enumerate(blocks):
+        if block.get("page_number") is not None:
+            continue  # linhas de PDF tratadas em `_pdf_table_proposals`
+        table = block.get("table")
+        if table is None:
             continue
-        if not (cells[total_column].isdigit() and cells[indigenous_column].isdigit()):
-            continue
-        label = cells[0]
-        ambiguity = None if label.upper() == 'TOTAL' else LABEL_PREFIX + label
-        evidence = dict(block_index=index, quote=block['text'],
-                        start_offset=0, end_offset=len(block['text']))
-        for field, column in (('immediate_vacancies', total_column),
-                              ('indigenous_vacancies', indigenous_column)):
-            proposals.append(dict(contest_id=contest_id, role_id=None, field_name=field,
-                value_json=json.dumps(int(cells[column])), value_type='integer',
-                extraction_method='tabela', ambiguity_reason=ambiguity, evidence=dict(evidence)))
-    return proposals
+        if table != current_table:
+            if group:
+                groups.append(group)
+            group = []
+            current_table = table
+        group.append({"index": index, "text": block["text"], "page_number": None})
+    if group:
+        groups.append(group)
+    best = vacancy_tables.best_table(groups)
+    if best is None:
+        return []
+    return vacancy_tables.extract(best, contest_id, label_prefix=LABEL_PREFIX)
 
 
 _PDF_HEADER_TOKENS = ('VAGAS TOTAIS', 'PCD', 'NEGROS', 'QUILOMBOLAS', 'AMPLA')

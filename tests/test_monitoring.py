@@ -402,6 +402,12 @@ class MonitorCliTest(unittest.TestCase):
         self.assertTrue(args.analyze)
         self.assertTrue(callable(args.func))
 
+    def test_parser_wires_role_command(self):
+        from radar.__main__ import build_parser
+        args = build_parser().parse_args(["documents-role", "--db", "x", "--contest-id", "c",
+                                          "--observation-id", "o", "--name", "Cargo"])
+        self.assertTrue(callable(args.func))
+
 
 if __name__ == "__main__":
     unittest.main()

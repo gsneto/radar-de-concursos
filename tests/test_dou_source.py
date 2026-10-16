@@ -125,6 +125,57 @@ class DiscoverTest(unittest.TestCase):
             content_bytes(_item("a", "T", "Edital", ""))
 
 
+class ArticleBodyTest(unittest.TestCase):
+    def _page(self, inner):
+        return ('<html><body><div class="container"><div class="texto-dou">'
+                + inner + '</div><footer>rodapé</footer></div></body></html>')
+
+    def test_extracts_texto_dou_without_portal_chrome(self):
+        from radar.dou_source import extract_article_body
+        body = extract_article_body(self._page("<p class='identifica'>EDITAL</p><p>10 vagas</p>"))
+        text = body.decode("utf-8")
+        self.assertIn("EDITAL", text)
+        self.assertIn("10 vagas", text)
+        self.assertNotIn("rodapé", text)
+
+    def test_extracts_nested_divs_inside_body(self):
+        from radar.dou_source import extract_article_body
+        body = extract_article_body(self._page("<div><p>tabela</p></div><p>fim</p>"))
+        self.assertIn("tabela", body.decode("utf-8"))
+        self.assertIn("fim", body.decode("utf-8"))
+
+    def test_missing_body_raises(self):
+        from radar.dou_source import extract_article_body
+        with self.assertRaises(ValueError):
+            extract_article_body("<html><body>sem corpo</body></html>")
+        with self.assertRaises(ValueError):
+            extract_article_body("")
+
+    def test_fetch_article_rejects_foreign_url(self):
+        from radar.dou_source import fetch_article
+        with self.assertRaises(ValueError):
+            fetch_article("https://example.com/web/dou/-/x")
+
+    def test_discover_uses_article_fetcher_and_falls_back_on_failure(self):
+        from radar.dou_source import discover
+        items = [
+            _item("edital-ok-1", "EDITAL Nº 1/2026", "Edital", "concurso público"),
+            _item("edital-fail-2", "EDITAL Nº 2/2026", "Edital", "concurso público"),
+        ]
+        html = _edition_html(items)
+
+        def fetcher(url):
+            if url.endswith("edital-fail-2"):
+                raise TimeoutError("sem rede")
+            return b"<p>ATO OFICIAL COMPLETO</p>"
+
+        candidates = discover(html, "obs-1", _TS, article_fetcher=fetcher)
+        by_slug = {c["official_url"].rsplit("/", 1)[-1]: c for c in candidates}
+        self.assertEqual(by_slug["edital-ok-1"]["inline_content"], b"<p>ATO OFICIAL COMPLETO</p>")
+        # Falha do fetcher mantém o conteúdo do JSON (não perde o documento).
+        self.assertIn(b"concurso", by_slug["edital-fail-2"]["inline_content"])
+
+
 class FetchEditionTest(unittest.TestCase):
     def test_fetch_uses_opener_and_enforces_limit(self):
         captured = {}

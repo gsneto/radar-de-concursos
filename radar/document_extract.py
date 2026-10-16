@@ -54,8 +54,8 @@ class _HTMLBlocks(HTMLParser):
             self._row.append(' '.join(' '.join(self._cell).split()))
             self._cell = None
         elif tag == 'tr' and self._row is not None:
-            text = ' | '.join(cell for cell in self._row if cell)
-            if text:
+            text = ' | '.join(self._row)
+            if text.strip():
                 self.blocks.append(dict(page_number=None, locator='linha de tabela',
                                         table=self._table, start_offset=0, end_offset=len(text), text=text))
             self._row = None
