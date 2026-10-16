@@ -224,4 +224,9 @@ def extract_field_proposals(blocks: list[dict], version_id: str, contest_id: str
         from radar import quadrix_tables
         proposals.extend(quadrix_tables.parse_quadrix_proposals(
             blocks, contest_id, label_prefix=LABEL_PREFIX))
+        # Requisitos de formação (Anexo II) e prazos de isenção (cronograma).
+        from radar import edital_requirements
+        proposals.extend(edital_requirements.extract_education(
+            blocks, contest_id, label_prefix=LABEL_PREFIX))
+        proposals.extend(edital_requirements.extract_exemption_dates(blocks, contest_id))
     return proposals

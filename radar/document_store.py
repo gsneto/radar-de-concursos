@@ -182,6 +182,12 @@ _V5_COLUMNS = {
 _V6_ADD_COLUMN = "ALTER TABLE documentos ADD COLUMN tipo_documental TEXT"
 _V6_COLUMNS = {"documentos": {"tipo_documental"}}
 
+# v7: código oficial do cargo (identidade contextualizada por concurso; aditivo).
+_V7_ADD_COLUMN = "ALTER TABLE cargos_identidade ADD COLUMN code TEXT"
+_V7_INDEX = "CREATE INDEX idx_cargos_code ON cargos_identidade(contest_id,code)"
+_V7_DDL = (_V7_ADD_COLUMN, _V7_INDEX)
+_V7_COLUMNS = {"cargos_identidade": {"code"}}
+
 _V2_COLUMNS = {
     "concursos_identidade": {"id", "created_at"},
     "observacoes_concurso": {"id", "contest_id", "source_url", "competition_id", "observed_at"},
@@ -201,10 +207,10 @@ _V2_COLUMNS = {
 }
 
 # Versão corrente do esquema documental (v2 base + reconciliação/hash + monitoramento + fila).
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
-# Versões que as rotas de leitura aceitam sem migrar (v2..v6).
-_READABLE_VERSIONS = (2, 3, 4, 5, SCHEMA_VERSION)
+# Versões que as rotas de leitura aceitam sem migrar (v2..v7).
+_READABLE_VERSIONS = (2, 3, 4, 5, 6, SCHEMA_VERSION)
 
 
 def _validate_schema(conn, statements, columns_by_table, version_label):
@@ -271,6 +277,16 @@ def _apply_v6(conn) -> None:
         conn.execute(_V6_ADD_COLUMN)
 
 
+def _apply_v7(conn) -> None:
+    """Adiciona o código do cargo, tolerando banco parcialmente atualizado."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(cargos_identidade)")}
+    if "code" not in columns:
+        conn.execute(_V7_ADD_COLUMN)
+    present = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")}
+    if "idx_cargos_code" not in present:
+        conn.execute(_V7_INDEX)
+
+
 def connect_documents(db_path) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path, timeout=15)
     conn.execute("PRAGMA foreign_keys=ON")
@@ -282,15 +298,17 @@ def migrate_document_schema(db_path) -> None:
     try:
         conn.execute("BEGIN IMMEDIATE")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 2, 3, 4, 5, SCHEMA_VERSION):
+        if version not in (0, 2, 3, 4, 5, 6, SCHEMA_VERSION):
             raise ValueError(f"versão de esquema não suportada: {version}")
         _v3_extra = dict(
             versoes_documento=_V2_COLUMNS["versoes_documento"] | {"comparison_sha256"},
             reconciliacoes_cargo={"id", "contest_id", "label", "role_id", "reconciled_at", "reviewer", "reason"})
         _v6_extra = dict(_V6_COLUMNS, documentos=_V2_COLUMNS["documentos"] | {"tipo_documental"})
+        _v7_extra = dict(_V6_COLUMNS, documentos=_V2_COLUMNS["documentos"] | {"tipo_documental"},
+                         cargos_identidade=_V2_COLUMNS["cargos_identidade"] | {"code"})
         if version == SCHEMA_VERSION:
             _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL,
-                             dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v6_extra),
+                             dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v7_extra),
                              f"v{SCHEMA_VERSION}")
         else:
             if version == 2:
@@ -303,6 +321,9 @@ def migrate_document_schema(db_path) -> None:
             elif version == 5:
                 _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL,
                                  dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS), "v5")
+            elif version == 6:
+                _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL,
+                                 dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v6_extra), "v6")
             else:
                 for statement in _DDL:
                     conn.execute(statement)
@@ -310,6 +331,7 @@ def migrate_document_schema(db_path) -> None:
             _apply_v4(conn)
             _apply_v5(conn)
             _apply_v6(conn)
+            _apply_v7(conn)
             conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         conn.commit()
     except BaseException:
@@ -523,10 +545,16 @@ def link_amendment(db_path, amendment_document_id: str, original_document_id: st
         conn.close()
 
 
-_FIELDS = {"education", "immediate_vacancies", "reserve_vacancies", "indigenous_vacancies",
-            "registration_start", "registration_end", "exam_date", "exam_location", "work_location"}
-_COUNTS = {"immediate_vacancies", "reserve_vacancies", "indigenous_vacancies"}
-_DATES = {"registration_start", "registration_end", "exam_date"}
+_FIELDS = {"education", "accepted_courses", "si_compatibility", "immediate_vacancies",
+            "reserve_vacancies", "indigenous_vacancies", "indigenous_reserve_vacancies",
+            "registration_start", "registration_end", "exam_date", "exam_location", "work_location",
+            "exemption_start", "exemption_end", "exemption_result_preliminary",
+            "exemption_appeal", "exemption_result_final"}
+_COUNTS = {"immediate_vacancies", "reserve_vacancies", "indigenous_vacancies",
+           "indigenous_reserve_vacancies"}
+_DATES = {"registration_start", "registration_end", "exam_date", "exemption_start",
+          "exemption_end", "exemption_result_preliminary", "exemption_appeal",
+          "exemption_result_final"}
 
 
 def record_analysis(db_path, version_id: str, blocks: list[dict], proposals: list[dict]) -> None:
@@ -653,7 +681,7 @@ def sync_v1_identifiers(db_path) -> None:
             if existing is None:
                 role_id = str(uuid4())
                 conn.execute(
-                    "INSERT INTO cargos_identidade VALUES (?,?,?,?,?)",
+                    "INSERT INTO cargos_identidade (id,contest_id,name,specialty,created_at) VALUES (?,?,?,?,?)",
                     (role_id, contest_id, role, None, _now()),
                 )
                 conn.execute(
@@ -705,19 +733,47 @@ def ensure_observation(db_path, source_url: str, competition_id: str) -> str:
         conn.close()
 
 
+def normalize_role(text) -> str:
+    """Normaliza um rótulo de cargo para comparação exata (sem similaridade textual)."""
+    import unicodedata
+    if not isinstance(text, str):
+        return ""
+    decomposed = unicodedata.normalize("NFKD", text)
+    ascii_text = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    return " ".join(re.sub(r"[^a-z0-9 ]", " ", ascii_text.lower()).split())
+
+
+def role_names_compatible(a, b) -> bool:
+    """Compatibilidade tolerante a variação de formatação (mesmo cargo, mesmo código).
+
+    Verdadeiro quando os nomes compartilham ao menos um token significativo; nomes sem
+    tokens (vazios) não são tratados como conflito. Não é usada para **fundir** cargos —
+    apenas para verificar consistência quando o código já identifica o cargo.
+    """
+    ta = {t for t in normalize_role(a).split() if len(t) >= 3}
+    tb = {t for t in normalize_role(b).split() if len(t) >= 3}
+    if not ta or not tb:
+        return True
+    return bool(ta & tb)
+
+
 def ensure_role(db_path, contest_id: str, observation_id: str, name: str,
-                specialty: str | None = None) -> str:
+                specialty: str | None = None, code: str | None = None) -> str:
     """Garante identidade de cargo para um concurso, de forma idempotente.
 
+    A identidade é **contextualizada pelo concurso**. Quando o cargo tem um **código
+    oficial** (ex.: Quadrix), a chave é ``(contest_id, code)``; sem código, é
+    ``(contest_id, name, specialty)``. Nunca se funde por similaridade textual.
+
     Cria ``cargos_identidade`` + ``observacoes_cargo`` a partir do rótulo do próprio
-    documento (nunca por similaridade com outro cargo). O cargo fica vinculado à
-    observação, o que permite que propostas do documento apontem para uma identidade
-    própria. Reexecutar com o mesmo ``(contest_id, name, specialty)`` devolve o id
-    existente.
+    documento. Reexecutar com a mesma identidade devolve o id existente. Se o código
+    já estiver associado a um nome materialmente diferente no mesmo concurso, levanta
+    ``ValueError`` (associação ambígua não é feita em silêncio).
     """
     if not isinstance(name, str) or not name.strip():
         raise ValueError("nome do cargo obrigatório")
     specialty = specialty.strip() if isinstance(specialty, str) and specialty.strip() else None
+    code = code.strip() if isinstance(code, str) and code.strip() else None
     conn = connect_documents(db_path)
     try:
         conn.execute("BEGIN IMMEDIATE")
@@ -728,16 +784,37 @@ def ensure_role(db_path, contest_id: str, observation_id: str, name: str,
         if not conn.execute("SELECT 1 FROM observacoes_concurso WHERE id=? AND contest_id=?",
                             (observation_id, contest_id)).fetchone():
             raise ValueError("observação inexistente para o concurso")
-        existing = conn.execute(
-            "SELECT id FROM cargos_identidade WHERE contest_id=? AND name=? AND specialty IS ?",
-            (contest_id, name.strip(), specialty),
-        ).fetchone()
+        existing = None
+        if code:
+            by_code = conn.execute(
+                "SELECT id,name FROM cargos_identidade WHERE contest_id=? AND code=?",
+                (contest_id, code)).fetchone()
+            if by_code:
+                if not role_names_compatible(by_code[1], name.strip()):
+                    raise ValueError("código de cargo já associado a outro nome neste concurso")
+                existing = by_code[0]
+            else:
+                # Adota um cargo homônimo ainda sem código (mesmo concurso).
+                by_name = conn.execute(
+                    "SELECT id FROM cargos_identidade WHERE contest_id=? AND name=? AND specialty IS ? AND code IS NULL",
+                    (contest_id, name.strip(), specialty)).fetchone()
+                if by_name:
+                    conn.execute("UPDATE cargos_identidade SET code=? WHERE id=?", (code, by_name[0]))
+                    existing = by_name[0]
+        else:
+            by_name = conn.execute(
+                "SELECT id FROM cargos_identidade WHERE contest_id=? AND name=? AND specialty IS ?",
+                (contest_id, name.strip(), specialty)).fetchone()
+            if by_name:
+                existing = by_name[0]
         if existing:
-            role_id = existing[0]
+            role_id = existing
         else:
             role_id = str(uuid4())
-            conn.execute("INSERT INTO cargos_identidade VALUES (?,?,?,?,?)",
-                         (role_id, contest_id, name.strip(), specialty, _now()))
+            conn.execute(
+                "INSERT INTO cargos_identidade (id,contest_id,name,specialty,created_at,code) "
+                "VALUES (?,?,?,?,?,?)",
+                (role_id, contest_id, name.strip(), specialty, _now(), code))
         if not conn.execute("SELECT 1 FROM observacoes_cargo WHERE observation_id=? AND role=?",
                             (observation_id, name.strip())).fetchone():
             conn.execute("INSERT INTO observacoes_cargo VALUES (?,?,?,?,?)",
@@ -834,8 +911,10 @@ def get_competition_details(db_path, contest_id: str) -> dict | None:
             )
         ]
         roles = []
-        for role_id, name, specialty in conn.execute(
-            "SELECT id,name,specialty FROM cargos_identidade WHERE contest_id=? ORDER BY name,id",
+        role_columns = {row[1] for row in conn.execute("PRAGMA table_info(cargos_identidade)")}
+        code_expr = "code" if "code" in role_columns else "NULL"
+        for role_id, name, specialty, role_code in conn.execute(
+            f"SELECT id,name,specialty,{code_expr} FROM cargos_identidade WHERE contest_id=? ORDER BY name,id",
             (contest_id,),
         ):
             role_observations = [
@@ -843,7 +922,8 @@ def get_competition_details(db_path, contest_id: str) -> dict | None:
                     "SELECT role FROM observacoes_cargo WHERE role_id=? ORDER BY observed_at,id", (role_id,)
                 )
             ]
-            roles.append({"id": role_id, "name": name, "specialty": specialty, "observations": role_observations})
+            roles.append({"id": role_id, "name": name, "specialty": specialty,
+                          "code": role_code, "observations": role_observations})
         documents = []
         # Bancos v2..v5 (não migrados) não têm a coluna; a leitura degrada para NULL.
         doc_columns = {row[1] for row in conn.execute("PRAGMA table_info(documentos)")}

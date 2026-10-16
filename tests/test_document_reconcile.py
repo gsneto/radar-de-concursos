@@ -30,9 +30,9 @@ class ReconcileRoleTest(unittest.TestCase):
             conn.execute("INSERT INTO concursos_identidade VALUES ('c','2026-10-10T00:00:00+00:00')")
             conn.execute("INSERT INTO concursos_identidade VALUES ('other','2026-10-10T00:00:00+00:00')")
             conn.execute("INSERT INTO observacoes_concurso VALUES ('o','c','https://guajaramirim.ro.gov.br/a/','1/2026','2026-10-10T00:00:00+00:00')")
-            conn.execute("INSERT INTO cargos_identidade VALUES ('r1','c','Professor de Educação Infantil',NULL,'2026-10-10T00:00:00+00:00')")
-            conn.execute("INSERT INTO cargos_identidade VALUES ('r2','c','Professor Anos Iniciais',NULL,'2026-10-10T00:00:00+00:00')")
-            conn.execute("INSERT INTO cargos_identidade VALUES ('foreign','other','Outro',NULL,'2026-10-10T00:00:00+00:00')")
+            conn.execute("INSERT INTO cargos_identidade (id,contest_id,name,specialty,created_at) VALUES ('r1','c','Professor de Educação Infantil',NULL,'2026-10-10T00:00:00+00:00')")
+            conn.execute("INSERT INTO cargos_identidade (id,contest_id,name,specialty,created_at) VALUES ('r2','c','Professor Anos Iniciais',NULL,'2026-10-10T00:00:00+00:00')")
+            conn.execute("INSERT INTO cargos_identidade (id,contest_id,name,specialty,created_at) VALUES ('foreign','other','Outro',NULL,'2026-10-10T00:00:00+00:00')")
             conn.commit()
         url = "https://guajaramirim.ro.gov.br/edital.html"
         self.doc = register_document(self.db, dict(observation_id="o", kind="edital",

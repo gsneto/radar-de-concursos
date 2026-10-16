@@ -215,7 +215,7 @@ class MigrationTest(unittest.TestCase):
                 conn.execute('INSERT INTO observacoes_concurso VALUES (?,?,?,?,?)',
                     (obs, 'c', 'https://guajaramirim.ro.gov.br/' + obs,
                      '1/2026', '2026-10-10T00:00:00+00:00'))
-            conn.execute("INSERT INTO cargos_identidade VALUES ('r','c','Professor',NULL,'2026-10-10T00:00:00+00:00')")
+            conn.execute("INSERT INTO cargos_identidade (id,contest_id,name,specialty,created_at) VALUES ('r','c','Professor',NULL,'2026-10-10T00:00:00+00:00')")
             conn.execute("INSERT INTO observacoes_cargo VALUES ('or','r','b','Professor','2026-10-10T00:00:00+00:00')")
             conn.commit()
         candidate = dict(observation_id='a', role_id='r', kind='edital',
@@ -269,6 +269,52 @@ class EnsureRoleTest(unittest.TestCase):
         from radar.document_store import ensure_role
         with self.assertRaises(ValueError):
             ensure_role(self.db, self.contest, self.obs, "  ")
+
+    def test_ensure_role_by_code_is_idempotent(self):
+        from radar.document_store import ensure_role
+        first = ensure_role(self.db, self.contest, self.obs, "Analista de Informática", code="404")
+        second = ensure_role(self.db, self.contest, self.obs, "Analista de Informática", code="404")
+        self.assertEqual(first, second)
+        with closing(sqlite3.connect(self.db)) as conn:
+            self.assertEqual(conn.execute("SELECT code FROM cargos_identidade WHERE id=?",
+                                          (first,)).fetchone()[0], "404")
+
+    def test_ensure_role_code_conflict_raises(self):
+        from radar.document_store import ensure_role
+        ensure_role(self.db, self.contest, self.obs, "Analista de Informática", code="404")
+        with self.assertRaisesRegex(ValueError, "código"):
+            ensure_role(self.db, self.contest, self.obs, "Merendeira Escolar", code="404")
+
+    def test_ensure_role_code_tolerates_benign_name_variation(self):
+        # Mesmo código com sufixo de localidade (variação benigna) não é conflito.
+        from radar.document_store import ensure_role
+        first = ensure_role(self.db, self.contest, self.obs, "Analista de Informática", code="404")
+        second = ensure_role(self.db, self.contest, self.obs, "Analista de Informática - Curitiba", code="404")
+        self.assertEqual(first, second)
+
+    def test_ensure_role_adopts_homonymous_role_without_code(self):
+        from radar.document_store import ensure_role
+        without = ensure_role(self.db, self.contest, self.obs, "Analista de Informática")
+        with_code = ensure_role(self.db, self.contest, self.obs, "Analista de Informática", code="404")
+        self.assertEqual(without, with_code)  # adota o registro existente, não duplica
+        with closing(sqlite3.connect(self.db)) as conn:
+            self.assertEqual(conn.execute("SELECT count(*) FROM cargos_identidade").fetchone()[0], 1)
+
+    def test_ensure_role_code_is_contextual_to_contest(self):
+        from radar.document_store import ensure_observation, ensure_role
+        other_obs = ensure_observation(self.db, "https://www.quadrix.org.br/informacoes/9/", "quadrix-9")
+        with closing(sqlite3.connect(self.db)) as conn:
+            other = conn.execute("SELECT contest_id FROM observacoes_concurso WHERE id=?",
+                                 (other_obs,)).fetchone()[0]
+        a = ensure_role(self.db, self.contest, self.obs, "Cargo", code="404")
+        b = ensure_role(self.db, other, other_obs, "Cargo", code="404")
+        self.assertNotEqual(a, b)  # mesmo código, concursos diferentes
+
+    def test_v7_adds_role_code_column(self):
+        with closing(sqlite3.connect(self.db)) as conn:
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION)
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(cargos_identidade)")}
+        self.assertIn("code", cols)
 
 
 if __name__ == "__main__":

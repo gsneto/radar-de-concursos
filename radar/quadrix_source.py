@@ -47,6 +47,11 @@ _EDITAL_RE = re.compile(r'<p class="edital">(.*?)</p>', re.S)
 _INSC_RE = re.compile(r"Inscri[^<]*de\s*<b>(.*?)</b>\s*a\s*<b>(.*?)</b>", re.S)
 _H2_RE = re.compile(r"<h2[^>]*>(.*?)</h2>", re.S)
 _TITLE_RE = re.compile(r"<title>(.*?)</title>", re.S)
+# Tabela de cargos da página: Cód. | Vaga | Escolaridade | Taxa de Inscrição.
+_CARGO_TABLE_RE = re.compile(
+    r"<th[^>]*>\s*C[óo]d\.?\s*</th>.*?<tbody>(.*?)</tbody>", re.I | re.S)
+_ROW_RE = re.compile(r"<tr[^>]*>(.*?)</tr>", re.S)
+_CELL_RE = re.compile(r"<td[^>]*>(.*?)</td>", re.S)
 _LI_PDF_RE = re.compile(r'<li class="pdf"[^>]*>(.*?)</li>', re.S)
 _ASTV_RE = re.compile(r'data-astv="([^"]*)"')
 _ANEXO_HREF_RE = re.compile(
@@ -162,6 +167,33 @@ def parse_detail(html: str) -> dict:
             "kind": kind_for(document_type),
         })
     return {"title": title, "documents": documents}
+
+
+def parse_cargo_table(html: str) -> list[dict]:
+    """Tabela de cargos da página oficial: ``[{code, name, education}]``.
+
+    Estrutura observada (estável): ``Cód. | Vaga | Escolaridade | Taxa de Inscrição``.
+    Devolve lista vazia quando a página não tem tabela de cargos.
+    """
+    if not isinstance(html, str) or not html.strip():
+        return []
+    table = _CARGO_TABLE_RE.search(html)
+    if table is None:
+        return []
+    roles = []
+    seen = set()
+    for row in _ROW_RE.findall(table.group(1)):
+        cells = _CELL_RE.findall(row)
+        if len(cells) < 3:
+            continue
+        code = _text(cells[0])
+        name = _text(cells[1])
+        education = _text(cells[2])
+        if not code.isdigit() or not name or code in seen:
+            continue
+        seen.add(code)
+        roles.append({"code": code, "name": name, "education": education or None})
+    return roles
 
 
 def _decode(body: bytes) -> str:

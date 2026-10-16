@@ -42,7 +42,7 @@ class DocumentCLITest(unittest.TestCase):
             with closing(sqlite3.connect(db)) as conn:
                 conn.execute("INSERT INTO concursos_identidade VALUES ('c','2026-10-10T00:00:00+00:00')")
                 conn.execute("INSERT INTO observacoes_concurso VALUES ('o','c','https://guajaramirim.ro.gov.br/a/','1/2026','2026-10-10T00:00:00+00:00')")
-                conn.execute("INSERT INTO cargos_identidade VALUES ('r','c','Professor de Educação Infantil',NULL,'2026-10-10T00:00:00+00:00')")
+                conn.execute("INSERT INTO cargos_identidade (id,contest_id,name,specialty,created_at) VALUES ('r','c','Professor de Educação Infantil',NULL,'2026-10-10T00:00:00+00:00')")
                 conn.commit()
             url = 'https://guajaramirim.ro.gov.br/edital.html'
             doc = register_document(db, dict(observation_id='o', kind='edital', official_url=url,
@@ -69,7 +69,7 @@ class DocumentCLITest(unittest.TestCase):
             with closing(sqlite3.connect(db)) as conn:
                 conn.execute("INSERT INTO concursos_identidade VALUES ('c','2026-10-10T00:00:00+00:00')")
                 conn.execute("INSERT INTO observacoes_concurso VALUES ('o','c','https://guajaramirim.ro.gov.br/a/','1/2026','2026-10-10T00:00:00+00:00')")
-                conn.execute("INSERT INTO cargos_identidade VALUES ('r','c','Professor',NULL,'2026-10-10T00:00:00+00:00')")
+                conn.execute("INSERT INTO cargos_identidade (id,contest_id,name,specialty,created_at) VALUES ('r','c','Professor',NULL,'2026-10-10T00:00:00+00:00')")
                 conn.execute("INSERT INTO observacoes_cargo VALUES ('or','r','o','Professor','2026-10-10T00:00:00+00:00')")
                 conn.commit()
             url = 'https://guajaramirim.ro.gov.br/edital.html'

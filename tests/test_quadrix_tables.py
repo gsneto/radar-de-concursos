@@ -74,6 +74,29 @@ class LayoutATest(unittest.TestCase):
         self.assertEqual(len(ind), 1)
         self.assertEqual(ind[0]["value_json"], "4")  # PI imediato = 4
 
+    def test_indigenous_reserve_separate_from_immediate(self):
+        # PI do grupo imediato e do grupo de reserva têm semânticas distintas.
+        text = layout_a(["200 Cargo 1 - - - - 25 2 10 3 1 42 Local 40h R$ 1"])
+        props = parse(text)
+        imm = by_field(props, "indigenous_vacancies")[0]["value_json"]
+        res = by_field(props, "indigenous_reserve_vacancies")[0]["value_json"]
+        self.assertEqual(imm, "0")   # imediato: PI = 0
+        self.assertEqual(res, "3")   # reserva: PI = 3
+        self.assertNotEqual(imm, res)
+
+    def test_indigenous_reserve_zero_confirmed(self):
+        text = layout_a(["200 Cargo 1 - - - - 25 2 10 - 1 39 Local 40h R$ 1"])
+        res = by_field(parse(text), "indigenous_reserve_vacancies")
+        self.assertEqual(res[0]["value_json"], "0")  # '-' no grupo de reserva = zero
+
+    def test_no_indigenous_column_no_reserve_field(self):
+        text = layout_a(["200 Cargo 1 - - - 5 2 1 10 19 Local 40h R$ 1"],
+                        modalities=("AC", "PCD", "PPP", "HIPO"))
+        props = parse(text)
+        self.assertEqual(by_field(props, "indigenous_reserve_vacancies"), [])
+        self.assertEqual(by_field(props, "indigenous_vacancies"), [])
+        self.assertTrue(by_field(props, "reserve_vacancies"))
+
     def test_no_indigenous_column_yields_no_indigenous_proposal(self):
         text = layout_a(["200 Cargo X 1 - - - 5 2 1 1 10 Local 40h R$ 1"],
                         modalities=("AC", "PCD", "PPP", "HIPO"))

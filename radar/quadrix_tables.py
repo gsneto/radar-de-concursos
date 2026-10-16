@@ -202,7 +202,9 @@ def _rows(block, index, data_tokens, has_code, width, half, modalities, indigeno
             "reserve_vacancies": sum(reserve),
         }
         if indigenous_index is not None:
+            # Coluna indígena do grupo imediato e do grupo de reserva (semânticas distintas).
             fields["indigenous_vacancies"] = immediate[indigenous_index]
+            fields["indigenous_reserve_vacancies"] = reserve[indigenous_index]
         for field, value in fields.items():
             out.append(dict(contest_id=contest_id, role_id=None, field_name=field,
                             value_json=json.dumps(value), value_type="integer",

@@ -49,7 +49,7 @@ class QueueTestBase(unittest.TestCase):
 class SchemaV5Test(QueueTestBase):
     def test_migrates_to_v5_with_queue_table(self):
         with closing(sqlite3.connect(self.db)) as conn:
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 6)
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 7)
             self.assertIsNotNone(conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='fila_confirmacao'").fetchone())
             self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
@@ -61,21 +61,21 @@ class SchemaV5Test(QueueTestBase):
             conn.commit()
         migrate_document_schema(self.db)
         with closing(sqlite3.connect(self.db)) as conn:
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 6)
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 7)
 
     def test_v6_adds_document_type_column(self):
         with closing(sqlite3.connect(self.db)) as conn:
             cols = {row[1] for row in conn.execute("PRAGMA table_info(documentos)")}
         self.assertIn("tipo_documental", cols)
 
-    def test_v5_database_upgrades_to_v6(self):
+    def test_v5_database_upgrades_to_current(self):
         with closing(sqlite3.connect(self.db)) as conn:
             conn.execute("ALTER TABLE documentos DROP COLUMN tipo_documental")
             conn.execute("PRAGMA user_version=5")
             conn.commit()
         migrate_document_schema(self.db)
         with closing(sqlite3.connect(self.db)) as conn:
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 6)
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 7)
             cols = {row[1] for row in conn.execute("PRAGMA table_info(documentos)")}
         self.assertIn("tipo_documental", cols)
 
@@ -441,6 +441,80 @@ def _html_transport(body):
     def transport(url, timeout, limit):
         return dict(status=200, final_url=url, content_type="text/html", peer_ip="8.8.8.8", body=body)
     return transport
+
+
+class OpportunityTest(unittest.TestCase):
+    def test_immediate_indigenous_with_si_is_top_tier(self):
+        c = confirmation.classify_opportunity(
+            {"indigenous_vacancies": 2, "indigenous_reserve_vacancies": 0,
+             "si_compatibility": "aceito_expressamente"})
+        self.assertEqual(c["vacancy"], "vaga_indigena_imediata")
+        self.assertEqual(c["tier"], 1)
+        self.assertIn("si_aceito_expressamente", c["signals"])
+
+    def test_reserve_indigenous_is_not_immediate(self):
+        c = confirmation.classify_opportunity(
+            {"indigenous_vacancies": 0, "indigenous_reserve_vacancies": 3,
+             "si_compatibility": "abrangido_por_categoria"})
+        self.assertEqual(c["vacancy"], "vaga_indigena_reserva")
+        self.assertNotEqual(c["vacancy"], "vaga_indigena_imediata")
+        self.assertEqual(c["tier"], 2)
+
+    def test_unknown_indigenous_is_not_zero(self):
+        c = confirmation.classify_opportunity({"si_compatibility": "ambiguo"})
+        self.assertEqual(c["vacancy"], "vaga_indigena_desconhecida")
+        self.assertIn("vaga_indigena_nao_extraida", c["signals"])
+
+    def test_partial_indigenous_data_is_unknown_not_absence(self):
+        # Regressão: imediato=0 conhecido, reserva não extraída → desconhecido (não "sem vaga").
+        c = confirmation.classify_opportunity({"indigenous_vacancies": 0})
+        self.assertEqual(c["vacancy"], "vaga_indigena_desconhecida")
+
+    def test_both_known_zero_is_confirmed_absence(self):
+        c = confirmation.classify_opportunity(
+            {"indigenous_vacancies": 0, "indigenous_reserve_vacancies": 0})
+        self.assertEqual(c["vacancy"], "sem_vaga_indigena")
+
+    def test_si_incompatible_is_lower(self):
+        c = confirmation.classify_opportunity(
+            {"indigenous_vacancies": 1, "si_compatibility": "incompativel_com_requisito_explicito"})
+        self.assertEqual(c["si"], "si_incompativel")
+        self.assertEqual(c["tier"], 3)  # vaga imediata, mas formação incompatível
+
+    def test_role_opportunities_orders_by_tier(self):
+        import tempfile
+        from pathlib import Path
+        from radar.document_store import (connect_documents, migrate_document_schema,
+                                          ensure_observation, register_document, record_version,
+                                          record_analysis, ensure_role)
+        tmp = tempfile.TemporaryDirectory(); self.addCleanup(tmp.cleanup)
+        db = str(Path(tmp.name) / "db.sqlite3"); migrate_document_schema(db)
+        obs = ensure_observation(db, "https://www.quadrix.org.br/informacoes/1/", "quadrix-1")
+        with closing(connect_documents(db)) as conn:
+            contest = conn.execute("SELECT contest_id FROM observacoes_concurso WHERE id=?",
+                                   (obs,)).fetchone()[0]
+        doc = register_document(db, dict(observation_id=obs, kind="outro",
+            official_url="https://anexos-r2.selecao.net.br/uploads/x/e.pdf", title="Edital",
+            discovery_url="https://www.quadrix.org.br/", discovery_method="automatico",
+            discovered_at=_TS))
+        block = dict(page_number=2, locator="p", start_offset=0, end_offset=1, text="x")
+        role = ensure_role(db, contest, obs, "Analista de Informática", code="404")
+        proposals = []
+        for field, val in (("indigenous_vacancies", 0), ("indigenous_reserve_vacancies", 2),
+                           ("si_compatibility", "aceito_expressamente")):
+            proposals.append(dict(contest_id=contest, role_id=role, field_name=field,
+                value_json=json.dumps(val), value_type="string" if field == "si_compatibility" else "integer",
+                extraction_method="t", ambiguity_reason="associado",
+                evidence=dict(block_index=0, quote="x", start_offset=0, end_offset=1)))
+        version = record_version(db, doc, b"%PDF-1.4 x", dict(fetched_at=_TS,
+            fetched_url="https://anexos-r2.selecao.net.br/uploads/x/e.pdf", content_type="application/pdf"))
+        record_analysis(db, version, [block], proposals)
+        opps = confirmation.role_opportunities(db, contest)
+        self.assertEqual(len(opps), 1)
+        self.assertEqual(opps[0]["code"], "404")
+        self.assertEqual(opps[0]["indigenous_reserve_vacancies"], 2)
+        self.assertEqual(opps[0]["classification"]["tier"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

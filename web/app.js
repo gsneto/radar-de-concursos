@@ -85,14 +85,22 @@
   var FIELD_LABEL = {
     immediate_vacancies: 'Vagas imediatas',
     reserve_vacancies: 'Cadastro de reserva',
-    indigenous_vacancies: 'Vagas indígenas',
+    indigenous_vacancies: 'Vagas indígenas (imediatas)',
+    indigenous_reserve_vacancies: 'Vagas indígenas (cadastro de reserva)',
     registration_start: 'Início das inscrições',
     registration_end: 'Fim das inscrições',
     registration_status: 'Situação das inscrições',
     exam_date: 'Data da prova',
     exam_location: 'Local de prova',
     work_location: 'Local de exercício',
-    education: 'Escolaridade'
+    education: 'Requisitos de formação',
+    accepted_courses: 'Cursos aceitos',
+    si_compatibility: 'Compatibilidade com Sistemas de Informação',
+    exemption_start: 'Início da isenção da taxa',
+    exemption_end: 'Fim da isenção da taxa',
+    exemption_result_preliminary: 'Resultado preliminar da isenção',
+    exemption_appeal: 'Recurso da isenção',
+    exemption_result_final: 'Resultado definitivo da isenção'
   };
 
   function isMissing(value) {

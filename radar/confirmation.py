@@ -649,3 +649,99 @@ def priority_report(db_path, *, limit: int = 20) -> list[dict]:
         return report
     finally:
         conn.close()
+
+
+# Classificação explicável de oportunidades (vagas indígenas × formação × documento).
+_OPP_FIELDS = ("immediate_vacancies", "reserve_vacancies", "indigenous_vacancies",
+               "indigenous_reserve_vacancies", "si_compatibility")
+
+
+def classify_opportunity(role_fields: dict) -> dict:
+    """Classifica um cargo de forma explicável, sem pontuação opaca.
+
+    Distingue a **modalidade da vaga indígena** (imediata, cadastro de reserva, ausente
+    ou desconhecida) da **compatibilidade de formação** (SI). Um cargo com vagas
+    indígenas apenas em cadastro de reserva nunca é apresentado como vaga imediata, e um
+    cargo sem vaga indígena ainda pode ser relevante por compatibilidade de formação.
+    """
+    imm = role_fields.get("indigenous_vacancies")
+    res = role_fields.get("indigenous_reserve_vacancies")
+    si = role_fields.get("si_compatibility")
+    signals = []
+    if isinstance(imm, int) and imm > 0:
+        vacancy = "vaga_indigena_imediata"
+        signals.append("vaga_indigena_imediata")
+    elif isinstance(res, int) and res > 0:
+        vacancy = "vaga_indigena_reserva"
+        signals.append("vaga_indigena_reserva")
+    elif isinstance(imm, int) and isinstance(res, int) and imm == 0 and res == 0:
+        vacancy = "sem_vaga_indigena"
+        signals.append("sem_vaga_indigena_confirmada")
+    else:
+        # Um dos campos ausente (não extraído) → desconhecido, nunca "zero".
+        vacancy = "vaga_indigena_desconhecida"
+        signals.append("vaga_indigena_nao_extraida")
+    if si == "aceito_expressamente":
+        si_state, si_ok = "si_aceito", True
+        signals.append("si_aceito_expressamente")
+    elif si == "abrangido_por_categoria":
+        si_state, si_ok = "si_abrangido", True
+        signals.append("si_abrangido_por_categoria")
+    elif si == "incompativel_com_requisito_explicito":
+        si_state, si_ok = "si_incompativel", False
+        signals.append("si_incompativel")
+    elif si == "ambiguo":
+        si_state, si_ok = "si_ambiguo", False
+        signals.append("si_ambiguo")
+    else:
+        si_state, si_ok = "si_nao_extraido", False
+        signals.append("si_nao_extraido")
+    if vacancy == "vaga_indigena_imediata" and si_ok:
+        tier = 1
+    elif vacancy == "vaga_indigena_reserva" and si_ok:
+        tier = 2
+    elif vacancy == "vaga_indigena_imediata":
+        tier = 3
+    elif vacancy == "vaga_indigena_reserva":
+        tier = 4
+    elif si_ok:
+        tier = 5
+    else:
+        tier = 6
+    return {"vacancy": vacancy, "si": si_state, "tier": tier, "signals": signals}
+
+
+def role_opportunities(db_path, contest_id: str) -> list[dict]:
+    """Oportunidades por cargo de um concurso, com os valores propostos e a classificação.
+
+    Usa o valor proposto mais recente por (cargo, campo); nada é promovido a validado.
+    """
+    conn = connect_documents(db_path)
+    try:
+        roles = {row[0]: {"code": row[1], "name": row[2]}
+                 for row in conn.execute(
+                     "SELECT id,code,name FROM cargos_identidade WHERE contest_id=?", (contest_id,))}
+        values: dict = {}
+        for role_id, field, value_json in conn.execute(
+                """SELECT role_id, field_name, value_json FROM propostas_campo
+                WHERE contest_id=? AND role_id IS NOT NULL
+                ORDER BY extracted_at, id""", (contest_id,)):
+            if field in _OPP_FIELDS:
+                try:
+                    values.setdefault(role_id, {})[field] = json.loads(value_json)
+                except (TypeError, ValueError):
+                    continue
+        out = []
+        for role_id, meta in roles.items():
+            fields = values.get(role_id, {})
+            out.append(dict(role_id=role_id, code=meta["code"], name=meta["name"],
+                            immediate_vacancies=fields.get("immediate_vacancies"),
+                            reserve_vacancies=fields.get("reserve_vacancies"),
+                            indigenous_vacancies=fields.get("indigenous_vacancies"),
+                            indigenous_reserve_vacancies=fields.get("indigenous_reserve_vacancies"),
+                            si_compatibility=fields.get("si_compatibility"),
+                            classification=classify_opportunity(fields)))
+        out.sort(key=lambda r: (r["classification"]["tier"], r["name"] or ""))
+        return out
+    finally:
+        conn.close()

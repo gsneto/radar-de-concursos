@@ -103,6 +103,24 @@ def _cmd_monitor(args: argparse.Namespace) -> None:
     print(json.dumps(summary, ensure_ascii=False))
 
 
+def _cmd_quadrix_cargos(args: argparse.Namespace) -> None:
+    """Importa cargos do HTML oficial e vincula as propostas existentes por código."""
+    from contextlib import closing
+    from radar import quadrix_source
+    from radar.role_reconciliation import link_contest_proposals
+    from radar.document_store import ensure_observation, connect_documents
+    html = quadrix_source.fetch_detail(args.quadrix_id)
+    table = quadrix_source.parse_cargo_table(html)
+    observation_id = ensure_observation(args.db, quadrix_source.detail_url(args.quadrix_id),
+                                        f"quadrix-{args.quadrix_id}")
+    with closing(connect_documents(args.db)) as conn:
+        contest_id = conn.execute("SELECT contest_id FROM observacoes_concurso WHERE id=?",
+                                  (observation_id,)).fetchone()[0]
+    result = link_contest_proposals(args.db, contest_id, observation_id, table)
+    print(json.dumps({"quadrix_id": args.quadrix_id, "contest_id": contest_id,
+                      "roles_in_html": len(table), **result}, ensure_ascii=False))
+
+
 def _cmd_confirmacao_lote(args: argparse.Namespace) -> None:
     if args.enqueue:
         confirmation.enqueue_pending(args.db, source_id=args.source_id)
@@ -268,6 +286,19 @@ def build_parser() -> argparse.ArgumentParser:
     conf_priority.add_argument('--limit', type=int, default=20)
     conf_priority.set_defaults(func=lambda args: print(json.dumps(
         confirmation.priority_report(args.db, limit=args.limit), ensure_ascii=False)))
+
+    conf_opps = subparsers.add_parser('confirmacao-oportunidades',
+        help='oportunidades por cargo (vagas indígenas × formação), explicáveis')
+    conf_opps.add_argument('--db', required=True)
+    conf_opps.add_argument('--contest-id', required=True)
+    conf_opps.set_defaults(func=lambda args: print(json.dumps(
+        confirmation.role_opportunities(args.db, args.contest_id), ensure_ascii=False)))
+
+    qx_cargos = subparsers.add_parser('quadrix-cargos',
+        help='importa cargos do HTML oficial da Quadrix e vincula propostas por código')
+    qx_cargos.add_argument('--db', required=True)
+    qx_cargos.add_argument('--quadrix-id', required=True)
+    qx_cargos.set_defaults(func=_cmd_quadrix_cargos)
 
     return parser
 
