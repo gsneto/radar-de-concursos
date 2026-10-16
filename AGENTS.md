@@ -17,4 +17,16 @@ Documentos canônicos do produto e contratos acordados definem regras específic
 
 ## Execução segura
 
-Inspecionar Git e alterações locais antes de editar. Criar prompts específicos antes de cada delegação; conferir arquivos, diffs, comandos e testes reais após retornos. Não aprovar com base em relato de subagente. Não versionar segredos nem imprimir credenciais. Não fazer push, merge em `main`, publicação, exclusão irreversível ou migração destrutiva sem autorização explícita. Não declarar testes aprovados sem execução.
+Inspecionar Git e alterações locais antes de editar. Criar prompts específicos antes de cada delegação; conferir arquivos, diffs, comandos e testes reais após retornos. Não aprovar com base em relato de subagente. Não versionar segredos nem imprimir credenciais. Não declarar testes aprovados sem execução.
+
+## Política de autonomia Git
+
+O usuário autoriza commits e pushes **rotineiros** sem confirmação individual. Ao concluir uma etapa:
+
+1. Executar os testes pertinentes e as verificações de segurança.
+2. Conferir o diff, a branch atual e o estado do repositório.
+3. Se estiver tudo aprovado, criar um commit com mensagem descritiva e fazer push para a **branch de trabalho e o remoto já configurados**.
+4. Verificar o resultado real do push e registrar hash, testes, branch e situação do repositório.
+5. Se houver falhas, credenciais expostas, conflitos inesperados ou risco de perda de trabalho, **interromper a operação afetada e reportar**.
+
+Continuam exigindo **autorização específica** (nunca implícita): merge em `main`, deploy, publicação em outro destino, exclusão irreversível/destrutiva, force-push, troca de repositório remoto e migração da base de produção real. Nunca afirmar que publicou sem confirmação do Git.

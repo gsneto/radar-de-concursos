@@ -14,6 +14,8 @@ _AUTHORIZED_SOURCES = (
     ("guajaramirim.ro.gov.br", lambda path: path.lower().endswith((".pdf", ".html", ".htm"))),
     ("www.diariomunicipal.com.br", lambda path: path.startswith(
         ("/arom/materia/", "/arom/download/materia/", "/arom/download/edicao/"))),
+    # Segunda fonte oficial: matérias do Diário Oficial da União (Imprensa Nacional).
+    ("www.in.gov.br", lambda path: path.startswith("/web/dou/-/")),
 )
 
 

@@ -18,6 +18,8 @@ from radar.document_download import download_document
 from radar.document_store import (
     SCHEMA_VERSION,
     connect_documents,
+    ensure_observation,
+    record_version,
     register_document,
     sync_v1_identifiers,
 )
@@ -28,12 +30,16 @@ def _now() -> str:
 
 
 def default_sources() -> list[dict]:
-    """Fontes autorizadas configuradas hoje (uma)."""
-    return [{
-        "source_url": SOURCE_URL,
-        "fetch": fetch_official,
-        "discover": lambda html, observation_id: discover_documents(html, SOURCE_URL, observation_id),
-    }]
+    """Fontes oficiais autorizadas: Guajará-Mirim (artigo) e DOU (Seção 3)."""
+    from radar.dou_source import dou_source
+    return [
+        {
+            "source_url": SOURCE_URL,
+            "fetch": fetch_official,
+            "discover": lambda html, observation_id: discover_documents(html, SOURCE_URL, observation_id),
+        },
+        dou_source(),
+    ]
 
 
 def _coverage_state(conn, contest_id: str) -> str:
@@ -145,6 +151,7 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
             "SELECT id FROM documentos WHERE observation_id=?", (observation_id,))}
     documents_new = 0
     errors = []
+    inline_content = {}
     for candidate in candidates:
         try:
             document_id = register_document(db_path, candidate)
@@ -156,18 +163,34 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
         if document_id not in known_ids:
             known_ids.add(document_id)
             documents_new += 1
+        # Fontes cuja API já entrega o texto oficial gravam a versão sem rebaixar a página.
+        body = candidate.get("inline_content")
+        if body:
+            inline_content[document_id] = (
+                body, candidate.get("inline_content_type") or "text/html", candidate["official_url"])
 
     versions_new = 0
     changes = 0
-    with closing(connect_documents(db_path)) as conn:
-        documents = [row[0] for row in conn.execute(
-            "SELECT id FROM documentos WHERE contest_id=? ORDER BY discovered_at,id", (contest_id,))]
-    for document_id in documents:
+    if source.get("inline"):
+        # Fonte cujo conteúdo é entregue pela API: versiona apenas as matérias desta
+        # consulta. Documentos de edições anteriores não são rebaixados pela página,
+        # evitando versões/mudanças falsas e crescimento ilimitado por ciclo.
+        targets = list(inline_content.keys())
+    else:
+        with closing(connect_documents(db_path)) as conn:
+            targets = [row[0] for row in conn.execute(
+                "SELECT id FROM documentos WHERE contest_id=? ORDER BY discovered_at,id", (contest_id,))]
+    for document_id in targets:
         with closing(connect_documents(db_path)) as conn:
             before = conn.execute("SELECT count(*) FROM versoes_documento WHERE document_id=?",
                                   (document_id,)).fetchone()[0]
         try:
-            version_id = download_document(db_path, document_id, transport=transport)
+            if document_id in inline_content:
+                body, ctype, url = inline_content[document_id]
+                version_id = record_version(db_path, document_id, body, dict(
+                    fetched_at=checked_at, fetched_url=url, content_type=ctype))
+            else:
+                version_id = download_document(db_path, document_id, transport=transport)
         except Exception as error:
             errors.append({"document_id": document_id, "error_code": type(error).__name__})
             continue
@@ -222,6 +245,11 @@ def run_cycle(db_path, *, sources=None, transport=None, analyze=False, now=None)
     if version != SCHEMA_VERSION:
         raise ValueError("migração documental pendente; rode documents-migrate")
     sync_v1_identifiers(db_path)
+    # Fontes que não derivam de ``concursos`` v1 declaram a própria identidade.
+    for source in sources:
+        competition_id = source.get("competition_id")
+        if competition_id:
+            ensure_observation(db_path, source["source_url"], competition_id)
 
     started = now()
     cycle_id = str(uuid4())

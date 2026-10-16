@@ -1,6 +1,7 @@
 """Monitoramento: migração v4, ciclos, classificação de mudanças e resumo."""
 
 import sqlite3
+import json
 import tempfile
 import unittest
 from contextlib import closing
@@ -14,7 +15,7 @@ from radar.document_store import (
     sync_v1_identifiers,
 )
 from radar.monitoring import run_cycle
-from radar.storage import upsert_records
+from radar.storage import list_records, upsert_records
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "guajara-oficial.html"
 _TS = "2026-10-15T12:00:00+00:00"
@@ -295,6 +296,96 @@ class CycleTest(unittest.TestCase):
         self.assertEqual(states, ["parcial"])
         self.assertGreater(proposals, 0)
         self.assertEqual(validations, 0)
+
+
+class DouSourceIntegrationTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.db = str(Path(self.tmp.name) / "db.sqlite3")
+        migrate_document_schema(self.db)
+
+    def _edition_html(self):
+        item = {"pubName": "DO3", "urlTitle": "edital-concurso-1-999", "title": "EDITAL DE CONCURSO PÚBLICO Nº 1/2026",
+                "artType": "Edital", "pubDate": "01/10/2026", "content":
+                "O concurso público oferece 5 vagas para pessoas indígenas. Inscrições de 1 a 20/10/2026.",
+                "hierarchyStr": "Ministério da Educação/UF X", "hierarchyList": ["Ministério da Educação", "UF X"]}
+        payload = json.dumps({"dateUrl": "01-10-2026", "section": "DO3", "jsonArray": [item]}, ensure_ascii=False)
+        return '<script>var x = ' + payload + ';</script>'
+
+    def _dou_source(self):
+        from radar.dou_source import DOU_COMPETITION_ID, DOU_SOURCE_URL, discover
+        html = self._edition_html()
+        return {"source_url": DOU_SOURCE_URL, "competition_id": DOU_COMPETITION_ID, "inline": True,
+                "fetch": lambda: html, "discover": lambda h, observation_id: discover(h, observation_id)}
+
+    def _edition_source(self, slug):
+        from radar.dou_source import DOU_COMPETITION_ID, DOU_SOURCE_URL, discover
+        item = {"pubName": "DO3", "urlTitle": slug, "title": "EDITAL DE CONCURSO PÚBLICO",
+                "artType": "Edital", "pubDate": "01/10/2026", "content": "concurso público",
+                "hierarchyStr": "Órgão X", "hierarchyList": ["Órgão X"]}
+        payload = json.dumps({"dateUrl": "01-10-2026", "section": "DO3", "jsonArray": [item]}, ensure_ascii=False)
+        html = '<script>var x = ' + payload + ';</script>'
+        return {"source_url": DOU_SOURCE_URL, "competition_id": DOU_COMPETITION_ID, "inline": True,
+                "fetch": lambda: html, "discover": lambda h, observation_id: discover(h, observation_id)}
+
+    def test_dou_cycle_registers_documents_versions_and_is_idempotent(self):
+        first = run_cycle(self.db, sources=[self._dou_source()], analyze=True)
+        self.assertEqual(first["state"], "concluido")
+        self.assertEqual(first["documents_new"], 1)
+        self.assertEqual(first["versions_new"], 1)
+        with closing(connect_documents(self.db)) as conn:
+            self.assertEqual(conn.execute("SELECT count(*) FROM observacoes_concurso").fetchone()[0], 1)
+            self.assertEqual(conn.execute("SELECT count(*) FROM documentos").fetchone()[0], 1)
+            self.assertEqual(conn.execute("SELECT count(*) FROM versoes_documento").fetchone()[0], 1)
+            validations = conn.execute("SELECT count(*) FROM revisoes_campo").fetchone()[0]
+        self.assertEqual(validations, 0)
+        # Reexecução sem mudanças não cria documento nem versão novos.
+        second = run_cycle(self.db, sources=[self._dou_source()], analyze=True)
+        self.assertEqual(second["documents_new"], 0)
+        self.assertEqual(second["versions_new"], 0)
+
+    def test_dou_does_not_write_v1_concursos(self):
+        run_cycle(self.db, sources=[self._dou_source()], analyze=True)
+        self.assertEqual(list_records(self.db), [])
+
+    def test_previous_edition_document_is_not_reversioned(self):
+        # Regressão: uma edição nova não pode rebaixar (nem contar como mudança)
+        # documentos DOU de edições anteriores — e não deve tentar baixá-los.
+        run_cycle(self.db, sources=[self._edition_source("edital-a-111")])
+        calls = []
+
+        def transport(url, timeout, limit):
+            calls.append(url)
+            raise TimeoutError("não deveria baixar páginas de artigos DOU")
+
+        result = run_cycle(self.db, sources=[self._edition_source("edital-b-222")], transport=transport)
+        self.assertEqual(result["documents_new"], 1)
+        self.assertEqual(result["versions_new"], 1)
+        self.assertEqual(result["sources"][0]["changes"], 0)
+        self.assertEqual(calls, [], "documentos inline não são baixados da página")
+        with closing(connect_documents(self.db)) as conn:
+            doc_a = conn.execute("SELECT id FROM documentos WHERE official_url LIKE '%edital-a-111'").fetchone()[0]
+            versions_a = conn.execute("SELECT count(*) FROM versoes_documento WHERE document_id=?", (doc_a,)).fetchone()[0]
+            total_versions = conn.execute("SELECT count(*) FROM versoes_documento").fetchone()[0]
+        self.assertEqual(versions_a, 1)
+        self.assertEqual(total_versions, 2)
+
+    def test_dou_failure_does_not_block_guajara(self):
+        upsert_records(self.db, collect(_FIXTURE.read_text(encoding="utf-8"), _TS))
+        migrate_document_schema(self.db)
+
+        def boom():
+            raise TimeoutError("dou fora do ar")
+
+        dou = self._dou_source()
+        dou["fetch"] = boom
+        guajara = _source(lambda: "x", [])
+        result = run_cycle(self.db, sources=[guajara, dou])
+        states = {s["source_url"]: s["state"] for s in result["sources"]}
+        self.assertEqual(states[SOURCE_URL], "concluido")
+        self.assertEqual(states[dou["source_url"]], "falhou")
+        self.assertEqual(result["state"], "parcial")
 
 
 class MonitorCliTest(unittest.TestCase):

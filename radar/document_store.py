@@ -610,6 +610,43 @@ def sync_v1_identifiers(db_path) -> None:
         conn.close()
 
 
+def ensure_observation(db_path, source_url: str, competition_id: str) -> str:
+    """Garante identidade de concurso + observação para uma fonte, de forma idempotente.
+
+    Aditivo e genérico: usado por fontes que não derivam de ``concursos`` v1
+    (por exemplo, uma segunda fonte oficial). Não altera dados v1 nem mescla
+    identidades existentes; devolve o ``observation_id`` estável.
+    """
+    source_url = _canonical_url(source_url)
+    if not isinstance(competition_id, str) or not competition_id.strip():
+        raise ValueError("competition_id obrigatório")
+    conn = connect_documents(db_path)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        if conn.execute("PRAGMA user_version").fetchone()[0] not in _READABLE_VERSIONS:
+            raise ValueError("migração documental pendente")
+        existing = conn.execute(
+            "SELECT id FROM observacoes_concurso WHERE source_url=? AND competition_id=?",
+            (source_url, competition_id),
+        ).fetchone()
+        if existing:
+            conn.commit()
+            return existing[0]
+        contest_id, observation_id = str(uuid4()), str(uuid4())
+        conn.execute("INSERT INTO concursos_identidade VALUES (?,?)", (contest_id, _now()))
+        conn.execute(
+            "INSERT INTO observacoes_concurso VALUES (?,?,?,?,?)",
+            (observation_id, contest_id, source_url, competition_id, _now()),
+        )
+        conn.commit()
+        return observation_id
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def list_competition_identities(db_path) -> list[dict]:
     if not Path(db_path).exists():
         raise ValueError("migração documental pendente")
