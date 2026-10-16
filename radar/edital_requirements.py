@@ -98,9 +98,10 @@ def parse_code_group(clause: str) -> list[str]:
     """
     if not isinstance(clause, str):
         return []
-    body = re.sub(r"^\s*C[ÓO]DIGOS?\b", "", clause, flags=re.I).strip()
-    if not body or body == clause.strip():
-        return []  # não começa por CÓDIGO(S): não é bloco de códigos
+    body = re.sub(r"^\s*\(?\s*(?:C[ÓO]DIGOS?|CARGO)\b", "", clause, flags=re.I).strip()
+    body = body.rstrip(")").strip()
+    if not body or body == clause.strip("()").strip():
+        return []  # não começa por CÓDIGO(S)/CARGO: não é bloco de códigos
     codes: list[str] = []
     covered: list[tuple[int, int]] = []
     # Todas as faixas (inclusive implausíveis, que ficam "cobertas" e não viram avulsos).

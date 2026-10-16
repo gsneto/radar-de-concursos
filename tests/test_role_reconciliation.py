@@ -167,7 +167,7 @@ class LinkContestProposalsTest(unittest.TestCase):
         from radar.role_reconciliation import link_contest_proposals
         result = link_contest_proposals(db, contest, obs, [{"code": "404",
             "name": "Analista de Informática", "education": "Superior"}])
-        self.assertEqual(result["assigned"], 1)
+        self.assertEqual(result["by_code"]["assigned"], 1)
         with _closing(connect_documents(db)) as conn:
             role_id = conn.execute("SELECT role_id FROM propostas_campo WHERE contest_id=?",
                                    (contest,)).fetchone()[0]

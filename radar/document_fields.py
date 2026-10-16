@@ -225,12 +225,16 @@ def extract_field_proposals(blocks: list[dict], version_id: str, contest_id: str
         proposals.extend(quadrix_tables.parse_quadrix_proposals(
             blocks, contest_id, label_prefix=LABEL_PREFIX))
         # Requisitos de formação (Anexo II) e prazos de isenção (cronograma).
-        from radar import edital_requirements
+        from radar import edital_requirements, section_requirements
         education = edital_requirements.extract_education(
             blocks, contest_id, label_prefix=LABEL_PREFIX)
+        # Seções numeradas no corpo (com ou sem código): cobre editais que não usam Anexo II.
+        section_edu = section_requirements.extract_section_education(
+            blocks, contest_id, label_prefix=LABEL_PREFIX)
+        education = education + section_edu
         proposals.extend(education)
-        if not any(p["field_name"] == "education" for p in education):
-            # Sem Anexo II por cargo: tenta requisitos declarados por rótulo (multibanca).
+        if not education:
+            # Sem Anexo II nem seção numerada: tenta requisitos declarados por rótulo (multibanca).
             proposals.extend(edital_requirements.extract_declared_education(
                 blocks, contest_id, label_prefix=LABEL_PREFIX))
         proposals.extend(edital_requirements.extract_exemption_dates(blocks, contest_id))

@@ -107,12 +107,14 @@ def reconcile_proposals_by_code(db_path, contest_id: str, observation_id: str,
 
 def link_contest_proposals(db_path, contest_id: str, observation_id: str,
                            cargo_table: list[dict]) -> dict:
-    """Importa os cargos do HTML e vincula, por código, as propostas existentes do concurso.
+    """Importa os cargos do HTML e vincula as propostas existentes do concurso.
 
-    Atualiza ``propostas_campo.role_id`` (apenas as ainda não vinculadas, com rótulo de
-    código) e o motivo da associação. Idempotente: reexecutar não duplica cargos nem
-    reatribui propostas já associadas. Devolve os contadores da reconciliação.
+    Aplica **duas** camadas: por **código** oficial (Fase 15) e, para as propostas que
+    ficarem pendentes, por **nome de seção** (Fase 16). Atualiza ``propostas_campo.role_id``
+    apenas das ainda não vinculadas. Idempotente: reexecutar não duplica cargos nem
+    reatribui propostas já associadas. Devolve os contadores combinados.
     """
+    from radar import section_requirements
     with closing(connect_documents(db_path)) as conn:
         rows = conn.execute(
             """SELECT id, role_id, field_name, value_json, ambiguity_reason
@@ -120,10 +122,12 @@ def link_contest_proposals(db_path, contest_id: str, observation_id: str,
             (contest_id,)).fetchall()
     proposals = [{"id": r[0], "role_id": r[1], "field_name": r[2], "value_json": r[3],
                   "ambiguity_reason": r[4]} for r in rows]
-    result = reconcile_proposals_by_code(db_path, contest_id, observation_id, cargo_table, proposals)
+    by_code = reconcile_proposals_by_code(db_path, contest_id, observation_id, cargo_table, proposals)
+    by_name = section_requirements.reconcile_sections_by_name(
+        db_path, contest_id, observation_id, cargo_table, proposals)
     updates = [(p["role_id"], p["ambiguity_reason"], p["id"]) for p in proposals if p.get("role_id")]
     if updates:
         with closing(connect_documents(db_path)) as conn, conn:
             conn.executemany("UPDATE propostas_campo SET role_id=?, ambiguity_reason=? WHERE id=?",
                              updates)
-    return result
+    return {"by_code": by_code, "by_name": by_name}

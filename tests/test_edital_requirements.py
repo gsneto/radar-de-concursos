@@ -153,6 +153,11 @@ class CodeGroupTest(unittest.TestCase):
     def test_individual(self):
         self.assertEqual(er.parse_code_group("CÓDIGO 404"), ["404"])
 
+    def test_cargo_marker(self):
+        # Variante "CARGO" (editais com "(CARGO 200)").
+        self.assertEqual(er.parse_code_group("CARGO 200"), ["200"])
+        self.assertEqual(er.parse_code_group("(CARGO 400)"), ["400"])
+
     def test_range_ate(self):
         self.assertEqual(er.parse_code_group("CÓDIGOS 200 ATÉ 206"),
                          ["200", "201", "202", "203", "204", "205", "206"])
