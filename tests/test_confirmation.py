@@ -49,7 +49,7 @@ class QueueTestBase(unittest.TestCase):
 class SchemaV5Test(QueueTestBase):
     def test_migrates_to_v5_with_queue_table(self):
         with closing(sqlite3.connect(self.db)) as conn:
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 5)
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 6)
             self.assertIsNotNone(conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='fila_confirmacao'").fetchone())
             self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
@@ -61,7 +61,23 @@ class SchemaV5Test(QueueTestBase):
             conn.commit()
         migrate_document_schema(self.db)
         with closing(sqlite3.connect(self.db)) as conn:
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 5)
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 6)
+
+    def test_v6_adds_document_type_column(self):
+        with closing(sqlite3.connect(self.db)) as conn:
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(documentos)")}
+        self.assertIn("tipo_documental", cols)
+
+    def test_v5_database_upgrades_to_v6(self):
+        with closing(sqlite3.connect(self.db)) as conn:
+            conn.execute("ALTER TABLE documentos DROP COLUMN tipo_documental")
+            conn.execute("PRAGMA user_version=5")
+            conn.commit()
+        migrate_document_schema(self.db)
+        with closing(sqlite3.connect(self.db)) as conn:
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 6)
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(documentos)")}
+        self.assertIn("tipo_documental", cols)
 
 
 class EnqueueTest(QueueTestBase):
@@ -115,6 +131,29 @@ class PriorityTest(unittest.TestCase):
 class BatchTest(QueueTestBase):
     def _resolver(self, result):
         return lambda candidate: result
+
+    def test_page_only_resolution_marks_fonte_oficial_localizada(self):
+        candidate = self._seed_candidate(_candidate(1, "C"))
+        confirmation.enqueue_from_candidates(self.db, [candidate])
+        resolver = lambda c: {"official_url": "https://www.quadrix.org.br/informacoes/1/",
+                              "source": "Instituto Quadrix", "title": "Página do concurso",
+                              "no_download": True}
+        summary = confirmation.process_batch(self.db, resolvers=[resolver], limit=5)
+        self.assertEqual(summary["states"].get("fonte_oficial_localizada"), 1)
+        item = confirmation.get_item(self.db, candidate["observation_id"])
+        self.assertEqual(item["state"], "fonte_oficial_localizada")
+        self.assertIsNone(item["document_id"])
+
+    def test_register_official_sets_document_type(self):
+        candidate = self._seed_candidate(_candidate(1, "C"))
+        confirmation.enqueue_from_candidates(self.db, [candidate])
+        resolver = lambda c: {"official_url": "https://www.in.gov.br/web/dou/-/edital-x-1",
+                              "source": "DOU", "title": "Edital de Abertura nº 1"}
+        confirmation.process_batch(self.db, resolvers=[resolver], limit=5,
+                                   transport=_html_transport(b"<p>10 vagas imediatas.</p>"))
+        with closing(connect_documents(self.db)) as conn:
+            tipos = {r[0] for r in conn.execute("SELECT tipo_documental FROM documentos")}
+        self.assertIn("edital_abertura", tipos)
 
     def test_select_batch_orders_by_priority_and_limits(self):
         candidates = [
@@ -344,11 +383,26 @@ class ReconcileTest(QueueTestBase):
         self.assertEqual(report["coincidente"], 0)
 
 
+class MetricsTest(QueueTestBase):
+    def test_metrics_count_distinct_documents(self):
+        candidate = self._seed_candidate(_candidate(1, "C"))
+        confirmation.enqueue_from_candidates(self.db, [candidate])
+        resolver = lambda c: {"official_url": "https://www.in.gov.br/web/dou/-/x-1",
+                              "source": "DOU", "title": "Edital"}
+        confirmation.process_batch(self.db, resolvers=[resolver], limit=5,
+                                   transport=_html_transport(b"<p>10 vagas imediatas.</p>"))
+        m = confirmation.metrics(self.db)
+        self.assertEqual(m["selected"], 1)
+        self.assertGreaterEqual(m["documents_found"], 1)
+        self.assertEqual(m["documents_recovered"], 1)
+        self.assertGreaterEqual(m["proposals"], 1)
+        self.assertEqual(m["reviews"], 0)  # nada auto-validado
+
+
 def _html_transport(body):
     def transport(url, timeout, limit):
         return dict(status=200, final_url=url, content_type="text/html", peer_ip="8.8.8.8", body=body)
     return transport
-
 
 if __name__ == "__main__":
     unittest.main()

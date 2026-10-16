@@ -392,7 +392,7 @@ const richDetails = Radar.renderDocumentDetails(doc, {
   roles: [{id: 'role-1', name: 'Professor de Educação Infantil'}],
   role_reconciliations: [{label: 'Prof. Nivel II Infantil', role_id: 'role-1'}],
   documents: [
-    {id: 'doc-edital', kind: 'edital', title: 'Edital 001', official_url: 'https://g.gov/e.pdf',
+    {id: 'doc-edital', kind: 'edital', document_type: 'edital_abertura', title: 'Edital 001', official_url: 'https://g.gov/e.pdf',
      state: 'baixado', versions: [{id: 'ver-edital', extraction_state: 'parcial'}], related_document_ids: []},
     {id: 'doc-retif', kind: 'retificacao', title: 'Retificação 001', official_url: 'https://g.gov/r.pdf',
      state: 'baixado', versions: [{id: 'ver-retif', extraction_state: 'parcial'}], related_document_ids: ['doc-edital']}
@@ -421,6 +421,7 @@ assert.ok(richText.includes('Reconciliação de cargos'), 'seção de reconcilia
 assert.ok(richText.includes('Professor de Educação Infantil'), 'cargo reconciliado visível');
 assert.ok(richText.includes('Vinculado a'), 'vínculo entre documentos visível');
 assert.ok(richText.includes('Documento doc-edit') || richText.includes('doc-edital') || richText.includes('Documento doc-'), 'documento de origem da evidência identificável');
+assert.ok(richText.includes('Edital de abertura'), 'tipo documental fino exibido (edital de abertura)');
 
 // Painel de monitoramento: distingue nova publicação de alteração técnica.
 const monitoring = Radar.renderMonitoring(doc, {

@@ -164,6 +164,28 @@ class DiscoverTest(unittest.TestCase):
         self.assertEqual(len(candidates), 3)
         self.assertTrue(all("tjap26" in c["source_identifier"] for c in candidates))
 
+    def test_refresh_follows_new_document_on_known_contest(self):
+        # Frente B: uma retificação publicada DEPOIS da primeira visita é captada
+        # pela revisão incremental de concursos conhecidos.
+        from radar.document_store import register_document
+        for candidate in self._discover(max_new_details=5):
+            register_document(self.db, candidate)
+        self.details["tjap26"] = detail_html("Concurso TJAP", "Em Andamento", [
+            ("2026-10-05", "Edital", "https://conhecimento.fgv.br/sites/default/files/concursos/tjap.pdf"),
+            ("2026-10-13", "Retificação", "https://conhecimento.fgv.br/sites/default/files/concursos/tjap-ret.pdf"),
+            ("2026-10-20", "2ª Retificação", "https://conhecimento.fgv.br/sites/default/files/concursos/tjap-ret2.pdf"),
+        ])
+        again = self._discover(max_new_details=0, max_refresh_details=2)
+        new = [c for c in again if c["official_url"].endswith("tjap-ret2.pdf")]
+        self.assertEqual(len(new), 1)
+        self.assertEqual(new[0]["kind"], "retificacao")
+
+    def test_refresh_off_by_default_keeps_discovery_idempotent(self):
+        from radar.document_store import register_document
+        for candidate in self._discover(max_new_details=5):
+            register_document(self.db, candidate)
+        self.assertEqual(self._discover(max_new_details=5), [])
+
     def test_empty_first_page_raises(self):
         with self.assertRaises(ValueError):
             fgv.discover(self.db, "<html><body>sem concursos</body></html>",

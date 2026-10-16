@@ -22,7 +22,8 @@ QUEUE_STATES = (
     "confirmacao_parcial", "nao_localizado", "inconclusivo", "falhou", "concluido",
 )
 # Estados finais que podem ser reprocessados após o intervalo de retentativa.
-RETRYABLE_STATES = ("falhou", "nao_localizado", "inconclusivo", "documento_localizado")
+RETRYABLE_STATES = ("falhou", "nao_localizado", "inconclusivo", "documento_localizado",
+                    "fonte_oficial_localizada")
 DEFAULT_BATCH_LIMIT = 10
 DEFAULT_STALE_MINUTES = 60
 RETRY_BACKOFF_MINUTES = 60
@@ -261,6 +262,7 @@ def _resolve(resolvers, candidate):
     """
     errored = 0
     total = 0
+    fallback = None
     for resolver in resolvers:
         total += 1
         fn = resolver if callable(resolver) else getattr(resolver, "resolve", None)
@@ -273,7 +275,12 @@ def _resolve(resolvers, candidate):
             errored += 1
             continue
         if resolution:
-            return resolution, False
+            if not resolution.get("ambiguity"):
+                return resolution, False  # casamento não ambíguo: para aqui
+            if fallback is None:
+                fallback = resolution  # guarda o ambíguo como reserva
+    if fallback is not None:
+        return fallback, False
     return None, bool(total) and errored == total
 
 
@@ -320,6 +327,15 @@ def process_batch(db_path, *, resolvers=None, limit: int = DEFAULT_BATCH_LIMIT, 
                         ambiguity=resolution["ambiguity"], next_attempt_at=_backoff(now))
                 _bump("inconclusivo")
                 continue
+            if resolution.get("no_download"):
+                # Página oficial localizada, sem arquivo recuperável: registra a referência
+                # sem baixar (não confunde página com edital processado).
+                _finish(db_path, observation_id, state="fonte_oficial_localizada", now=now,
+                        reason=resolution.get("reason") or "página oficial localizada",
+                        official_url=resolution["official_url"], official_source=resolution.get("source"),
+                        next_attempt_at=_backoff(now))
+                _bump("fonte_oficial_localizada")
+                continue
 
             state, document_id = _register_official(db_path, observation_id, candidate, resolution,
                                                     transport=transport, analyze=analyze)
@@ -359,12 +375,15 @@ def _backoff(now: str, minutes: int = RETRY_BACKOFF_MINUTES) -> str:
 def _register_official(db_path, observation_id, candidate, resolution, *, transport, analyze):
     """Registra o documento oficial; devolve (state, document_id|None)."""
     now = _now()
+    title = resolution.get("title") or candidate.get("title") or "Documento oficial"
     try:
+        from radar import document_types
         document_id = register_document(db_path, {
             "observation_id": observation_id,
-            "kind": classify_official(resolution.get("title") or candidate.get("title") or ""),
+            "kind": classify_official(title),
+            "document_type": resolution.get("document_type") or document_types.classify(title),
             "official_url": resolution["official_url"],
-            "title": resolution.get("title") or candidate.get("title") or "Documento oficial",
+            "title": title,
             "discovery_url": resolution["official_url"],
             "discovery_method": "automatico",
             "discovered_at": now,
@@ -511,5 +530,52 @@ def reconcile(db_path, *, now=None) -> dict:
                 result["details"].append({"competition_id": competition_id, "match": "coincidente",
                                           "other_title": matches[0][0]})
         return result
+    finally:
+        conn.close()
+
+
+def metrics(db_path) -> dict:
+    """Métricas de efetividade da confirmação (contagens distintas, sem inflar).
+
+    Uma página e um PDF **não** são duas oportunidades; propostas **não** são valores
+    validados. Separa selecionados, páginas localizadas, documentos encontrados/recuperados,
+    editais, anexos, retificações, propostas, pendências, falhas e ambiguidades.
+    """
+    conn = connect_documents(db_path)
+    try:
+        states = {state: 0 for state in QUEUE_STATES}
+        for state, total in conn.execute("SELECT state, count(*) FROM fila_confirmacao GROUP BY state"):
+            states[state] = total
+        selected = sum(states.values())
+        pages = conn.execute(
+            "SELECT count(*) FROM documentos WHERE tipo_documental='pagina_concurso'").fetchone()[0]
+        by_type = {row[0]: row[1] for row in conn.execute(
+            "SELECT coalesce(tipo_documental,'desconhecido'), count(*) FROM documentos GROUP BY 1")}
+        documents_found = sum(by_type.values())
+        recovered = conn.execute(
+            "SELECT count(DISTINCT document_id) FROM versoes_documento").fetchone()[0]
+        processed = conn.execute(
+            "SELECT count(DISTINCT document_id) FROM versoes_documento "
+            "WHERE extraction_state IN ('concluida','parcial')").fetchone()[0]
+        editais = by_type.get("edital_abertura", 0) + by_type.get("edital_retificado", 0)
+        return {
+            "selected": selected,
+            "pages_found": pages,
+            "documents_found": documents_found,
+            "documents_recovered": recovered,
+            "documents_processed": processed,
+            "editais": editais,
+            "anexos": by_type.get("anexo", 0),
+            "retificacoes": by_type.get("retificacao", 0),
+            "proposals": conn.execute("SELECT count(*) FROM propostas_campo").fetchone()[0],
+            "reviews": conn.execute("SELECT count(*) FROM revisoes_campo").fetchone()[0],
+            "pending": states.get("pendente", 0),
+            "review_pending": states.get("revisao_pendente", 0),
+            "not_found": states.get("nao_localizado", 0),
+            "inconclusive": states.get("inconclusivo", 0),
+            "failed": states.get("falhou", 0),
+            "by_state": states,
+            "by_type": by_type,
+        }
     finally:
         conn.close()

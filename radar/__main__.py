@@ -256,6 +256,12 @@ def build_parser() -> argparse.ArgumentParser:
     conf_item.set_defaults(func=lambda args: print(json.dumps(
         confirmation.get_item(args.db, args.observation_id), ensure_ascii=False)))
 
+    conf_metrics = subparsers.add_parser('confirmacao-metricas',
+        help='métricas de efetividade da confirmação documental')
+    conf_metrics.add_argument('--db', required=True)
+    conf_metrics.set_defaults(func=lambda args: print(json.dumps(
+        confirmation.metrics(args.db), ensure_ascii=False)))
+
     return parser
 
 

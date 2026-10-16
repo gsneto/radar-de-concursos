@@ -30,10 +30,11 @@ def _now() -> str:
 
 
 def default_sources() -> list[dict]:
-    """Fontes oficiais autorizadas: Guajará-Mirim (artigo), DOU (Seção 3) e FGV."""
+    """Fontes oficiais autorizadas: Guajará-Mirim (artigo), DOU (Seção 3), FGV e Quadrix."""
     from radar.dou_source import dou_source, fetch_article
     from radar.fgv_source import fgv_source
     from radar.pci_source import pci_source
+    from radar.quadrix_source import quadrix_source
     return [
         {
             "source_url": SOURCE_URL,
@@ -44,6 +45,8 @@ def default_sources() -> list[dict]:
         dou_source(article_fetcher=fetch_article),
         # FGV: catálogo de concursos, com identidade por concurso (multi-concurso).
         fgv_source(),
+        # Quadrix: banca com páginas server-rendered e documentos públicos (multi-concurso).
+        quadrix_source(),
         # PCI: canal complementar de descoberta (agregador não oficial), via MCP.
         pci_source(),
     ]

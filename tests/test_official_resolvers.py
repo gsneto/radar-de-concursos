@@ -47,6 +47,14 @@ class FgvResolverTest(unittest.TestCase):
         resolver = orv.FgvCatalogResolver(catalog_fetcher=boom)
         self.assertIsNone(resolver.resolve({"title": "Qualquer Concurso Público"}))
 
+    def test_tie_marks_ambiguity(self):
+        resolver = orv.FgvCatalogResolver(catalog_fetcher=lambda: fgv_catalog([
+            ("a", "Concurso Público para Tribunal de Justiça do Estado do Amapá - Juiz Substituto"),
+            ("b", "Concurso Público para Tribunal de Justiça do Estado do Amapá - Juiz Substituto")]))
+        resolution = resolver.resolve({"title": "Tribunal de Justiça do Estado do Amapá"})
+        self.assertIsNotNone(resolution)
+        self.assertIsNotNone(resolution["ambiguity"])
+
 
 class DouResolverTest(unittest.TestCase):
     def test_matches_dou_materia(self):
@@ -94,10 +102,79 @@ class DouResolverTest(unittest.TestCase):
         self.assertIsNone(resolver.resolve({"title": "Qualquer Coisa"}))
 
 
+class QuadrixResolverTest(unittest.TestCase):
+    def _catalog(self, entries):
+        from tests.test_quadrix_source import catalog_html
+        return catalog_html(entries)
+
+    def _detail(self, title, documents):
+        from tests.test_quadrix_source import detail_html
+        return detail_html(title, documents)
+
+    def test_prefers_full_edital_pdf(self):
+        catalog = self._catalog([("3056", "Secretaria de Desenvolvimento Social do Distrito Federal (Sedes/DF)", "Concurso Público")])
+        detail = self._detail("Sedes/DF", [
+            ("Edital nº 1 (Abertura)", "https://anexos-r2.selecao.net.br/uploads/861/concursos/3056/anexos/ed.pdf", "09/09/2026"),
+            ("Edital nº 6 (Retificação)", "https://anexos-r2.selecao.net.br/uploads/861/concursos/3056/anexos/ret.pdf", "18/09/2026"),
+        ])
+        resolver = orv.QuadrixResolver(catalog_fetcher=lambda: catalog,
+                                       detail_fetcher=lambda cid: detail)
+        resolution = resolver.resolve({"title": "Secretaria de Desenvolvimento Social do Distrito Federal"})
+        self.assertIsNotNone(resolution)
+        self.assertTrue(resolution["official_url"].endswith("/anexos/ed.pdf"))
+        self.assertEqual(resolution["source"], "Instituto Quadrix")
+
+    def test_falls_back_to_page_without_edital(self):
+        catalog = self._catalog([("3049", "Conselho Regional de Corretores de Imóveis da 13ª Região (CRECI-ES)", "Concurso Público")])
+        detail = self._detail("CRECI-ES", [
+            ("Comunicado", "https://anexos-r2.selecao.net.br/uploads/861/concursos/3049/anexos/c.pdf", "01/10/2026"),
+        ])
+        resolver = orv.QuadrixResolver(catalog_fetcher=lambda: catalog,
+                                       detail_fetcher=lambda cid: detail)
+        resolution = resolver.resolve({"title": "Conselho Regional de Corretores de Imóveis da 13ª Região"})
+        self.assertIsNotNone(resolution)
+        self.assertEqual(resolution["official_url"], "https://www.quadrix.org.br/informacoes/3049/")
+
+    def test_no_match_returns_none(self):
+        catalog = self._catalog([("1", "Órgão Totalmente Distante", "Concurso Público")])
+        resolver = orv.QuadrixResolver(catalog_fetcher=lambda: catalog, detail_fetcher=lambda cid: "")
+        self.assertIsNone(resolver.resolve({"title": "Prefeitura de Cidade Remota"}))
+
+    def test_tie_between_similar_certames_is_ambiguous(self):
+        catalog = self._catalog([
+            ("1111", "Hospital das Clínicas da Faculdade de Medicina da USP", "Concurso Público"),
+            ("2222", "Hospital das Clínicas da Faculdade de Medicina da USP", "Concurso Público"),
+        ])
+        detail = self._detail("HC", [
+            ("Edital nº 1 (Abertura)",
+             "https://anexos-r2.selecao.net.br/uploads/861/concursos/1111/anexos/ed.pdf", "09/09/2026"),
+        ])
+        resolver = orv.QuadrixResolver(catalog_fetcher=lambda: catalog,
+                                       detail_fetcher=lambda cid: detail)
+        resolution = resolver.resolve({"title": "Hospital das Clínicas da Faculdade de Medicina da USP"})
+        self.assertIsNotNone(resolution)
+        self.assertIsNotNone(resolution["ambiguity"])
+
+    def test_page_without_edital_flags_no_download(self):
+        catalog = self._catalog([("3049", "Conselho Regional de Corretores de Imóveis da 13ª Região (CRECI-ES)", "Concurso Público")])
+        detail = self._detail("CRECI-ES", [
+            ("Comunicado", "https://anexos-r2.selecao.net.br/uploads/861/concursos/3049/anexos/c.pdf", "01/10/2026"),
+        ])
+        resolver = orv.QuadrixResolver(catalog_fetcher=lambda: catalog, detail_fetcher=lambda cid: detail)
+        resolution = resolver.resolve({"title": "Conselho Regional de Corretores de Imóveis da 13ª Região"})
+        self.assertTrue(resolution.get("no_download"))
+
+    def test_fetch_failure_returns_none(self):
+        def boom():
+            raise TimeoutError("caiu")
+        resolver = orv.QuadrixResolver(catalog_fetcher=boom)
+        self.assertIsNone(resolver.resolve({"title": "Qualquer Concurso Público"}))
+
+
 class DefaultChainTest(unittest.TestCase):
-    def test_default_resolvers_are_fgv_and_dou(self):
+    def test_default_resolvers_are_fgv_quadrix_and_dou(self):
         names = [r.name for r in orv.default_resolvers()]
-        self.assertEqual(names, ["fgv", "dou"])
+        self.assertEqual(names, ["fgv", "quadrix", "dou"])
 
 
 if __name__ == "__main__":

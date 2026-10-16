@@ -38,6 +38,23 @@
     outro: 'Documento'
   };
 
+  // Classificação documental fina (tipo_documental); cai no KIND_LABEL se ausente.
+  var DOCUMENT_TYPE_LABEL = {
+    edital_abertura: 'Edital de abertura',
+    edital_retificado: 'Edital retificado',
+    retificacao: 'Retificação',
+    anexo: 'Anexo',
+    cronograma: 'Cronograma',
+    comunicado: 'Comunicado',
+    resultado: 'Resultado',
+    convocacao: 'Convocação',
+    homologacao: 'Homologação',
+    gabarito: 'Gabarito',
+    prova: 'Prova',
+    pagina_concurso: 'Página do concurso',
+    outro: 'Documento'
+  };
+
   // Estado do ciclo e da fonte de monitoramento (rótulos sustentados pelo backend).
   var CYCLE_STATE = {
     em_andamento: {label: 'Em andamento', variant: 'unknown'},
@@ -285,7 +302,8 @@
       var row = el(document, 'article', 'doc');
       var head = el(document, 'div', 'doc__head');
       head.appendChild(el(document, 'strong', 'doc__title', formatText(item.title)));
-      head.appendChild(badge(document, KIND_LABEL[item.kind] || formatText(item.kind), 'kind'));
+      var typeLabel = DOCUMENT_TYPE_LABEL[item.document_type] || KIND_LABEL[item.kind] || formatText(item.kind);
+      head.appendChild(badge(document, typeLabel, 'kind'));
       head.appendChild(badge(document, DOC_STATE_LABEL[item.state] || formatText(item.state), 'neutral'));
       row.appendChild(head);
 

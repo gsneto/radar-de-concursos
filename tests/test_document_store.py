@@ -69,6 +69,25 @@ class MigrationTest(unittest.TestCase):
             self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION)
             self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
 
+    def test_v5_database_reads_without_tipo_documental_column(self):
+        # Leitura de banco não migrado (v5) não pode quebrar por falta da coluna nova.
+        from radar.document_store import (
+            ensure_observation, register_document, get_competition_details)
+        migrate_document_schema(self.db)
+        obs = ensure_observation(self.db, "https://www.in.gov.br/web/dou/-/x-1", "x")
+        register_document(self.db, {"observation_id": obs, "kind": "outro",
+            "official_url": "https://www.in.gov.br/web/dou/-/x-1", "title": "Doc",
+            "discovery_url": "https://www.in.gov.br/web/dou/-/x-1", "discovery_method": "automatico",
+            "discovered_at": "2026-10-16T12:00:00+00:00"})
+        with closing(sqlite3.connect(self.db)) as conn:
+            contest_id = conn.execute("SELECT contest_id FROM observacoes_concurso").fetchone()[0]
+            conn.execute("ALTER TABLE documentos DROP COLUMN tipo_documental")
+            conn.execute("PRAGMA user_version=5")
+            conn.commit()
+        detail = get_competition_details(self.db, contest_id)  # não deve levantar
+        self.assertIsNone(detail["documents"][0]["document_type"])
+
+
     def test_migration_refuses_incomplete_v2_without_silently_repairing_it(self):
         migrate_document_schema(self.db)
         with closing(sqlite3.connect(self.db)) as conn:

@@ -12,6 +12,8 @@ import re
 import urllib.request
 from datetime import datetime, timezone
 
+from radar.document_types import classify as _classify_type, kind_for as _kind_for
+
 FGV_SOURCE_ID = "fgv-conhecimento"
 FGV_SOURCE_NAME = "FGV Conhecimento"
 FGV_AGENCY = "Fundação Getulio Vargas (FGV Conhecimento)"
@@ -79,16 +81,13 @@ def parse_catalog(html: str) -> list[dict]:
 
 
 def classify_document(title: str) -> str:
-    """Tipo documental pelo título. Um edital apenas "retificado" continua edital."""
-    norm = _TAGS_RE.sub(" ", title or "")
-    norm = " ".join(_html.unescape(norm).lower().split())
-    # Retificação quando o título começa pelo marcador (ex.: "1ª Retificação",
-    # "Retificação do Edital") — mas "Edital (retificado em ...)" permanece edital.
-    if re.match(r"^\s*\d*\s*[ªºo]?\s*retifica", norm) or ("retifica" in norm and "edital" not in norm):
-        return "retificacao"
-    if "edital" in norm:
-        return "edital"
-    return "outro"
+    """Bucket de armazenamento (`kind`) pelo título. "Edital retificado" continua edital."""
+    return _kind_for(_classify_type(_TAGS_RE.sub(" ", title or "")))
+
+
+def document_type(title: str) -> str:
+    """Tipo documental fino pelo título (edital_abertura, retificacao, anexo, ...)."""
+    return _classify_type(_TAGS_RE.sub(" ", title or ""))
 
 
 def parse_detail(html: str) -> dict:
@@ -119,7 +118,8 @@ def parse_detail(html: str) -> dict:
         if url in seen:
             continue
         seen.add(url)
-        documents.append({"title": label, "url": url, "date": date})
+        documents.append({"title": label, "url": url, "date": date,
+                          "document_type": document_type(label)})
     return {"title": title, "status": status, "documents": documents}
 
 
@@ -158,9 +158,11 @@ def to_candidate(document: dict, entry: dict, observation_id: str, discovered_at
     url = document["url"]
     if url.startswith("/"):
         url = FGV_DETAIL_BASE + url
+    doc_type = document.get("document_type") or document_type(document["title"])
     return {
         "observation_id": observation_id,
-        "kind": classify_document(document["title"]),
+        "kind": _kind_for(doc_type),
+        "document_type": doc_type,
         "official_url": url,
         "title": document["title"],
         "discovery_url": entry["url"],
@@ -189,6 +191,7 @@ def _page_candidate(entry: dict, detail: dict, observation_id: str, discovered_a
     return {
         "observation_id": observation_id,
         "kind": "outro",
+        "document_type": "pagina_concurso",
         "official_url": entry["url"],
         "title": detail["title"] or entry["title"],
         "discovery_url": entry["url"],
@@ -203,12 +206,15 @@ def _page_candidate(entry: dict, detail: dict, observation_id: str, discovered_a
 
 
 def discover(db_path, catalog_html: str, *, catalog_fetcher=fetch_catalog, detail_fetcher=fetch_detail,
-             max_pages: int = 3, max_new_details: int = 3, discovered_at: str | None = None) -> list[dict]:
+             max_pages: int = 3, max_new_details: int = 3, max_refresh_details: int = 0,
+             discovered_at: str | None = None) -> list[dict]:
     """Descobre concursos e documentos da FGV, com identidade por concurso.
 
     Percorre o catálogo (até o fim real ou `max_pages`), garante a observação de cada
-    concurso e consulta a página de detalhe apenas de **concursos novos**, limitado a
-    `max_new_details` por ciclo. Devolve candidatos documentais. Um catálogo sem
+    concurso e consulta a página de detalhe de **concursos novos** (até `max_new_details`
+    por ciclo). Com `max_refresh_details > 0`, **reconsulta** as páginas conhecidas mais
+    antigas por `last_checked_at` para captar retificações/anexos publicados depois — a
+    idempotência por URL descarta os já registrados e nada é apagado. Um catálogo sem
     entradas na primeira página é tratado como falha (não como "sem novidades").
     """
     from contextlib import closing
@@ -244,15 +250,19 @@ def discover(db_path, catalog_html: str, *, catalog_fetcher=fetch_catalog, detai
 
     candidates = []
     details_fetched = 0
+    refresh_fetched = 0
+    pending_refresh = []
     for entry in entries:
         observation_id = ensure_observation(db_path, entry["url"], entry["slug"])
         with closing(connect_documents(db_path)) as conn:
             known = conn.execute(
-                "SELECT count(*) FROM documentos WHERE observation_id=?", (observation_id,)).fetchone()[0]
-        if known:
-            continue  # concurso conhecido: não rebaixa nem reconsulta detalhes
+                "SELECT count(*), coalesce(max(last_checked_at),'') FROM documentos WHERE observation_id=?",
+                (observation_id,)).fetchone()
+        if known[0]:
+            pending_refresh.append((known[1], entry, observation_id))
+            continue
         if details_fetched >= max_new_details:
-            break
+            continue
         try:
             detail_html = detail_fetcher(entry["slug"])
         except Exception:
@@ -262,11 +272,29 @@ def discover(db_path, catalog_html: str, *, catalog_fetcher=fetch_catalog, detai
         candidates.append(_page_candidate(entry, detail, observation_id, discovered_at))
         for document in detail["documents"]:
             candidates.append(to_candidate(document, entry, observation_id, discovered_at))
+
+    # Revisão incremental: as páginas conhecidas mais antigas primeiro.
+    pending_refresh.sort(key=lambda item: (item[0], item[1]["slug"]))
+    for _, entry, observation_id in pending_refresh:
+        if refresh_fetched >= max_refresh_details:
+            break
+        try:
+            detail_html = detail_fetcher(entry["slug"])
+        except Exception:
+            continue
+        refresh_fetched += 1
+        detail = parse_detail(detail_html)
+        with closing(connect_documents(db_path)) as conn, conn:
+            conn.execute(
+                "UPDATE documentos SET last_checked_at=? WHERE observation_id=? AND official_url=?",
+                (discovered_at, observation_id, entry["url"]))
+        for document in detail["documents"]:
+            candidates.append(to_candidate(document, entry, observation_id, discovered_at))
     return candidates
 
 
 def fgv_source(*, catalog_fetcher=fetch_catalog, detail_fetcher=fetch_detail,
-               max_pages: int = 3, max_new_details: int = 3) -> dict:
+               max_pages: int = 3, max_new_details: int = 3, max_refresh_details: int = 2) -> dict:
     """Descritor da fonte FGV para o monitoramento (multi-concurso)."""
     return {
         "id": FGV_SOURCE_ID,
@@ -278,5 +306,6 @@ def fgv_source(*, catalog_fetcher=fetch_catalog, detail_fetcher=fetch_detail,
         "fetch": lambda: catalog_fetcher(0),
         "discover": lambda db_path, html: discover(
             db_path, html, catalog_fetcher=catalog_fetcher, detail_fetcher=detail_fetcher,
-            max_pages=max_pages, max_new_details=max_new_details),
+            max_pages=max_pages, max_new_details=max_new_details,
+            max_refresh_details=max_refresh_details),
     }

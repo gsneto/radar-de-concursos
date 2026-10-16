@@ -178,6 +178,10 @@ _V5_COLUMNS = {
                          "reason", "ambiguity", "result_json", "history_json", "updated_at"},
 }
 
+# v6: classificação documental fina (aditivo; coluna nova, sem tocar o `kind`).
+_V6_ADD_COLUMN = "ALTER TABLE documentos ADD COLUMN tipo_documental TEXT"
+_V6_COLUMNS = {"documentos": {"tipo_documental"}}
+
 _V2_COLUMNS = {
     "concursos_identidade": {"id", "created_at"},
     "observacoes_concurso": {"id", "contest_id", "source_url", "competition_id", "observed_at"},
@@ -197,10 +201,10 @@ _V2_COLUMNS = {
 }
 
 # Versão corrente do esquema documental (v2 base + reconciliação/hash + monitoramento + fila).
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
-# Versões que as rotas de leitura aceitam sem migrar (v2..v5).
-_READABLE_VERSIONS = (2, 3, 4, SCHEMA_VERSION)
+# Versões que as rotas de leitura aceitam sem migrar (v2..v6).
+_READABLE_VERSIONS = (2, 3, 4, 5, SCHEMA_VERSION)
 
 
 def _validate_schema(conn, statements, columns_by_table, version_label):
@@ -260,11 +264,17 @@ def _apply_v5(conn) -> None:
             conn.execute(statement)
 
 
+def _apply_v6(conn) -> None:
+    """Adiciona a coluna de classificação fina, tolerando banco parcialmente atualizado."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(documentos)")}
+    if "tipo_documental" not in columns:
+        conn.execute(_V6_ADD_COLUMN)
+
+
 def connect_documents(db_path) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path, timeout=15)
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
-
 
 def migrate_document_schema(db_path) -> None:
     """Aplica migração aditiva até a versão corrente, atomicamente e sem tocar v1."""
@@ -272,14 +282,15 @@ def migrate_document_schema(db_path) -> None:
     try:
         conn.execute("BEGIN IMMEDIATE")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 2, 3, 4, SCHEMA_VERSION):
+        if version not in (0, 2, 3, 4, 5, SCHEMA_VERSION):
             raise ValueError(f"versão de esquema não suportada: {version}")
         _v3_extra = dict(
             versoes_documento=_V2_COLUMNS["versoes_documento"] | {"comparison_sha256"},
             reconciliacoes_cargo={"id", "contest_id", "label", "role_id", "reconciled_at", "reviewer", "reason"})
+        _v6_extra = dict(_V6_COLUMNS, documentos=_V2_COLUMNS["documentos"] | {"tipo_documental"})
         if version == SCHEMA_VERSION:
             _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL,
-                             dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS),
+                             dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v6_extra),
                              f"v{SCHEMA_VERSION}")
         else:
             if version == 2:
@@ -289,12 +300,16 @@ def migrate_document_schema(db_path) -> None:
             elif version == 4:
                 _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL,
                                  dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS), "v4")
+            elif version == 5:
+                _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL,
+                                 dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS), "v5")
             else:
                 for statement in _DDL:
                     conn.execute(statement)
             _apply_v3(conn)
             _apply_v4(conn)
             _apply_v5(conn)
+            _apply_v6(conn)
             conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         conn.commit()
     except BaseException:
@@ -379,15 +394,18 @@ def register_document(db_path, candidate: dict) -> str:
         ).fetchone():
             raise ValueError("URL já atribuída a outra observação deste concurso")
         document_id = str(uuid4())
+        document_type = candidate.get("document_type")
+        if document_type is not None and not isinstance(document_type, str):
+            raise ValueError("tipo documental inválido")
         conn.execute(
             """INSERT INTO documentos
             (id,contest_id,observation_id,role_id,kind,official_url,title,discovered_at,
-            discovery_url,discovery_method,issuer,published_at,source_identifier)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            discovery_url,discovery_method,issuer,published_at,source_identifier,tipo_documental)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (document_id, contest_id, candidate["observation_id"], role_id, candidate["kind"],
              url, candidate["title"], candidate["discovered_at"], discovery_url,
              candidate["discovery_method"], candidate.get("issuer"), candidate.get("published_at"),
-             candidate.get("source_identifier")),
+             candidate.get("source_identifier"), document_type),
         )
         conn.execute("INSERT INTO documento_urls VALUES (?,?,?,1)", (document_id, url, candidate["discovered_at"]))
         conn.execute(
@@ -827,13 +845,16 @@ def get_competition_details(db_path, contest_id: str) -> dict | None:
             ]
             roles.append({"id": role_id, "name": name, "specialty": specialty, "observations": role_observations})
         documents = []
+        # Bancos v2..v5 (não migrados) não têm a coluna; a leitura degrada para NULL.
+        doc_columns = {row[1] for row in conn.execute("PRAGMA table_info(documentos)")}
+        type_expr = "tipo_documental" if "tipo_documental" in doc_columns else "NULL"
         for row in conn.execute(
-            """SELECT id,kind,official_url,final_url,issuer,published_at,title,discovery_url,
-            discovery_method,discovered_at,last_checked_at FROM documentos
+            f"""SELECT id,kind,official_url,final_url,issuer,published_at,title,discovery_url,
+            discovery_method,discovered_at,last_checked_at,{type_expr} FROM documentos
             WHERE contest_id=? ORDER BY discovered_at,id""", (contest_id,)
         ):
             (doc_id, kind, official_url, final_url, issuer, published_at, title,
-             discovery_url, discovery_method, discovered_at, last_checked_at) = row
+             discovery_url, discovery_method, discovered_at, last_checked_at, tipo_documental) = row
             versions = [
                 dict(zip(("id","sha256","comparison_sha256","fetched_at","published_at","fetched_url",
                           "content_type","byte_size","extraction_state","error_code"), version))
@@ -854,7 +875,8 @@ def get_competition_details(db_path, contest_id: str) -> dict | None:
                     """SELECT id,attempted_at,state,http_status,error_code,final_url
                     FROM tentativas_download WHERE document_id=? ORDER BY attempted_at,id""", (doc_id,))
             ]
-            documents.append(dict(id=doc_id, kind=kind, official_url=official_url, final_url=final_url,
+            documents.append(dict(id=doc_id, kind=kind, document_type=tipo_documental,
+                                  official_url=official_url, final_url=final_url,
                                   issuer=issuer, published_at=published_at, title=title,
                                   discovery_url=discovery_url, discovery_method=discovery_method,
                                   discovered_at=discovered_at, last_checked_at=last_checked_at,

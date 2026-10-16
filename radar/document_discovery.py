@@ -19,6 +19,10 @@ _AUTHORIZED_SOURCES = (
     # Terceira fonte oficial: FGV Conhecimento (páginas e arquivos publicados).
     ("conhecimento.fgv.br", lambda path: path.startswith(
         ("/concursos/", "/sites/default/files/concursos/"))),
+    # Quarta fonte oficial: Quadrix (anexos públicos dos certames). O host do site
+    # (www.quadrix.org.br) NÃO é autorizado em /uploads/ (robots o proíbe); apenas o
+    # CDN de anexos, cujo robots.txt não impõe restrições.
+    ("anexos-r2.selecao.net.br", lambda path: path.startswith("/uploads/")),
 )
 
 

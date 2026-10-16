@@ -17,6 +17,7 @@ import unicodedata
 import urllib.request
 
 from radar import dou_source
+from radar.quadrix_source import QUADRIX_AGENCY
 
 FGV_CATALOG_URL = "https://conhecimento.fgv.br/concursos"
 DOU_SEARCH_URL = "https://www.in.gov.br/consulta/-/buscar/dou"
@@ -78,6 +79,7 @@ class FgvCatalogResolver:
             return None
         best = None
         best_score = 0
+        ties = 0
         for entry in entries:
             entry_tokens = _tokens(entry.get("title") or "")
             shared = cand_tokens & entry_tokens
@@ -85,10 +87,17 @@ class FgvCatalogResolver:
                 continue
             score = len(shared)
             if score > best_score:
-                best, best_score = entry, score
+                best, best_score, ties = entry, score, 1
+            elif score == best_score:
+                ties += 1
         if best is None or best_score < 2:
             return None
-        ambiguity = None if best_score >= 3 else "correspondência parcial de título"
+        if ties > 1:
+            ambiguity = "múltiplos concursos com título semelhante no catálogo"
+        elif best_score < 3:
+            ambiguity = "correspondência parcial de título"
+        else:
+            ambiguity = None
         return {
             "official_url": best["url"], "source": "FGV Conhecimento",
             "title": best["title"], "confidence": "alta" if best_score >= 3 else "media",
@@ -160,6 +169,84 @@ class DouSearchResolver:
         }
 
 
+class QuadrixResolver:
+    """Casa o candidato com o catálogo oficial do Quadrix e prefere o edital completo."""
+
+    name = "quadrix"
+
+    def __init__(self, catalog_fetcher=None, detail_fetcher=None):
+        if catalog_fetcher is None:
+            from radar.quadrix_source import fetch_catalog
+            catalog_fetcher = lambda: fetch_catalog("todos", 1, 1000)
+        self._fetch_catalog = catalog_fetcher
+        if detail_fetcher is None:
+            from radar.quadrix_source import fetch_detail
+            detail_fetcher = fetch_detail
+        self._fetch_detail = detail_fetcher
+        self._cache = None
+
+    def _entries(self):
+        from radar.quadrix_source import parse_catalog
+        if self._cache is None:
+            self._cache = parse_catalog(self._fetch_catalog())
+        return self._cache
+
+    def _best_edital(self, entry):
+        from radar.quadrix_source import parse_detail
+        try:
+            detail = parse_detail(self._fetch_detail(entry["id"]))
+        except Exception:
+            return None
+        editais = [d for d in detail["documents"] if d["document_type"] == "edital_abertura"]
+        if not editais:
+            editais = [d for d in detail["documents"] if d["kind"] == "edital"]
+        return editais[0] if editais else None
+
+    def resolve(self, candidate: dict) -> dict | None:
+        cand_tokens = _tokens(candidate.get("title") or "")
+        if not cand_tokens:
+            return None
+        try:
+            entries = self._entries()
+        except Exception:
+            return None
+        best = None
+        best_score = 0
+        ties = 0
+        for entry in entries:
+            shared = cand_tokens & _tokens(entry.get("title") or "")
+            if not shared:
+                continue
+            score = len(shared)
+            if score > best_score:
+                best, best_score, ties = entry, score, 1
+            elif score == best_score:
+                ties += 1
+        if best is None or best_score < 2:
+            return None
+        if ties > 1:
+            ambiguity = "múltiplos certames com título semelhante no catálogo"
+        elif best_score < 3:
+            ambiguity = "correspondência parcial de título"
+        else:
+            ambiguity = None
+        edital = self._best_edital(best)
+        if edital is not None:
+            return {
+                "official_url": edital["url"], "source": QUADRIX_AGENCY,
+                "title": edital["title"], "confidence": "alta" if best_score >= 3 else "media",
+                "ambiguity": ambiguity,
+                "reason": "edital do concurso no site da banca (Quadrix)",
+            }
+        # Página oficial localizada, mas sem arquivo recuperável: registra a referência
+        # sem baixar (o host do site não é autorizado para download).
+        return {
+            "official_url": best["url"], "source": QUADRIX_AGENCY, "title": best["title"],
+            "confidence": "media", "ambiguity": ambiguity, "no_download": True,
+            "reason": "página oficial localizada; sem edital publicado recuperável",
+        }
+
+
 def default_resolvers():
-    """Cadeia padrão: FGV (banca) e DOU (federal)."""
-    return [FgvCatalogResolver(), DouSearchResolver()]
+    """Cadeia padrão: bancas (FGV, Quadrix) e depois DOU (federal)."""
+    return [FgvCatalogResolver(), QuadrixResolver(), DouSearchResolver()]
