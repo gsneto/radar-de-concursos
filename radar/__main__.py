@@ -262,6 +262,13 @@ def build_parser() -> argparse.ArgumentParser:
     conf_metrics.set_defaults(func=lambda args: print(json.dumps(
         confirmation.metrics(args.db), ensure_ascii=False)))
 
+    conf_priority = subparsers.add_parser('confirmacao-prioridades',
+        help='itens da fila por prioridade, com os sinais que a explicam')
+    conf_priority.add_argument('--db', required=True)
+    conf_priority.add_argument('--limit', type=int, default=20)
+    conf_priority.set_defaults(func=lambda args: print(json.dumps(
+        confirmation.priority_report(args.db, limit=args.limit), ensure_ascii=False)))
+
     return parser
 
 

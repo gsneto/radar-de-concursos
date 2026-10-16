@@ -220,4 +220,8 @@ def extract_field_proposals(blocks: list[dict], version_id: str, contest_id: str
     if role_id is None:
         proposals.extend(_table_proposals(blocks, contest_id, role_id))
         proposals.extend(_pdf_table_proposals(blocks, contest_id, role_id))
+        # Estratégia específica para o layout de quadro de vagas da banca Quadrix.
+        from radar import quadrix_tables
+        proposals.extend(quadrix_tables.parse_quadrix_proposals(
+            blocks, contest_id, label_prefix=LABEL_PREFIX))
     return proposals

@@ -382,6 +382,19 @@ class ReconcileTest(QueueTestBase):
         self.assertEqual(report["ambiguo"], 1)
         self.assertEqual(report["coincidente"], 0)
 
+    def test_official_match_preserves_pci_provenance(self):
+        # A fonte que confirma não apaga a descoberta original (PCI).
+        candidate = self._seed_candidate(_candidate(1, "C"))
+        confirmation.enqueue_from_candidates(self.db, [candidate])
+        resolver = lambda c: {"official_url": "https://www.in.gov.br/web/dou/-/x-1",
+                              "source": "DOU", "title": "Edital"}
+        confirmation.process_batch(self.db, resolvers=[resolver], limit=5,
+                                   transport=_html_transport(b"<p>10 vagas imediatas.</p>"))
+        with closing(connect_documents(self.db)) as conn:
+            issuers = {r[0] for r in conn.execute("SELECT issuer FROM documentos")}
+        self.assertIn("PCI Concursos (agregador)", issuers)  # proveniência preservada
+        self.assertIn("DOU", issuers)
+
 
 class MetricsTest(QueueTestBase):
     def test_metrics_count_distinct_documents(self):
@@ -397,6 +410,31 @@ class MetricsTest(QueueTestBase):
         self.assertEqual(m["documents_recovered"], 1)
         self.assertGreaterEqual(m["proposals"], 1)
         self.assertEqual(m["reviews"], 0)  # nada auto-validado
+        self.assertIn("by_source", m)
+
+    def test_source_metrics_break_down_by_issuer(self):
+        candidate = self._seed_candidate(_candidate(1, "C"))
+        confirmation.enqueue_from_candidates(self.db, [candidate])
+        resolver = lambda c: {"official_url": "https://www.in.gov.br/web/dou/-/x-1",
+                              "source": "DOU", "title": "Edital"}
+        confirmation.process_batch(self.db, resolvers=[resolver], limit=5,
+                                   transport=_html_transport(b"<p>10 vagas imediatas.</p>"))
+        by_source = confirmation.metrics(self.db)["by_source"]
+        self.assertIn("DOU", by_source)
+        self.assertEqual(by_source["DOU"]["recovered"], 1)
+        self.assertGreaterEqual(by_source["DOU"]["proposals"], 1)
+
+    def test_priority_report_is_explainable(self):
+        candidates = [
+            self._seed_candidate(_candidate(1, "Concurso TI", cargos="Analista de Sistemas")),
+            self._seed_candidate(_candidate(2, "Concurso Comum", cargos="Merendeira")),
+        ]
+        confirmation.enqueue_from_candidates(self.db, candidates)
+        report = confirmation.priority_report(self.db)
+        self.assertEqual(len(report), 2)
+        self.assertEqual(report[0]["competition_id"], "pci-1")  # TI primeiro
+        self.assertIn("cargo_ti", report[0]["signals"])
+        self.assertIn("priority_score", report[0])
 
 
 def _html_transport(body):

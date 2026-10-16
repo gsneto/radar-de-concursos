@@ -576,6 +576,76 @@ def metrics(db_path) -> dict:
             "failed": states.get("falhou", 0),
             "by_state": states,
             "by_type": by_type,
+            "by_source": source_metrics(conn),
         }
+    finally:
+        conn.close()
+
+
+def source_metrics(conn) -> dict:
+    """Métricas por origem (issuer): documentos, recuperados, processados, propostas.
+
+    Diferencia a contribuição de cada fonte (PCI, DOU, FGV, Quadrix) sem contar página
+    e PDF como duas oportunidades: ``documents`` conta registros; ``recovered`` e
+    ``processed`` contam documentos distintos com versão.
+    """
+    docs = dict(conn.execute(
+        "SELECT coalesce(issuer,'(sem fonte)'), count(*) FROM documentos GROUP BY 1"))
+    recovered = dict(conn.execute(
+        """SELECT coalesce(d.issuer,'(sem fonte)'), count(DISTINCT v.document_id)
+        FROM documentos d JOIN versoes_documento v ON v.document_id=d.id GROUP BY 1"""))
+    processed = dict(conn.execute(
+        """SELECT coalesce(d.issuer,'(sem fonte)'), count(DISTINCT v.document_id)
+        FROM documentos d JOIN versoes_documento v ON v.document_id=d.id
+        WHERE v.extraction_state IN ('concluida','parcial') GROUP BY 1"""))
+    proposals = dict(conn.execute(
+        """SELECT coalesce(d.issuer,'(sem fonte)'), count(*)
+        FROM propostas_campo p JOIN evidencias e ON e.id=p.evidence_id
+        JOIN versoes_documento v ON v.id=e.version_id JOIN documentos d ON d.id=v.document_id
+        GROUP BY 1"""))
+    sources = sorted(set(docs) | set(recovered) | set(processed) | set(proposals))
+    return {s: {"documents": docs.get(s, 0), "recovered": recovered.get(s, 0),
+                "processed": processed.get(s, 0), "proposals": proposals.get(s, 0)}
+            for s in sources}
+
+
+def priority_report(db_path, *, limit: int = 20) -> list[dict]:
+    """Itens da fila ordenados por prioridade, com os sinais que a explicam.
+
+    Cada linha mostra o motivo textual (``priority_reason``) e evidências documentais já
+    extraídas (propostas de vagas imediatas/indígenas do concurso). Não é uma pontuação
+    opaca: sinais e contagens são expostos para conferência.
+    """
+    limit = max(0, int(limit))
+    conn = connect_documents(db_path)
+    try:
+        rows = conn.execute(
+            """SELECT f.observation_id, f.competition_id, f.state, f.priority_score,
+            f.priority_reason, f.official_source
+            FROM fila_confirmacao f
+            ORDER BY f.priority_score DESC, f.competition_id ASC LIMIT ?""", (limit,)).fetchall()
+        report = []
+        for observation_id, competition_id, state, score, reason, source in rows:
+            row = conn.execute("SELECT contest_id FROM observacoes_concurso WHERE id=?",
+                               (observation_id,)).fetchone()
+            contest_id = row[0] if row else None
+            indigenous = immediate = 0
+            if contest_id:
+                indigenous = conn.execute(
+                    "SELECT count(*) FROM propostas_campo WHERE contest_id=? AND field_name='indigenous_vacancies'",
+                    (contest_id,)).fetchone()[0]
+                immediate = conn.execute(
+                    "SELECT count(*) FROM propostas_campo WHERE contest_id=? AND field_name='immediate_vacancies'",
+                    (contest_id,)).fetchone()[0]
+            signals = [s for s in (reason or "").split(",") if s and s != "neutro"]
+            if immediate:
+                signals.append("propostas_vagas_imediatas")
+            if indigenous:
+                signals.append("propostas_vagas_indigenas")
+            report.append({"observation_id": observation_id, "competition_id": competition_id,
+                           "state": state, "priority_score": score, "signals": signals,
+                           "official_source": source, "immediate_proposals": immediate,
+                           "indigenous_proposals": indigenous})
+        return report
     finally:
         conn.close()
