@@ -16,6 +16,19 @@ from radar.document_fields import LABEL_PREFIX, label_from_ambiguity
 from radar.document_store import connect_documents, ensure_role, role_names_compatible
 
 _CODE_RE = re.compile(r"^(\d{2,5})\b")
+# Sufixos de anotação acrescentados pelo extrator após " — "; removidos para recuperar
+# o rótulo limpo sem enfraquecer a checagem de nome quando o cargo contém "—".
+_ANNOTATIONS = ("bloco ", "o edital cita", "categoria ampla", "cita área de computa",
+                "requisito de área alheia", "requisitos presentes", "sem texto de requisitos")
+
+
+def _clean_label(label: str) -> str:
+    for annotation in _ANNOTATIONS:
+        marker = " — " + annotation
+        index = label.find(marker)
+        if index >= 0:
+            return label[:index].strip()
+    return label.strip()
 
 
 def _names_compatible(pdf_label: str, html_name: str) -> bool:
@@ -40,7 +53,8 @@ def reconcile_proposals_by_code(db_path, contest_id: str, observation_id: str,
     for role in cargo_table:
         by_code.setdefault(role["code"], []).append(role)
 
-    result = {"assigned": 0, "created": 0, "reused": 0, "ambiguous": 0, "pending": 0}
+    result = {"assigned": 0, "created": 0, "reused": 0, "ambiguous": 0, "pending": 0,
+              "missing_codes": []}
     with closing(connect_documents(db_path)) as conn:
         known = {row[0] for row in conn.execute(
             "SELECT code FROM cargos_identidade WHERE contest_id=? AND code IS NOT NULL",
@@ -52,6 +66,9 @@ def reconcile_proposals_by_code(db_path, contest_id: str, observation_id: str,
         label = label_from_ambiguity(proposal.get("ambiguity_reason"))
         if not label:
             continue
+        # Remove anotação conhecida (ex.: justificativa de SI, "bloco CÓDIGOS …") sem
+        # truncar nomes de cargo que contenham "—".
+        label = _clean_label(label)
         match = _CODE_RE.match(label.strip())
         if match is None:
             result["pending"] += 1
@@ -60,7 +77,9 @@ def reconcile_proposals_by_code(db_path, contest_id: str, observation_id: str,
         pdf_label = label.strip()[match.end():].strip()
         candidates = by_code.get(code, [])
         if not candidates:
-            result["pending"] += 1  # código não consta da tabela HTML
+            result["pending"] += 1  # código não consta da tabela HTML oficial
+            if code not in result["missing_codes"]:
+                result["missing_codes"].append(code)
             continue
         if len(candidates) > 1:
             result["ambiguous"] += 1  # mais de uma correspondência para o código

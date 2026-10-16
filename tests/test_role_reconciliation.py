@@ -116,6 +116,29 @@ class ReconcileTest(unittest.TestCase):
         self.assertEqual(second["reused"], 1)
 
 
+    def test_group_label_code_only_matches_by_code(self):
+        # Rótulo de código agrupado é só o número ("200"); associa pelo código.
+        table = self._table(("200", "Profissional de Suporte Técnico - Assistente", "Médio"))
+        proposals = [_proposal("200")]
+        result = reconcile_proposals_by_code(self.db, self.contest, self.obs, table, proposals)
+        self.assertEqual(result["assigned"], 1)
+        self.assertIsNotNone(proposals[0]["role_id"])
+
+    def test_group_block_note_does_not_break_matching(self):
+        # Rótulo com anotação "— bloco CÓDIGOS 200 ATÉ 206" ainda associa pelo código.
+        table = self._table(("200", "Profissional de Suporte Técnico - Assistente", "Médio"))
+        proposals = [_proposal("200 — bloco CÓDIGOS 200 ATÉ 206")]
+        result = reconcile_proposals_by_code(self.db, self.contest, self.obs, table, proposals)
+        self.assertEqual(result["assigned"], 1)
+
+    def test_missing_code_is_reported(self):
+        table = self._table(("200", "Cargo Existe", "Médio"))
+        proposals = [_proposal("999")]
+        result = reconcile_proposals_by_code(self.db, self.contest, self.obs, table, proposals)
+        self.assertEqual(result["pending"], 1)
+        self.assertEqual(result["missing_codes"], ["999"])
+
+
 class LinkContestProposalsTest(unittest.TestCase):
     def test_links_existing_proposals_in_db(self):
         import tempfile

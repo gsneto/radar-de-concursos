@@ -69,17 +69,55 @@ def classify_si_compatibility(requirement_text) -> tuple[str, str]:
 
 # --- Requisitos de formação --------------------------------------------------
 
-# Cabeçalho de cargo no Anexo II: "1.1 NOME DO CARGO (CÓDIGO 404)"; o nome pode conter
-# parênteses próprios (ex.: "PROFISSIONAL DE SUPORTE TÉCNICO (PST)-ASSISTENTE ESPECIALIZADO")
-# e é iniciado por letra maiúscula (evita capturar números de seção do texto corrido).
+# Cabeçalho de cargo no Anexo II: "1.1 NOME DO CARGO (CÓDIGO 404)" ou
+# "(CÓDIGOS 200 ATÉ 206)"; o nome pode conter parênteses próprios (ex.: "(PST)") e é
+# iniciado por letra maiúscula (evita capturar números de seção do texto corrido).
 _CARGO_HEAD = re.compile(
     r"(\d+\.\d+(?:\.\d+)?)\s+([A-ZÁÂÃÀÉÊÍÓÔÕÚÇ][A-Za-zÀ-ÿ0-9 .\-()/]{2,88}?)"
-    r"\s*\(\s*C[ÓO]DIGO\s+(\d{2,5})\s*\)", re.I)
+    r"\s*\(\s*(C[ÓO]DIGOS?[^)]{0,80}?)\s*\)", re.I)
 _REQ_START = re.compile(r"a\)\s*Requisitos\s*:?", re.I)
 _REQ_END = re.compile(r"b\)\s*Descri", re.I)
 _TAIS_COMO = re.compile(r"(?:tais como|dentre (?:eles|os quais)|a seguir)\s*[:\-]?\s*", re.I)
 _CURSO_EM = re.compile(r"\b(?:cursos?|gradua[çc][ãa]o|bacharelado|tecn[óo]logo)\b[^.]{0,40}?\bem\s+", re.I)
 _COURSE_SPLIT = re.compile(r"\s*(?:,|;| ou | e )\s*", re.I)
+
+# Faixa de códigos: "200 ATÉ 206", "400 A 403", "400-403", "400–403".
+_CODE_RANGE = re.compile(r"(?<!\d)(\d{2,5})\s*(?:AT[ÉE]|A|-|–|—)\s*(\d{2,5})(?!\d)", re.I)
+# Qualquer código avulso no bloco (lista: "400, 401 E 402").
+_CODE_ANY = re.compile(r"(?<!\d)(\d{2,5})(?!\d)")
+_MAX_RANGE_SPAN = 60  # uma faixa de cargos plausível; acima disso, não é código de cargo
+
+
+def parse_code_group(clause: str) -> list[str]:
+    """Interpreta um bloco de códigos expressamente indicado ("CÓDIGO 404",
+    "CÓDIGOS 200 ATÉ 206", "CÓDIGOS 400, 401 E 402").
+
+    Conservador: só reconhece faixa quando há marcador explícito entre dois números e a
+    amplitude é plausível; caso contrário, trata como lista de códigos avulsos. Devolve a
+    lista **normalizada** (zeros à esquerda preservados); nunca inventa códigos.
+    """
+    if not isinstance(clause, str):
+        return []
+    body = re.sub(r"^\s*C[ÓO]DIGOS?\b", "", clause, flags=re.I).strip()
+    if not body or body == clause.strip():
+        return []  # não começa por CÓDIGO(S): não é bloco de códigos
+    codes: list[str] = []
+    covered: list[tuple[int, int]] = []
+    # Todas as faixas (inclusive implausíveis, que ficam "cobertas" e não viram avulsos).
+    for rng in _CODE_RANGE.finditer(body):
+        covered.append((rng.start(), rng.end()))
+        lo, hi = int(rng.group(1)), int(rng.group(2))
+        if lo <= hi and hi - lo <= _MAX_RANGE_SPAN:
+            width = max(len(rng.group(1)), len(rng.group(2)))
+            codes.extend(str(n).zfill(width) for n in range(lo, hi + 1))
+    # Códigos avulsos que não fazem parte de nenhuma faixa (blocos mistos).
+    for match in _CODE_ANY.finditer(body):
+        if not any(s <= match.start() < e for s, e in covered):
+            codes.append(match.group(1))
+    # Dedup preservando a ordem.
+    seen: set[str] = set()
+    return [c for c in codes if not (c in seen or seen.add(c))]
+
 
 
 def _courses_from(text: str) -> str | None:
@@ -107,7 +145,13 @@ def _courses_from(text: str) -> str | None:
 
 def extract_education(blocks: list[dict], contest_id: str, *, label_prefix: str,
                       method: str = "requisitos-formacao") -> list[dict]:
-    """Propõe ``education``, ``accepted_courses`` e ``si_compatibility`` por cargo do Anexo II."""
+    """Propõe ``education``, ``accepted_courses`` e ``si_compatibility`` por cargo do Anexo II.
+
+    Um bloco de requisitos pode valer para um código individual ou para um **conjunto**
+    ("CÓDIGOS 200 ATÉ 206"): nesse caso, gera-se uma proposta por código do conjunto,
+    todas com a **mesma evidência** (o trecho literal inclui o bloco de códigos), e a
+    associação ao cargo é feita depois por código. Nada é confirmado automaticamente.
+    """
     proposals = []
     for index, block in enumerate(blocks):
         if block.get("page_number") is None:
@@ -116,7 +160,10 @@ def extract_education(blocks: list[dict], contest_id: str, *, label_prefix: str,
         if not _REQ_START.search(text):
             continue
         for head in _CARGO_HEAD.finditer(text):
-            code, name = head.group(3), " ".join(head.group(2).split())
+            name = " ".join(head.group(2).split())
+            codes = parse_code_group(head.group(3))
+            if not codes:
+                continue
             req = _REQ_START.search(text, head.end())
             if req is None:
                 continue
@@ -130,29 +177,106 @@ def extract_education(blocks: list[dict], contest_id: str, *, label_prefix: str,
             end_bound = nxt_head.start() if nxt_head else len(text)
             desc = _REQ_END.search(text, req.end())
             end = min(desc.start(), end_bound) if desc else end_bound
-            quote = text[req.end():end].strip()
-            if not quote:
+            quote_body = text[req.end():end].strip()
+            if not quote_body:
                 continue
-            req_start = req.end()
-            req_end = req_start + len(text[req_start:end].rstrip())
-            label = f"{code} {name}"
-            ambiguity = label_prefix + label
-            evidence = dict(block_index=index, quote=text[req_start:req_end],
-                            start_offset=req_start, end_offset=req_end,
-                            page_number=block.get("page_number"), header="Requisitos",
-                            section=None, role_label=label)
+            # Evidência inclui o bloco de códigos (forma literal de origem) + os requisitos.
+            q_start = head.start(3)
+            q_end = req.end() + len(text[req.end():end].rstrip())
+            quote = text[q_start:q_end]
+            group = len(codes) > 1
+            block_literal = head.group(3).strip()
+            for code in codes:
+                if group:
+                    label = code
+                    ambiguity = f"{label_prefix}{code} — bloco {block_literal}"
+                else:
+                    label = f"{code} {name}"
+                    ambiguity = label_prefix + label
+                evidence = dict(block_index=index, quote=quote,
+                                start_offset=q_start, end_offset=q_end,
+                                page_number=block.get("page_number"), header="Requisitos",
+                                section=None, role_label=label)
+                proposals.append(dict(contest_id=contest_id, role_id=None, field_name="education",
+                    value_json=json.dumps(quote_body[:600]), value_type="string",
+                    extraction_method=method, ambiguity_reason=ambiguity, evidence=dict(evidence)))
+                courses = _courses_from(quote_body)
+                if courses:
+                    proposals.append(dict(contest_id=contest_id, role_id=None, field_name="accepted_courses",
+                        value_json=json.dumps(courses), value_type="string",
+                        extraction_method=method, ambiguity_reason=ambiguity, evidence=dict(evidence)))
+                state, reason = classify_si_compatibility(quote_body)
+                proposals.append(dict(contest_id=contest_id, role_id=None, field_name="si_compatibility",
+                    value_json=json.dumps(state), value_type="string",
+                    extraction_method="classificacao-si", ambiguity_reason=f"{label_prefix}{label} — {reason}",
+                    evidence=dict(evidence)))
+    return proposals
+
+
+# --- Requisitos declarados em rótulo (complemento genérico, multibanca) ---------
+# Formas explícitas e comuns de declarar a escolaridade exigida fora do Anexo II
+# (ex.: FGV, cujo edital traz "Requisitos de escolaridade ... Nível Superior – Direito").
+_DECLARED_LABEL = re.compile(
+    r"(?:requisitos?\s+de\s+escolaridade|escolaridade\s+(?:m[íi]nima|exigida|necess[áa]ria)|"
+    r"requisitos?\s+de\s+forma[çc][ãa]o)\s*:?\s*", re.I)
+_LEVEL = re.compile(
+    r"\b(?:n[íi]vel|ensino)\s+(?:superior|m[ée]dio|t[ée]cnico|fundamental)\b"
+    r"|\b(?:superior|m[ée]dio|t[ée]cnico|fundamental)\s+(?:completo|incompleto|em)\b"
+    r"|\b(?:superior|m[ée]dio|t[ée]cnico|fundamental)\s*[-–—]\s*[A-Za-zÀ-ÿ]",
+    re.I)
+_DECLARED_STOP = re.compile(
+    r"(?:R\$|valor\s+da\s+taxa|taxa\s+de\s+inscri|quadro\s+de\s+vagas|[.;\n])", re.I)
+
+
+def extract_declared_education(blocks: list[dict], contest_id: str, *,
+                               label_prefix: str, method: str = "escolaridade-rotulada") -> list[dict]:
+    """Requisitos de escolaridade declarados por rótulo (genérico, sem código de cargo).
+
+    Cobre formatos que não usam o Anexo II por cargo (ex.: FGV, requisito na tabela de
+    vagas). É conservador: exige rótulo explícito e palavra de nível de ensino; a
+    proposta fica no escopo do concurso (``role_id=None``), sem associação a cargo.
+    """
+    proposals = []
+    for index, block in enumerate(blocks):
+        if block.get("page_number") is None:
+            continue
+        text = block["text"]
+        for label in _DECLARED_LABEL.finditer(text):
+            window = text[label.end():label.end() + 200]
+            # Não atravessar outro rótulo/quadro.
+            hard = re.search(r"(?:quadro\s+de\s+vagas|requisitos?\s+de\s+escolaridade)", window[1:], re.I)
+            if hard:
+                window = window[:hard.start() + 1]
+            level = _LEVEL.search(window)
+            if level is None:
+                continue
+            segment = window[level.start():]
+            stop = _DECLARED_STOP.search(segment)
+            raw_value = (segment[:stop.start()] if stop else segment)
+            value = raw_value.strip(" -–—;,")
+            value = re.sub(r"\s+", " ", value)
+            if len(value) < 3:
+                continue
+            v_start = label.end() + level.start()
+            v_end = v_start + len(raw_value.rstrip())
+            quote = text[v_start:v_end]
+            evidence = dict(block_index=index, quote=quote, start_offset=v_start, end_offset=v_end,
+                            page_number=block.get("page_number"), header="Requisitos de escolaridade",
+                            section=None, role_label=None)
+            label_txt = f"escolaridade declarada ({value[:40]})"
+            ambiguity = label_prefix + label_txt
             proposals.append(dict(contest_id=contest_id, role_id=None, field_name="education",
-                value_json=json.dumps(quote[:600]), value_type="string",
+                value_json=json.dumps(value[:600]), value_type="string",
                 extraction_method=method, ambiguity_reason=ambiguity, evidence=dict(evidence)))
-            courses = _courses_from(quote)
+            courses = _courses_from(value)
             if courses:
                 proposals.append(dict(contest_id=contest_id, role_id=None, field_name="accepted_courses",
                     value_json=json.dumps(courses), value_type="string",
                     extraction_method=method, ambiguity_reason=ambiguity, evidence=dict(evidence)))
-            state, reason = classify_si_compatibility(quote)
+            state, reason = classify_si_compatibility(value)
             proposals.append(dict(contest_id=contest_id, role_id=None, field_name="si_compatibility",
                 value_json=json.dumps(state), value_type="string",
-                extraction_method="classificacao-si", ambiguity_reason=f"{label_prefix}{label} — {reason}",
+                extraction_method="classificacao-si", ambiguity_reason=f"{ambiguity} — {reason}",
                 evidence=dict(evidence)))
     return proposals
 
