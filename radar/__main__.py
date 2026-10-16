@@ -27,6 +27,7 @@ from radar.document_download import download_document
 from radar.document_extract import extract_blocks
 from radar.document_fields import extract_field_proposals, invalid_registration_period
 from radar.document_review import review_proposal, select_current_value, record_coverage, reconcile_role_label
+from radar.monitoring import run_cycle
 from radar.server import create_server
 from radar.storage import list_records, upsert_records
 
@@ -93,6 +94,12 @@ def _cmd_analyze(args: argparse.Namespace) -> None:
                 SELECT ?,document_id,id,'falha',?,'invalid_registration_period'
                 FROM versoes_documento WHERE id=?""",
                 (str(uuid4()), datetime.now(timezone.utc).isoformat(), args.version_id))
+
+
+def _cmd_monitor(args: argparse.Namespace) -> None:
+    import json
+    summary = run_cycle(args.db, analyze=args.analyze)
+    print(json.dumps(summary, ensure_ascii=False))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -189,6 +196,13 @@ def build_parser() -> argparse.ArgumentParser:
     link_parser.add_argument('--reason', required=True)
     link_parser.set_defaults(func=lambda args: print(link_amendment(
         args.db, args.amendment_id, args.original_id, args.reviewer, args.reason)))
+
+    monitor_parser = subparsers.add_parser('monitor',
+        help='executa um ciclo de monitoramento das fontes autorizadas')
+    monitor_parser.add_argument('--db', required=True)
+    monitor_parser.add_argument('--analyze', action='store_true',
+        help='extrai blocos e propostas das versões novas (nunca valida)')
+    monitor_parser.set_defaults(func=_cmd_monitor)
 
     return parser
 

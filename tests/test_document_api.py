@@ -2,13 +2,20 @@
 
 import http.client
 import json
+import sqlite3
 import tempfile
 import threading
 import unittest
 from pathlib import Path
 
 from radar.collector import collect
-from radar.document_store import migrate_document_schema, sync_v1_identifiers
+from radar.document_store import (
+    comparison_fingerprint,
+    migrate_document_schema,
+    record_version,
+    register_document,
+    sync_v1_identifiers,
+)
 from radar.server import create_server
 from radar.storage import upsert_records
 
@@ -67,3 +74,34 @@ class DocumentApiTest(unittest.TestCase):
         self.assertEqual(self.request("/api/concursos/identidades/detalhes")[0], 400)
         self.assertEqual(self.request("/api/concursos/identidades", method="POST")[0], 405)
         self.assertEqual(self.request("/api/concursos/00000000-0000-4000-8000-000000000001/detalhes", method="HEAD")[0], 405)
+
+    def test_details_expose_comparison_hash_without_local_path(self):
+        html = (Path(__file__).parent / "fixtures" / "guajara-oficial.html").read_text(encoding="utf-8")
+        upsert_records(self.db, collect(html, "2026-10-10T12:00:00+00:00"))
+        migrate_document_schema(self.db)
+        sync_v1_identifiers(self.db)
+        identity = json.loads(self.request("/api/concursos/identidades")[1])[0]
+        conn = sqlite3.connect(self.db)
+        try:
+            observation_id = conn.execute(
+                "SELECT id FROM observacoes_concurso WHERE contest_id=? ORDER BY id LIMIT 1",
+                (identity["id"],),
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        url = "https://www.diariomunicipal.com.br/arom/materia/3E102D15"
+        document_id = register_document(self.db, {
+            "official_url": url, "discovery_url": url, "observation_id": observation_id,
+            "kind": "edital", "title": "Edital 001/2026",
+            "discovered_at": "2026-10-10T12:00:00+00:00", "discovery_method": "manual",
+        })
+        content = b"<html><body>Edital</body></html>"
+        content_type = "text/html; charset=UTF-8"
+        record_version(self.db, document_id, content, {
+            "fetched_at": "2026-10-10T12:05:00+00:00", "fetched_url": url, "content_type": content_type,
+        })
+        status, body = self.request(f"/api/concursos/{identity['id']}/detalhes")
+        self.assertEqual(status, 200)
+        self.assertNotIn(b"local_path", body)
+        version = json.loads(body)["documents"][0]["versions"][0]
+        self.assertEqual(version["comparison_sha256"], comparison_fingerprint(content, content_type))

@@ -38,6 +38,46 @@
     outro: 'Documento'
   };
 
+  // Estado do ciclo e da fonte de monitoramento (rótulos sustentados pelo backend).
+  var CYCLE_STATE = {
+    em_andamento: {label: 'Em andamento', variant: 'unknown'},
+    concluido: {label: 'Concluído', variant: 'validated'},
+    parcial: {label: 'Parcial', variant: 'ambiguous'},
+    falhou: {label: 'Falhou', variant: 'conflict'},
+    interrompido: {label: 'Interrompido', variant: 'conflict'}
+  };
+
+  var SOURCE_STATE = {
+    concluido: {label: 'Concluído', variant: 'validated'},
+    parcial: {label: 'Parcial', variant: 'ambiguous'},
+    falhou: {label: 'Falhou', variant: 'conflict'},
+    nao_verificada: {label: 'Não verificada', variant: 'unknown'}
+  };
+
+  // Estado de extração de uma versão (enum do backend → rótulo humano).
+  var EXTRACTION_LABEL = {
+    nao_iniciada: 'Não iniciada',
+    em_andamento: 'Em andamento',
+    parcial: 'Parcial',
+    concluida: 'Concluída',
+    falhou: 'Falhou'
+  };
+
+  // Nome legível dos campos do contrato, mantendo a chave técnica ao lado para
+  // rastreabilidade. Campos desconhecidos caem no próprio nome original.
+  var FIELD_LABEL = {
+    immediate_vacancies: 'Vagas imediatas',
+    reserve_vacancies: 'Cadastro de reserva',
+    indigenous_vacancies: 'Vagas indígenas',
+    registration_start: 'Início das inscrições',
+    registration_end: 'Fim das inscrições',
+    registration_status: 'Situação das inscrições',
+    exam_date: 'Data da prova',
+    exam_location: 'Local de prova',
+    work_location: 'Local de exercício',
+    education: 'Escolaridade'
+  };
+
   function isMissing(value) {
     return value === null || value === undefined || value === '';
   }
@@ -86,6 +126,14 @@
     return FIELD_STATE[state] || {label: formatText(state), variant: 'unknown'};
   }
 
+  function fieldLabel(name) {
+    return FIELD_LABEL[name] || formatText(name);
+  }
+
+  function extractionLabel(state) {
+    return EXTRACTION_LABEL[state] || formatText(state);
+  }
+
   function el(document, tag, className, text) {
     var node = document.createElement(tag);
     if (className) node.className = className;
@@ -95,6 +143,14 @@
 
   function badge(document, text, variant) {
     return el(document, 'span', 'badge badge--' + variant, text);
+  }
+
+  // Rótulo legível do campo + chave técnica discreta (rastreabilidade).
+  function fieldCell(document, className, name) {
+    var cell = el(document, 'span', className);
+    cell.appendChild(el(document, 'span', 'field-label', fieldLabel(name)));
+    cell.appendChild(el(document, 'span', 'field-key', ' ' + String(name)));
+    return cell;
   }
 
   function stateBadge(document, state) {
@@ -243,7 +299,7 @@
       (item.versions || []).forEach(function (version) {
         var line = el(document, 'div', 'version');
         line.appendChild(el(document, 'span', 'version__id', 'Versão ' + shortId(version.id)));
-        line.appendChild(badge(document, 'Extração: ' + formatText(version.extraction_state), 'neutral'));
+        line.appendChild(badge(document, 'Extração: ' + extractionLabel(version.extraction_state), 'neutral'));
         if (!isMissing(version.error_code)) {
           line.appendChild(badge(document, formatText(version.error_code), 'conflict'));
         }
@@ -269,7 +325,7 @@
     conflicts.forEach(function (conflict) {
       var item = el(document, 'div', 'conflict');
       var head = el(document, 'div', 'conflict__head');
-      head.appendChild(el(document, 'span', 'conflict__field', formatText(conflict.field_name)));
+      head.appendChild(fieldCell(document, 'conflict__field', conflict.field_name));
       head.appendChild(badge(document, 'Conflito', 'conflict'));
       var scope;
       if (conflict.scope_label) {
@@ -309,7 +365,7 @@
     proposals.forEach(function (proposal) {
       var row = el(document, 'div', 'fact');
       var head = el(document, 'div', 'fact__head');
-      head.appendChild(el(document, 'span', 'fact__field', formatText(proposal.field_name)));
+      head.appendChild(fieldCell(document, 'fact__field', proposal.field_name));
       head.appendChild(el(document, 'span', 'fact__value', String(proposal.value)));
       head.appendChild(stateBadge(document, proposal.state));
       row.appendChild(head);
@@ -378,6 +434,140 @@
     grid.appendChild(renderFacts(document, details, byId));
     section.appendChild(grid);
     return section;
+  }
+
+  function cycleStateBadge(document, state) {
+    var info = CYCLE_STATE[state] || {label: formatText(state), variant: 'unknown'};
+    return badge(document, info.label, info.variant);
+  }
+
+  function sourceStateBadge(document, state) {
+    var info = SOURCE_STATE[state] || {label: formatText(state), variant: 'unknown'};
+    return badge(document, info.label, info.variant);
+  }
+
+  function renderMonitoring(document, status) {
+    var section = el(document, 'div', 'monitoring__inner');
+    status = status || {};
+    var last = status.last_cycle;
+    if (!last) {
+      section.appendChild(el(document, 'p', 'muted', 'Monitoramento ainda não executado.'));
+      section.appendChild(el(document, 'p', 'monitoring__hint',
+        'Execute "python -m radar monitor" para iniciar o acompanhamento das fontes.'));
+      return section;
+    }
+
+    var head = el(document, 'div', 'monitoring__head');
+    head.appendChild(el(document, 'span', 'monitoring__last',
+      'Última verificação: ' + formatVerifiedAt(last.finished_at || last.started_at)));
+    head.appendChild(cycleStateBadge(document, last.state));
+    section.appendChild(head);
+
+    // Alertas: distinguir nova publicação de alteração em documento conhecido e
+    // nunca sugerir sucesso quando alguma fonte não foi consultada com êxito.
+    var alerts = el(document, 'ul', 'monitoring__alerts');
+    var sources = status.sources || [];
+    var newDocs = last.documents_new || 0;
+    // "changes" (por fonte) conta apenas alterações em documentos já conhecidos;
+    // "versions_new" inclui a primeira versão de documentos novos e não deve
+    // ser apresentado como alteração.
+    var changedDocs = sources.reduce(function (sum, source) {
+      var summary = source.summary || {};
+      return sum + (typeof summary.changes === 'number' ? summary.changes : 0);
+    }, 0);
+    var failedSources = sources.filter(function (source) {
+      return source.state === 'falhou' || source.state === 'nao_verificada';
+    });
+    // Só um ciclo "concluido" permite a mensagem tranquilizadora. Qualquer outro
+    // estado (falhou, parcial, interrompido, em andamento) é verificação incompleta.
+    var okCycle = last.state === 'concluido';
+
+    if (newDocs > 0) {
+      alerts.appendChild(el(document, 'li', 'alert alert--new',
+        'Nova publicação: ' + newDocs + ' documento(s) novo(s) encontrado(s).'));
+    }
+    if (changedDocs > 0) {
+      alerts.appendChild(el(document, 'li', 'alert alert--change',
+        'Alteração em documento conhecido: ' + changedDocs + ' documento(s) com nova versão aguardando análise.'));
+    }
+    if (failedSources.length > 0) {
+      alerts.appendChild(el(document, 'li', 'alert alert--failed',
+        'Verificação incompleta: ' + failedSources.length +
+        ' fonte(s) não foram consultadas com sucesso. O resultado acima pode estar desatualizado.'));
+    } else if (!okCycle) {
+      var cycleLabel = CYCLE_STATE[last.state] ? CYCLE_STATE[last.state].label : formatText(last.state);
+      var incomplete = last.state === 'em_andamento'
+        ? 'Verificação incompleta: o último ciclo ainda está em andamento.'
+        : 'Verificação incompleta: o último ciclo terminou como "' + cycleLabel + '".';
+      alerts.appendChild(el(document, 'li', 'alert alert--failed',
+        incomplete + ' O resultado acima pode estar desatualizado.'));
+    }
+    if (newDocs === 0 && changedDocs === 0 && failedSources.length === 0 && okCycle) {
+      alerts.appendChild(el(document, 'li', 'alert alert--quiet',
+        'Nenhuma publicação nova ou alteração desde a última verificação.'));
+    }
+    section.appendChild(alerts);
+
+    var dl = el(document, 'dl', 'kv');
+    addPair(document, dl, 'Documentos encontrados', formatCount(last.documents_found));
+    addPair(document, dl, 'Alterações pendentes de análise', formatCount(status.pending_analysis));
+    addPair(document, dl, 'Cobertura', COVERAGE_LABEL[status.coverage_state] || 'Desconhecida');
+    section.appendChild(dl);
+
+    if (status.coverage_state !== 'auditada_ate') {
+      section.appendChild(el(document, 'p', 'monitoring__hint',
+        'Cobertura ainda não verificada: a ausência de novos links não prova que não existam retificações.'));
+    }
+
+    var list = el(document, 'div', 'monitoring__sources');
+    list.appendChild(el(document, 'h5', 'panel__subtitle', 'Fontes'));
+    if (sources.length === 0) {
+      list.appendChild(el(document, 'p', 'muted', 'Nenhuma fonte consultada.'));
+    }
+    sources.forEach(function (source) {
+      var row = el(document, 'div', 'source');
+      var top = el(document, 'div', 'source__head');
+      if (isHttpsUrl(source.source_url)) {
+        top.appendChild(makeLink(document, source.source_url, formatText(source.source_url)));
+      } else {
+        top.appendChild(el(document, 'span', 'source__url', formatText(source.source_url)));
+      }
+      top.appendChild(sourceStateBadge(document, source.state));
+      row.appendChild(top);
+      var meta = [];
+      if (!isMissing(source.checked_at)) meta.push('Consultada em ' + source.checked_at);
+      if (!isMissing(source.last_success_at)) meta.push('Último sucesso ' + source.last_success_at);
+      if (!isMissing(source.error_code)) meta.push('Erro: ' + source.error_code);
+      var sourceErrors = (source.summary && source.summary.errors) || [];
+      if (sourceErrors.length) {
+        var codes = sourceErrors.map(function (e) { return e.error_code; }).join(', ');
+        meta.push('Falhas parciais: ' + codes);
+      }
+      if (meta.length) row.appendChild(el(document, 'p', 'source__meta', meta.join(' · ')));
+      row.appendChild(el(document, 'p', 'source__counts',
+        'Novos: ' + formatCount(source.documents_new) +
+        ' · Versões novas: ' + formatCount(source.versions_new) +
+        ' · Pendentes: ' + formatCount(source.changes_pending)));
+      list.appendChild(row);
+    });
+    section.appendChild(list);
+    return section;
+  }
+
+  function fetchMonitoring() {
+    var doc = global.document;
+    var container = doc && doc.getElementById('monitoring-panel');
+    if (!container) return Promise.resolve();
+    return global.fetch('/api/monitoramento', {headers: {Accept: 'application/json'}})
+      .then(function (res) { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+      .then(function (status) {
+        clearContainer(container);
+        container.appendChild(renderMonitoring(doc, status));
+      }).catch(function (err) {
+        showError(err);
+        clearContainer(container);
+        container.appendChild(el(doc, 'p', 'error-text', 'Status de monitoramento indisponível.'));
+      });
   }
 
   function matchIdentity(record, identities) {
@@ -500,9 +690,11 @@
   function init() {
     var doc = global.document;
     if (!doc) return;
+    var reload = function () { fetchData(); fetchMonitoring(); };
     var retry = doc.getElementById('retry-button');
-    if (retry) retry.addEventListener('click', fetchData);
+    if (retry) retry.addEventListener('click', reload);
     fetchData();
+    fetchMonitoring();
   }
 
   var Radar = {
@@ -516,10 +708,12 @@
     shortId: shortId,
     renderRecordCard: renderRecordCard,
     renderDocumentDetails: renderDocumentDetails,
+    renderMonitoring: renderMonitoring,
     matchIdentity: matchIdentity,
     renderList: renderList,
     setState: setState,
     fetchData: fetchData,
+    fetchMonitoring: fetchMonitoring,
     init: init
   };
 

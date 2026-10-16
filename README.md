@@ -14,6 +14,7 @@ O foco do projeto é a **rastreabilidade**: cada informação pode ser rastreada
 - Associa retificações ao documento original.
 - Identifica conflitos entre propostas do mesmo campo e escopo.
 - Permite revisar propostas e selecionar explicitamente o valor corrente.
+- Monitora as fontes oficiais em busca de novas publicações e alterações, com um comando que pode ser agendado no Windows.
 - Oferece uma interface web para consultar concursos e o histórico documental.
 
 A extração gera **propostas que exigem revisão**; nada é confirmado automaticamente. O suporte atual é limitado às fontes e aos formatos configurados.
@@ -69,6 +70,17 @@ http://127.0.0.1:8000/
 5. Encerre o servidor com `Ctrl+C`.
 
 O servidor escuta em `127.0.0.1:8000` por padrão. `collect` atualiza a fonte sob demanda e não duplica os cargos; se a página mudar ou estiver indisponível, a coleta falha sem apagar os registros anteriores. Para abrir a interface sem dados, aponte `serve` para um banco ainda inexistente.
+
+## Monitoramento
+
+Um ciclo de monitoramento consulta as fontes oficiais, registra documentos novos, compara os conhecidos e sinaliza alterações — sem confirmar nada automaticamente:
+
+```powershell
+python -m radar documents-migrate --db .\data\radar.sqlite3
+python -m radar monitor --db .\data\radar.sqlite3
+```
+
+O ciclo termina sozinho (não fica em loop) e imprime um resumo em JSON. A interface mostra o estado do último ciclo em `/api/monitoramento`. Para rodar periodicamente, use o Agendador de Tarefas do Windows — instruções em [`docs/MONITORING_SCHEDULING.md`](docs/MONITORING_SCHEDULING.md).
 
 ## Testes
 

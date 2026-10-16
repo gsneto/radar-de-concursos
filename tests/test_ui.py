@@ -98,6 +98,11 @@ class TestHtmlStructure(unittest.TestCase):
         self.assertIn('href="styles.css"', html)
         self.assertIn('src="app.js"', html)
 
+    def test_monitoring_panel_present(self):
+        html = read(INDEX_PATH)
+        self.assertIn('id="monitoring-panel"', html)
+        self.assertIn("Monitoramento", html)
+
     def test_favicon_declared_without_external_resource(self):
         html = read(INDEX_PATH)
         self.assertIn('rel="icon"', html)
@@ -146,6 +151,20 @@ class TestAppStatic(unittest.TestCase):
         for field in ("conflicts", "role_reconciliations", "related_document_ids",
                       "document_id", "reconciled_role_id", "current_values"):
             self.assertIn(field, js, "app.js deve apresentar %r" % field)
+
+    def test_renders_monitoring_fields(self):
+        js = read(APP_PATH)
+        for token in ("renderMonitoring", "/api/monitoramento", "last_cycle",
+                      "pending_analysis", "coverage_state", "Nova publicação",
+                      "Alteração em documento conhecido", "Verificação incompleta",
+                      "alert--failed"):
+            self.assertIn(token, js, "app.js deve apresentar %r" % token)
+
+    def test_renders_human_labels_for_raw_enums(self):
+        js = read(APP_PATH)
+        for token in ("EXTRACTION_LABEL", "FIELD_LABEL", "Não iniciada",
+                      "Vagas indígenas", "field-key"):
+            self.assertIn(token, js, "app.js deve apresentar %r" % token)
 
 
 class TestStylesStatic(unittest.TestCase):
@@ -402,6 +421,90 @@ assert.ok(richText.includes('Reconciliação de cargos'), 'seção de reconcilia
 assert.ok(richText.includes('Professor de Educação Infantil'), 'cargo reconciliado visível');
 assert.ok(richText.includes('Vinculado a'), 'vínculo entre documentos visível');
 assert.ok(richText.includes('Documento doc-edit') || richText.includes('doc-edital') || richText.includes('Documento doc-'), 'documento de origem da evidência identificável');
+
+// Painel de monitoramento: distingue nova publicação de alteração técnica.
+const monitoring = Radar.renderMonitoring(doc, {
+  last_cycle: {id: 'c1', state: 'concluido', started_at: '2026-10-15T12:00:00+00:00',
+    finished_at: '2026-10-15T12:01:00+00:00', documents_found: 3, documents_new: 1,
+    versions_new: 2, changes_pending: 2},
+  sources: [{source_url: 'https://guajaramirim.ro.gov.br/artigo/', state: 'concluido',
+    checked_at: '2026-10-15T12:00:30+00:00', last_success_at: '2026-10-14T12:00:00+00:00',
+    http_status: null, error_code: null, documents_found: 3, documents_new: 1,
+    versions_new: 2, changes_pending: 2, coverage_state: 'nao_auditada',
+    summary: {documents_found: 3, documents_new: 1, versions_new: 2, changes: 1, errors: []}}],
+  pending_analysis: 2, coverage_state: 'nao_auditada'
+});
+const mtext = flattenText(monitoring);
+assert.ok(mtext.includes('Nova publicação'), 'nova publicação sinalizada');
+assert.ok(mtext.includes('Alteração em documento conhecido'), 'alteração técnica distinta da publicação');
+assert.ok(mtext.includes('Alteração em documento conhecido: 1'), 'alerta de alteração usa changes, não versions_new');
+assert.ok(!mtext.includes('Alteração em documento conhecido: 2'), 'versão de documento novo não conta como alteração');
+assert.ok(mtext.includes('Última verificação'), 'última verificação visível');
+assert.ok(mtext.includes('Cobertura ainda não verificada'), 'cobertura não verificada visível');
+assert.ok(mtext.includes('Último sucesso'), 'último sucesso preservado visível');
+assert.strictEqual(collectAnchors(monitoring).length, 1, 'fonte https vira link único');
+
+// Ciclo com falha não pode sugerir sucesso ("sem novidades").
+const failedCycle = Radar.renderMonitoring(doc, {
+  last_cycle: {id: 'c2', state: 'falhou', started_at: '2026-10-16T01:32:50+00:00',
+    finished_at: '2026-10-16T01:32:50+00:00', documents_found: 0, documents_new: 0,
+    versions_new: 0, changes_pending: 0},
+  sources: [{source_url: 'https://guajaramirim.ro.gov.br/artigo/', state: 'falhou',
+    checked_at: '2026-10-16T01:32:50+00:00', last_success_at: null, http_status: null,
+    error_code: 'TimeoutError', documents_found: 0, documents_new: 0, versions_new: 0,
+    changes_pending: 0, coverage_state: 'nao_auditada', summary: {changes: 0}}],
+  pending_analysis: 0, coverage_state: 'nao_auditada'
+});
+const ftext = flattenText(failedCycle);
+assert.ok(!ftext.includes('Nenhuma publicação nova ou alteração'), 'falha não pode parecer "sem novidades"');
+assert.ok(ftext.includes('Verificação incompleta'), 'falha de fonte sinalizada');
+assert.ok(ftext.includes('Falhou'), 'estado da fonte falha visível');
+
+// Ciclo parcial sem fonte falha ainda é verificação incompleta (sem silêncio).
+const partialCycle = Radar.renderMonitoring(doc, {
+  last_cycle: {id: 'c3', state: 'parcial', started_at: '2026-10-16T02:00:00+00:00',
+    finished_at: '2026-10-16T02:01:00+00:00', documents_found: 1, documents_new: 0,
+    versions_new: 0, changes_pending: 0},
+  sources: [{source_url: 'https://g.gov/artigo/', state: 'parcial', checked_at: '2026-10-16T02:00:30+00:00',
+    last_success_at: null, http_status: null, error_code: null, documents_found: 1, documents_new: 0,
+    versions_new: 0, changes_pending: 0, coverage_state: 'nao_auditada',
+    summary: {changes: 0, errors: [{document_id: 'd1', error_code: 'TimeoutError'}]}}],
+  pending_analysis: 0, coverage_state: 'nao_auditada'
+});
+const ptext = flattenText(partialCycle);
+assert.ok(ptext.includes('Verificação incompleta'), 'ciclo parcial exige aviso de verificação incompleta');
+assert.ok(!ptext.includes('Nenhuma publicação nova ou alteração'), 'ciclo parcial não pode parecer "sem novidades"');
+assert.ok(ptext.includes('Falhas parciais'), 'erros parciais da fonte são visíveis');
+
+// Ciclo em andamento não pode sugerir sucesso.
+const runningCycle = Radar.renderMonitoring(doc, {
+  last_cycle: {id: 'c4', state: 'em_andamento', started_at: '2026-10-16T03:00:00+00:00',
+    finished_at: null, documents_found: 0, documents_new: 0, versions_new: 0, changes_pending: 0},
+  sources: [], pending_analysis: 0, coverage_state: 'nao_auditada'
+});
+const rtext = flattenText(runningCycle);
+assert.ok(!rtext.includes('Nenhuma publicação nova ou alteração'), 'ciclo em andamento não é "sem novidades"');
+assert.ok(rtext.includes('Verificação incompleta'), 'ciclo em andamento exige aviso');
+assert.ok(rtext.includes('ainda está em andamento'), 'redação de ciclo em andamento é precisa');
+
+// Estado de extração legível (enum cru não deve aparecer).
+const extDetails = Radar.renderDocumentDetails(doc, {
+  coverage: {state: 'nao_auditada'},
+  documents: [{kind: 'edital', title: 'Doc', official_url: 'https://g.gov/e.pdf', state: 'baixado',
+    versions: [{id: 'v9', extraction_state: 'nao_iniciada'}], download_attempts: []}],
+  proposals: [], current_values: []
+});
+const extText = flattenText(extDetails);
+assert.ok(extText.includes('Não iniciada'), 'estado de extração exibido em português');
+assert.ok(!extText.includes('nao_iniciada'), 'enum cru de extração não aparece');
+
+// Campo com rótulo legível + chave técnica preservada.
+assert.ok(richText.includes('Vagas indígenas'), 'rótulo legível do campo visível');
+assert.ok(richText.includes('indigenous_vacancies'), 'chave técnica do campo preservada');
+
+const emptyMonitoring = Radar.renderMonitoring(doc, {last_cycle: null, sources: [],
+  pending_analysis: 0, coverage_state: 'nao_auditada'});
+assert.ok(flattenText(emptyMonitoring).includes('ainda não executado'), 'sem ciclo é explícito');
 
 console.log('OK');
 """

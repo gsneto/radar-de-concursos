@@ -9,6 +9,7 @@ from pathlib import Path
 
 from radar.collector import collect
 from radar.document_store import (
+    SCHEMA_VERSION,
     get_competition_details,
     list_competition_identities,
     migrate_document_schema,
@@ -34,18 +35,18 @@ class MigrationTest(unittest.TestCase):
         migrate_document_schema(self.db)
         self.assertEqual(list_records(self.db), before)
         with closing(sqlite3.connect(self.db)) as conn:
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 3)
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION)
             self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
             self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
             self.assertEqual(conn.execute("SELECT count(*) FROM concursos_identidade").fetchone()[0], 0)
 
     def test_future_schema_is_rejected_unchanged(self):
         with closing(sqlite3.connect(self.db)) as conn:
-            conn.execute("PRAGMA user_version=4")
+            conn.execute("PRAGMA user_version=99")
         with self.assertRaises(ValueError):
             migrate_document_schema(self.db)
         with closing(sqlite3.connect(self.db)) as conn:
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 4)
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 99)
             self.assertEqual(conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall(), [])
 
     def test_v2_database_is_upgraded_to_current_version(self):
@@ -56,7 +57,7 @@ class MigrationTest(unittest.TestCase):
             conn.commit()
         migrate_document_schema(self.db)
         with closing(sqlite3.connect(self.db)) as conn:
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 3)
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION)
             columns = {row[1] for row in conn.execute("PRAGMA table_info(versoes_documento)")}
             self.assertIn("comparison_sha256", columns)
             self.assertIsNotNone(conn.execute(
@@ -65,7 +66,7 @@ class MigrationTest(unittest.TestCase):
     def test_empty_database_is_migrated(self):
         migrate_document_schema(self.db)
         with closing(sqlite3.connect(self.db)) as conn:
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 3)
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION)
             self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
 
     def test_migration_refuses_incomplete_v2_without_silently_repairing_it(self):

@@ -119,6 +119,39 @@ _V3_ADD_COLUMN = "ALTER TABLE versoes_documento ADD COLUMN comparison_sha256 TEX
 _V3_COMP_INDEX = "CREATE INDEX idx_versoes_comparison ON versoes_documento(document_id,comparison_sha256)"
 _V3_DDL = (_V3_TABLE, _V3_RECON_INDEX, _V3_ADD_COLUMN, _V3_COMP_INDEX)
 
+# v4: persistência dos ciclos de monitoramento (aditivo; nada existente muda).
+_V4_CICLOS_TABLE = """CREATE TABLE ciclos_monitoramento (
+        id TEXT PRIMARY KEY, started_at TEXT NOT NULL, finished_at TEXT,
+        state TEXT NOT NULL CHECK(state IN ('em_andamento','concluido','parcial','falhou','interrompido')),
+        documents_found INTEGER NOT NULL DEFAULT 0 CHECK(documents_found >= 0),
+        documents_new INTEGER NOT NULL DEFAULT 0 CHECK(documents_new >= 0),
+        versions_new INTEGER NOT NULL DEFAULT 0 CHECK(versions_new >= 0),
+        changes_pending INTEGER NOT NULL DEFAULT 0 CHECK(changes_pending >= 0),
+        last_success_at TEXT)"""
+_V4_FONTES_TABLE = """CREATE TABLE ciclos_fontes (
+        id TEXT PRIMARY KEY, cycle_id TEXT NOT NULL REFERENCES ciclos_monitoramento(id),
+        source_url TEXT NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('concluido','parcial','falhou','nao_verificada')),
+        checked_at TEXT NOT NULL, last_success_at TEXT, http_status INTEGER, error_code TEXT,
+        documents_found INTEGER NOT NULL DEFAULT 0 CHECK(documents_found >= 0),
+        documents_new INTEGER NOT NULL DEFAULT 0 CHECK(documents_new >= 0),
+        versions_new INTEGER NOT NULL DEFAULT 0 CHECK(versions_new >= 0),
+        changes_pending INTEGER NOT NULL DEFAULT 0 CHECK(changes_pending >= 0),
+        coverage_state TEXT NOT NULL, summary_json TEXT, UNIQUE(cycle_id, source_url))"""
+_V4_INDEXES = (
+    "CREATE INDEX idx_ciclos_started ON ciclos_monitoramento(started_at)",
+    "CREATE INDEX idx_ciclos_fontes_cycle ON ciclos_fontes(cycle_id)",
+)
+_V4_DDL = (_V4_CICLOS_TABLE, _V4_FONTES_TABLE) + _V4_INDEXES
+
+_V4_COLUMNS = {
+    "ciclos_monitoramento": {"id", "started_at", "finished_at", "state", "documents_found",
+                             "documents_new", "versions_new", "changes_pending", "last_success_at"},
+    "ciclos_fontes": {"id", "cycle_id", "source_url", "state", "checked_at", "last_success_at",
+                      "http_status", "error_code", "documents_found", "documents_new", "versions_new",
+                      "changes_pending", "coverage_state", "summary_json"},
+}
+
 _V2_COLUMNS = {
     "concursos_identidade": {"id", "created_at"},
     "observacoes_concurso": {"id", "contest_id", "source_url", "competition_id", "observed_at"},
@@ -137,8 +170,11 @@ _V2_COLUMNS = {
     "auditorias_cobertura": {"id", "contest_id", "state", "checked_at", "checked_urls_json", "reviewer", "note"},
 }
 
-# Versão corrente do esquema documental (v2 base + reconciliação e hash de comparação).
-SCHEMA_VERSION = 3
+# Versão corrente do esquema documental (v2 base + reconciliação/hash + monitoramento).
+SCHEMA_VERSION = 4
+
+# Versões que as rotas de leitura aceitam sem migrar (v2, v3 e a corrente).
+_READABLE_VERSIONS = (2, 3, SCHEMA_VERSION)
 
 
 def _validate_schema(conn, statements, columns_by_table, version_label):
@@ -172,6 +208,20 @@ def _apply_v3(conn) -> None:
         conn.execute(_V3_COMP_INDEX)
 
 
+def _apply_v4(conn) -> None:
+    """Adiciona componentes v4 ausentes, tolerando banco parcialmente atualizado."""
+    present = {row[0] for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type IN ('table','index')")}
+    if "ciclos_monitoramento" not in present:
+        conn.execute(_V4_CICLOS_TABLE)
+    if "ciclos_fontes" not in present:
+        conn.execute(_V4_FONTES_TABLE)
+    for statement in _V4_INDEXES:
+        match = re.match(r"CREATE INDEX (\w+)", statement)
+        if match and match.group(1) not in present:
+            conn.execute(statement)
+
+
 def connect_documents(db_path) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path, timeout=15)
     conn.execute("PRAGMA foreign_keys=ON")
@@ -184,20 +234,27 @@ def migrate_document_schema(db_path) -> None:
     try:
         conn.execute("BEGIN IMMEDIATE")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 2, SCHEMA_VERSION):
+        if version not in (0, 2, 3, SCHEMA_VERSION):
             raise ValueError(f"versão de esquema não suportada: {version}")
         if version == SCHEMA_VERSION:
-            _validate_schema(conn, _DDL + _V3_DDL, dict(_V2_COLUMNS,
+            _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL, dict(_V2_COLUMNS,
                 versoes_documento=_V2_COLUMNS["versoes_documento"] | {"comparison_sha256"},
-                reconciliacoes_cargo={"id", "contest_id", "label", "role_id", "reconciled_at", "reviewer", "reason"}),
+                reconciliacoes_cargo={"id", "contest_id", "label", "role_id", "reconciled_at", "reviewer", "reason"},
+                **_V4_COLUMNS),
                 f"v{SCHEMA_VERSION}")
         else:
             if version == 2:
                 _validate_schema(conn, _DDL, _V2_COLUMNS, "v2")
+            elif version == 3:
+                _validate_schema(conn, _DDL + _V3_DDL, dict(_V2_COLUMNS,
+                    versoes_documento=_V2_COLUMNS["versoes_documento"] | {"comparison_sha256"},
+                    reconciliacoes_cargo={"id", "contest_id", "label", "role_id", "reconciled_at", "reviewer", "reason"}),
+                    "v3")
             else:
                 for statement in _DDL:
                     conn.execute(statement)
             _apply_v3(conn)
+            _apply_v4(conn)
             conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         conn.commit()
     except BaseException:
@@ -511,7 +568,7 @@ def sync_v1_identifiers(db_path) -> None:
     conn = connect_documents(db_path)
     try:
         conn.execute("BEGIN IMMEDIATE")
-        if conn.execute("PRAGMA user_version").fetchone()[0] not in (2, SCHEMA_VERSION):
+        if conn.execute("PRAGMA user_version").fetchone()[0] not in _READABLE_VERSIONS:
             raise ValueError("migração documental pendente")
         present = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='concursos'").fetchone()
         rows = conn.execute(
@@ -558,7 +615,7 @@ def list_competition_identities(db_path) -> list[dict]:
         raise ValueError("migração documental pendente")
     conn = connect_documents(db_path)
     try:
-        if conn.execute("PRAGMA user_version").fetchone()[0] not in (2, SCHEMA_VERSION):
+        if conn.execute("PRAGMA user_version").fetchone()[0] not in _READABLE_VERSIONS:
             raise ValueError("migração documental pendente")
         rows = conn.execute(
             "SELECT id FROM concursos_identidade ORDER BY created_at,id"
@@ -577,12 +634,53 @@ def list_competition_identities(db_path) -> list[dict]:
         conn.close()
 
 
+def monitoring_status(db_path) -> dict:
+    """Estado do monitoramento por ciclos persistidos (somente leitura)."""
+    if not Path(db_path).exists():
+        raise ValueError("migração documental pendente")
+    conn = connect_documents(db_path)
+    try:
+        if conn.execute("PRAGMA user_version").fetchone()[0] not in _READABLE_VERSIONS:
+            raise ValueError("migração documental pendente")
+        present = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if "ciclos_monitoramento" not in present:
+            raise ValueError("migração documental pendente")
+        last = conn.execute(
+            """SELECT id,started_at,finished_at,state,documents_found,documents_new,versions_new,
+            changes_pending,last_success_at FROM ciclos_monitoramento
+            ORDER BY started_at DESC,id DESC LIMIT 1""").fetchone()
+        last_cycle = None
+        sources = []
+        if last:
+            (cycle_id, started_at, finished_at, state, found, new, versions, pending, success) = last
+            last_cycle = dict(id=cycle_id, state=state, started_at=started_at, finished_at=finished_at,
+                              documents_found=found, documents_new=new, versions_new=versions,
+                              changes_pending=pending, last_success_at=success)
+            for row in conn.execute(
+                """SELECT id,source_url,state,checked_at,last_success_at,http_status,error_code,
+                documents_found,documents_new,versions_new,changes_pending,coverage_state,summary_json
+                FROM ciclos_fontes WHERE cycle_id=? ORDER BY source_url""", (cycle_id,)):
+                source = dict(zip(("id", "source_url", "state", "checked_at", "last_success_at",
+                                   "http_status", "error_code", "documents_found", "documents_new",
+                                   "versions_new", "changes_pending", "coverage_state", "summary_json"), row))
+                source["summary"] = json.loads(source.pop("summary_json")) if source["summary_json"] else {}
+                sources.append(source)
+        pending = conn.execute(
+            "SELECT count(*) FROM versoes_documento WHERE extraction_state='nao_iniciada'").fetchone()[0]
+        audit = conn.execute(
+            "SELECT state FROM auditorias_cobertura ORDER BY checked_at DESC,id DESC LIMIT 1").fetchone()
+        return {"last_cycle": last_cycle, "sources": sources,
+                "pending_analysis": pending, "coverage_state": audit[0] if audit else "nao_auditada"}
+    finally:
+        conn.close()
+
+
 def get_competition_details(db_path, contest_id: str) -> dict | None:
     if not Path(db_path).exists():
         raise ValueError("migração documental pendente")
     conn = connect_documents(db_path)
     try:
-        if conn.execute("PRAGMA user_version").fetchone()[0] not in (2, SCHEMA_VERSION):
+        if conn.execute("PRAGMA user_version").fetchone()[0] not in _READABLE_VERSIONS:
             raise ValueError("migração documental pendente")
         exists = conn.execute("SELECT 1 FROM concursos_identidade WHERE id=?", (contest_id,)).fetchone()
         if not exists:
@@ -614,10 +712,10 @@ def get_competition_details(db_path, contest_id: str) -> dict | None:
             (doc_id, kind, official_url, final_url, issuer, published_at, title,
              discovery_url, discovery_method, discovered_at, last_checked_at) = row
             versions = [
-                dict(zip(("id","sha256","fetched_at","published_at","fetched_url","content_type",
-                          "byte_size","extraction_state","error_code"), version))
+                dict(zip(("id","sha256","comparison_sha256","fetched_at","published_at","fetched_url",
+                          "content_type","byte_size","extraction_state","error_code"), version))
                 for version in conn.execute(
-                    """SELECT id,sha256,fetched_at,published_at,fetched_url,content_type,
+                    """SELECT id,sha256,comparison_sha256,fetched_at,published_at,fetched_url,content_type,
                     byte_size,extraction_state,error_code FROM versoes_documento
                     WHERE document_id=? ORDER BY fetched_at,id""", (doc_id,))
             ]

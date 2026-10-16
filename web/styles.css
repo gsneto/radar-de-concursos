@@ -590,3 +590,57 @@ button:focus-visible {
     scroll-behavior: auto !important;
   }
 }
+
+/* --- Monitoramento (Fase 5) --- */
+.monitoring { margin-bottom: var(--space-6); }
+.monitoring__panel {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+  padding: var(--space-4);
+}
+.monitoring__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+}
+.monitoring__last { font-size: var(--text-sm); color: var(--ink-soft); font-weight: 600; }
+.monitoring__alerts { list-style: none; margin: var(--space-3) 0; padding: 0; display: grid; gap: var(--space-2); }
+.alert {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  border-left: 3px solid var(--rule-strong);
+  background: var(--surface-alt);
+  font-size: var(--text-sm);
+}
+.alert--new { border-left-color: var(--st-validated); background: var(--st-validated-bg); color: var(--st-validated); }
+.alert--change { border-left-color: var(--st-ambiguous); background: var(--st-ambiguous-bg); color: var(--st-ambiguous); }
+.alert--quiet { color: var(--muted); }
+.monitoring__hint { font-size: var(--text-sm); color: var(--muted); margin: var(--space-2) 0 0; }
+.monitoring__sources { margin-top: var(--space-4); }
+.source { border-top: 1px solid var(--rule); padding: var(--space-3) 0; }
+.source__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: space-between;
+}
+.source__url { font-family: var(--font-mono); font-size: var(--text-xs); word-break: break-all; }
+.source__meta, .source__counts { font-size: var(--text-sm); color: var(--muted); margin: var(--space-1) 0 0; }
+
+/* --- Monitoramento: verificação incompleta (Fase 6) --- */
+.alert--failed { border-left-color: var(--st-conflict); background: var(--st-conflict-bg); color: var(--st-conflict); }
+
+/* Campo: rótulo legível + chave técnica discreta */
+.field-key {
+  display: inline-block;
+  margin-left: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: var(--muted);
+}
