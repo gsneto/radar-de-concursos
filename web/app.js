@@ -580,6 +580,94 @@
     return section;
   }
 
+  // Alertas persistentes da operação autônoma (rótulos sustentados pelo backend).
+  var ALERT_KIND_LABEL = {
+    novo_candidato: 'Novo candidato',
+    documento_recuperado: 'Documento recuperado',
+    retificacao: 'Retificação',
+    falha_fonte: 'Fonte indisponível',
+    prazo_isencao: 'Prazo de isenção',
+    lote_confirmacao: 'Lote de confirmação'
+  };
+  var ALERT_SEVERITY = {
+    info: {label: 'Info', variant: 'neutral'},
+    atencao: {label: 'Atenção', variant: 'ambiguous'},
+    critico: {label: 'Crítico', variant: 'conflict'}
+  };
+
+  function renderAlerts(document, payload) {
+    var section = el(document, 'div', 'alerts__inner');
+    payload = payload || {};
+    var alerts = payload.alerts || [];
+    var counts = payload.counts || {};
+    if (alerts.length === 0) {
+      section.appendChild(el(document, 'p', 'muted', 'Nenhum alerta registrado.'));
+      return section;
+    }
+    var head = el(document, 'p', 'alerts__count',
+      (counts.unseen || 0) + ' não visto(s) de ' + (counts.total || alerts.length) + ' alerta(s).');
+    section.appendChild(head);
+    var list = el(document, 'ul', 'alerts__list');
+    alerts.forEach(function (item) {
+      var row = el(document, 'li', 'alert-row alert-row--' + (item.severity || 'info'));
+      var headRow = el(document, 'div', 'alert-row__head');
+      headRow.appendChild(badge(document, ALERT_KIND_LABEL[item.kind] || formatText(item.kind), 'kind'));
+      var sev = ALERT_SEVERITY[item.severity] || ALERT_SEVERITY.info;
+      headRow.appendChild(badge(document, sev.label, sev.variant));
+      headRow.appendChild(el(document, 'span', 'alert-row__when', formatVerifiedAt(item.created_at)));
+      row.appendChild(headRow);
+      row.appendChild(el(document, 'p', 'alert-row__title', formatText(item.title)));
+      if (item.detail) {
+        row.appendChild(el(document, 'p', 'alert-row__detail', formatText(item.detail)));
+      }
+      list.appendChild(row);
+    });
+    section.appendChild(list);
+    return section;
+  }
+
+  function fetchAlerts() {
+    var doc = global.document;
+    var container = doc && doc.getElementById('alerts-panel');
+    if (!container) return Promise.resolve();
+    return global.fetch('/api/alertas?limit=20', {headers: {Accept: 'application/json'}})
+      .then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
+      .then(function (payload) {
+        container.textContent = '';
+        container.appendChild(renderAlerts(doc, payload));
+      })
+      .catch(function (err) {
+        showError(err);
+        container.textContent = '';
+        container.appendChild(el(doc, 'p', 'muted',
+          'Alertas indisponíveis. O histórico documental continua acessível.'));
+      });
+  }
+
+  // Atualização periódica (sem recarregar a página). Intervalo configurável por
+  // `data-refresh-seconds` no <body>; padrão conservador de 60 s.
+  function autoRefreshSeconds() {
+    var doc = global.document;
+    var body = doc && doc.body;
+    var raw = body && body.getAttribute ? body.getAttribute('data-refresh-seconds') : null;
+    var seconds = parseInt(raw, 10);
+    if (!seconds || seconds < 15) return 60;
+    return Math.min(seconds, 600);
+  }
+
+  function startAutoRefresh() {
+    if (typeof global.setInterval !== 'function') return null;
+    var interval = autoRefreshSeconds() * 1000;
+    return global.setInterval(function () {
+      fetchData();
+      fetchMonitoring();
+      fetchAlerts();
+    }, interval);
+  }
+
   function fetchMonitoring() {
     var doc = global.document;
     var container = doc && doc.getElementById('monitoring-panel');
@@ -716,11 +804,13 @@
   function init() {
     var doc = global.document;
     if (!doc) return;
-    var reload = function () { fetchData(); fetchMonitoring(); };
+    var reload = function () { fetchData(); fetchMonitoring(); fetchAlerts(); };
     var retry = doc.getElementById('retry-button');
     if (retry) retry.addEventListener('click', reload);
     fetchData();
     fetchMonitoring();
+    fetchAlerts();
+    startAutoRefresh();
   }
 
   var Radar = {
@@ -735,11 +825,15 @@
     renderRecordCard: renderRecordCard,
     renderDocumentDetails: renderDocumentDetails,
     renderMonitoring: renderMonitoring,
+    renderAlerts: renderAlerts,
     matchIdentity: matchIdentity,
     renderList: renderList,
     setState: setState,
     fetchData: fetchData,
     fetchMonitoring: fetchMonitoring,
+    fetchAlerts: fetchAlerts,
+    autoRefreshSeconds: autoRefreshSeconds,
+    startAutoRefresh: startAutoRefresh,
     init: init
   };
 

@@ -188,6 +188,25 @@ _V7_INDEX = "CREATE INDEX idx_cargos_code ON cargos_identidade(contest_id,code)"
 _V7_DDL = (_V7_ADD_COLUMN, _V7_INDEX)
 _V7_COLUMNS = {"cargos_identidade": {"code"}}
 
+# v8: alertas persistentes da operação autônoma (aditivo; tabela nova).
+_V8_ALERTS_TABLE = """CREATE TABLE alertas (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        severity TEXT NOT NULL CHECK(severity IN ('info','atencao','critico')),
+        contest_id TEXT, observation_id TEXT, source_id TEXT,
+        dedup_key TEXT NOT NULL UNIQUE,
+        title TEXT NOT NULL, detail TEXT,
+        event_at TEXT NOT NULL, created_at TEXT NOT NULL,
+        seen_at TEXT, dismissed_at TEXT, payload_json TEXT)"""
+_V8_INDEXES = (
+    "CREATE INDEX idx_alertas_created ON alertas(created_at)",
+    "CREATE INDEX idx_alertas_unseen ON alertas(seen_at)",
+)
+_V8_DDL = (_V8_ALERTS_TABLE,) + _V8_INDEXES
+_V8_COLUMNS = {"alertas": {"id", "kind", "severity", "contest_id", "observation_id",
+                           "source_id", "dedup_key", "title", "detail", "event_at",
+                           "created_at", "seen_at", "dismissed_at", "payload_json"}}
+
 _V2_COLUMNS = {
     "concursos_identidade": {"id", "created_at"},
     "observacoes_concurso": {"id", "contest_id", "source_url", "competition_id", "observed_at"},
@@ -207,10 +226,10 @@ _V2_COLUMNS = {
 }
 
 # Versão corrente do esquema documental (v2 base + reconciliação/hash + monitoramento + fila).
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
-# Versões que as rotas de leitura aceitam sem migrar (v2..v7).
-_READABLE_VERSIONS = (2, 3, 4, 5, 6, SCHEMA_VERSION)
+# Versões que as rotas de leitura aceitam sem migrar (v2..v8).
+_READABLE_VERSIONS = (2, 3, 4, 5, 6, 7, SCHEMA_VERSION)
 
 
 def _validate_schema(conn, statements, columns_by_table, version_label):
@@ -287,6 +306,18 @@ def _apply_v7(conn) -> None:
         conn.execute(_V7_INDEX)
 
 
+def _apply_v8(conn) -> None:
+    """Adiciona a tabela de alertas, tolerando banco parcialmente atualizado."""
+    present = {row[0] for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type IN ('table','index')")}
+    if "alertas" not in present:
+        conn.execute(_V8_ALERTS_TABLE)
+    for statement in _V8_INDEXES:
+        name = re.match(r"CREATE INDEX (\w+)", statement).group(1)
+        if name not in present:
+            conn.execute(statement)
+
+
 def connect_documents(db_path) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path, timeout=15)
     conn.execute("PRAGMA foreign_keys=ON")
@@ -298,7 +329,7 @@ def migrate_document_schema(db_path) -> None:
     try:
         conn.execute("BEGIN IMMEDIATE")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 2, 3, 4, 5, 6, SCHEMA_VERSION):
+        if version not in (0, 2, 3, 4, 5, 6, 7, SCHEMA_VERSION):
             raise ValueError(f"versão de esquema não suportada: {version}")
         _v3_extra = dict(
             versoes_documento=_V2_COLUMNS["versoes_documento"] | {"comparison_sha256"},
@@ -306,9 +337,10 @@ def migrate_document_schema(db_path) -> None:
         _v6_extra = dict(_V6_COLUMNS, documentos=_V2_COLUMNS["documentos"] | {"tipo_documental"})
         _v7_extra = dict(_V6_COLUMNS, documentos=_V2_COLUMNS["documentos"] | {"tipo_documental"},
                          cargos_identidade=_V2_COLUMNS["cargos_identidade"] | {"code"})
+        _v8_extra = dict(_v7_extra, **_V8_COLUMNS)
         if version == SCHEMA_VERSION:
-            _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL,
-                             dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v7_extra),
+            _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL,
+                             dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v8_extra),
                              f"v{SCHEMA_VERSION}")
         else:
             if version == 2:
@@ -324,6 +356,9 @@ def migrate_document_schema(db_path) -> None:
             elif version == 6:
                 _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL,
                                  dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v6_extra), "v6")
+            elif version == 7:
+                _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL,
+                                 dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v7_extra), "v7")
             else:
                 for statement in _DDL:
                     conn.execute(statement)
@@ -332,6 +367,7 @@ def migrate_document_schema(db_path) -> None:
             _apply_v5(conn)
             _apply_v6(conn)
             _apply_v7(conn)
+            _apply_v8(conn)
             conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         conn.commit()
     except BaseException:

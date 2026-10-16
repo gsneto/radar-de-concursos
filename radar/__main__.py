@@ -132,6 +132,52 @@ def _cmd_confirmacao_lote(args: argparse.Namespace) -> None:
     print(json.dumps(confirmation.process_batch(args.db, limit=args.limit), ensure_ascii=False))
 
 
+def _cmd_ops_ciclo(args: argparse.Namespace) -> None:
+    from radar import ops
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    if args.limit is not None:
+        cfg["batch_limit"] = args.limit
+    logger = ops.setup_logging(cfg["logs_dir"])
+    summary = ops.run_cycle(cfg, logger=logger)
+    print(json.dumps(summary, ensure_ascii=False, default=str))
+
+
+def _cmd_ops_saude(args: argparse.Namespace) -> None:
+    from radar import ops
+    from radar.ops_config import load_config
+    print(json.dumps(ops.health(load_config(args.config), check_server=not args.no_server_check),
+                     ensure_ascii=False, default=str))
+
+
+def _cmd_ops_alertas(args: argparse.Namespace) -> None:
+    from radar import ops
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    print(json.dumps(ops.list_alerts(cfg["db_path"], unseen_only=args.unseen, limit=args.limit),
+                     ensure_ascii=False, default=str))
+
+
+def _cmd_ops_alerta_marcar(args: argparse.Namespace) -> None:
+    from radar import ops
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    seen = True if args.seen else None
+    dismissed = True if args.dismissed else None
+    ok = ops.mark_alert(cfg["db_path"], args.id, seen=seen, dismissed=dismissed)
+    print(json.dumps({"id": args.id, "updated": ok}, ensure_ascii=False))
+
+
+def _cmd_ops_config(args: argparse.Namespace) -> None:
+    from radar.ops_config import load_config, save_default_config, validate_config
+    if args.write:
+        path = save_default_config(args.config)
+        print(json.dumps({"written": str(path)}, ensure_ascii=False))
+        return
+    cfg = load_config(args.config)
+    print(json.dumps({"config": cfg, "errors": validate_config(cfg)}, ensure_ascii=False, default=str))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m radar")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -299,6 +345,37 @@ def build_parser() -> argparse.ArgumentParser:
     qx_cargos.add_argument('--db', required=True)
     qx_cargos.add_argument('--quadrix-id', required=True)
     qx_cargos.set_defaults(func=_cmd_quadrix_cargos)
+
+    ops_ciclo = subparsers.add_parser('ops-ciclo',
+        help='executa um ciclo operacional completo (coleta, fila, alertas)')
+    ops_ciclo.add_argument('--config', default=None)
+    ops_ciclo.add_argument('--limit', type=int, default=None,
+        help='sobrepõe o limite de itens da fila por execução')
+    ops_ciclo.set_defaults(func=_cmd_ops_ciclo)
+
+    ops_saude = subparsers.add_parser('ops-saude',
+        help='verificação de saúde operacional (config, banco, ciclos, fila, alertas)')
+    ops_saude.add_argument('--config', default=None)
+    ops_saude.add_argument('--no-server-check', action='store_true')
+    ops_saude.set_defaults(func=_cmd_ops_saude)
+
+    ops_alertas = subparsers.add_parser('ops-alertas', help='lista os alertas persistentes')
+    ops_alertas.add_argument('--config', default=None)
+    ops_alertas.add_argument('--unseen', action='store_true')
+    ops_alertas.add_argument('--limit', type=int, default=50)
+    ops_alertas.set_defaults(func=_cmd_ops_alertas)
+
+    ops_marcar = subparsers.add_parser('ops-alerta-marcar', help='marca um alerta como visto/descartado')
+    ops_marcar.add_argument('--config', default=None)
+    ops_marcar.add_argument('--id', required=True)
+    ops_marcar.add_argument('--seen', dest='seen', action='store_true')
+    ops_marcar.add_argument('--dismissed', dest='dismissed', action='store_true')
+    ops_marcar.set_defaults(func=_cmd_ops_alerta_marcar)
+
+    ops_conf = subparsers.add_parser('ops-config', help='mostra (ou grava) a configuração operacional')
+    ops_conf.add_argument('--config', default=None)
+    ops_conf.add_argument('--write', action='store_true', help='grava um radar_ops.json com os defaults')
+    ops_conf.set_defaults(func=_cmd_ops_config)
 
     return parser
 

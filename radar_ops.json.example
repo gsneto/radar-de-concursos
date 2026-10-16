@@ -1,0 +1,20 @@
+{
+  "project_root": ".",
+  "python": "",
+  "db_path": "data/radar.sqlite3",
+  "logs_dir": "logs",
+  "monitor_interval_hours": 6,
+  "queue_interval_hours": 6,
+  "batch_limit": 10,
+  "source_timeout_seconds": 30,
+  "max_documents_per_source": 5,
+  "analyze": true,
+  "sources": {
+    "guajara": {"enabled": true, "min_interval_hours": 6},
+    "dou": {"enabled": true, "min_interval_hours": 6},
+    "fgv": {"enabled": true, "min_interval_hours": 6},
+    "quadrix": {"enabled": true, "min_interval_hours": 6},
+    "pci": {"enabled": true, "min_interval_hours": 6}
+  },
+  "notifications": {"local": false}
+}

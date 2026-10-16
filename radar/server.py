@@ -20,7 +20,7 @@ from uuid import UUID
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from urllib.parse import urlparse, urlsplit
+from urllib.parse import parse_qs, urlparse, urlsplit
 
 from radar.document_store import get_competition_details, list_competition_identities, monitoring_status
 from radar.storage import list_records
@@ -137,6 +137,33 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self._send(HTTPStatus.OK, "application/json; charset=utf-8", body)
 
+    def _serve_alerts(self, unseen_only, limit):
+        from radar import ops
+        try:
+            payload = {"alerts": ops.list_alerts(self.server.db_path, unseen_only=unseen_only,
+                                                 limit=limit),
+                       "counts": ops.alert_counts(self.server.db_path)}
+        except (ValueError, sqlite3.Error):
+            self._send(HTTPStatus.SERVICE_UNAVAILABLE, "application/json; charset=utf-8",
+                       b'{"error":"Migracao documental pendente"}')
+            return
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self._send(HTTPStatus.OK, "application/json; charset=utf-8", body)
+
+    def _serve_health(self):
+        from radar import ops
+        from radar.ops_config import load_config
+        try:
+            config = load_config()
+            config["db_path"] = self.server.db_path
+            payload = ops.health(config, check_server=False)
+        except (ValueError, sqlite3.Error):
+            self._send(HTTPStatus.SERVICE_UNAVAILABLE, "application/json; charset=utf-8",
+                       b'{"error":"Migracao documental pendente"}')
+            return
+        body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+        self._send(HTTPStatus.OK, "application/json; charset=utf-8", body)
+
     # --- Roteamento ----------------------------------------------------------
 
     def do_GET(self):
@@ -169,6 +196,23 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
             else:
                 self._serve_confirmation()
+        elif path == "/api/alertas":
+            query = parse_qs(parts.query)
+            unseen = query.get("unseen", ["0"])[0] in ("1", "true", "yes")
+            try:
+                limit = int(query.get("limit", ["50"])[0])
+            except ValueError:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+                return
+            if set(query) - {"unseen", "limit"}:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_alerts(unseen, limit)
+        elif path == "/api/saude":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_health()
         elif path in ("/", "/index.html"):
             self._serve_file("index.html")
         elif path in _ASSET_ROUTES:

@@ -82,6 +82,21 @@ python -m radar monitor --db .\data\radar.sqlite3
 
 O ciclo termina sozinho (não fica em loop) e imprime um resumo em JSON. A interface mostra o estado do último ciclo em `/api/monitoramento`. Para rodar periodicamente, use o Agendador de Tarefas do Windows — instruções em [`docs/MONITORING_SCHEDULING.md`](docs/MONITORING_SCHEDULING.md).
 
+## Operacao autonoma
+
+Um **ciclo operacional** unico reune coleta, fila documental, alertas e saude, controlado por uma configuracao central (`radar_ops.json`, exemplo em `radar_ops.json.example`):
+
+```powershell
+python -m radar ops-config --write          # grava radar_ops.json com os defaults
+python -m radar ops-ciclo --limit 10        # coleta + reconcilia + fila em lote + alertas
+python -m radar ops-saude                   # saude real (config, banco, ciclos, fila, alertas)
+python -m radar ops-alertas --unseen        # alertas persistentes
+```
+
+**Agendamento (Windows):** `pwsh -File .\scripts\install_tasks.ps1` registra a tarefa "Radar de Concursos - Ciclo" (a cada 6 h, sem sobrepor execucoes, recuperando apos reinicio), usando o Python do `radar_ops.json` e a conta do usuario, **sem senha armazenada**. `verify_tasks.ps1` mostra estado/proxima execucao; `uninstall_tasks.ps1` remove as tarefas **sem apagar dados**. O servidor local (loopback) pode ser iniciado por `pwsh -File .\scripts\serve.ps1`.
+
+Alertas persistentes (novo candidato, documento recuperado, retificacao, fonte indisponivel, prazo de isencao proximo/expirado) ficam no banco e aparecem na secao **Alertas** da interface, que se atualiza periodicamente. `GET /api/alertas` e `GET /api/saude` expoem os dados. Ver [`docs/superpowers/specs/2026-10-16-autonomous-operation-design.md`](docs/superpowers/specs/2026-10-16-autonomous-operation-design.md).
+
 ## Fontes oficiais
 
 - **Prefeitura de Guajará-Mirim/RO (SEMED)** — artigo oficial com o resumo do concurso (base do contrato v1 de 18 campos).

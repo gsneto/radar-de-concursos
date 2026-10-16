@@ -166,6 +166,16 @@ class TestAppStatic(unittest.TestCase):
                       "Vagas indígenas", "field-key"):
             self.assertIn(token, js, "app.js deve apresentar %r" % token)
 
+    def test_renders_alerts_and_auto_refresh(self):
+        js = read(APP_PATH)
+        for token in ("renderAlerts", "/api/alertas", "fetchAlerts", "startAutoRefresh",
+                      "autoRefreshSeconds", "setInterval", "Prazo de isenção",
+                      "Fonte indisponível", "alerts-panel"):
+            self.assertIn(token, js, "app.js deve apresentar %r" % token)
+        html = read(os.path.join(WEB, "index.html"))
+        self.assertIn('id="alerts-panel"', html)
+        self.assertIn("data-refresh-seconds", html)
+
 
 class TestStylesStatic(unittest.TestCase):
     """Responsividade e acessibilidade do styles.css."""
@@ -506,6 +516,25 @@ assert.ok(richText.includes('indigenous_vacancies'), 'chave técnica do campo pr
 const emptyMonitoring = Radar.renderMonitoring(doc, {last_cycle: null, sources: [],
   pending_analysis: 0, coverage_state: 'nao_auditada'});
 assert.ok(flattenText(emptyMonitoring).includes('ainda não executado'), 'sem ciclo é explícito');
+
+// Alertas persistentes: rótulo humano, severidade e dedupe visível.
+const alerts = Radar.renderAlerts(doc, {alerts: [
+  {id: 'a1', kind: 'prazo_isencao', severity: 'atencao', title: 'Isenção da taxa proximo',
+   detail: 'Fim da solicitação: 2026-10-20', created_at: '2026-10-16T12:00:00+00:00'},
+  {id: 'a2', kind: 'falha_fonte', severity: 'critico', title: 'Fonte indisponível',
+   detail: 'TimeoutError', created_at: '2026-10-16T12:01:00+00:00'}
+], counts: {total: 2, unseen: 2}});
+const alertsText = flattenText(alerts);
+assert.ok(alertsText.includes('Prazo de isenção'), 'tipo de alerta com rótulo humano');
+assert.ok(alertsText.includes('Fonte indisponível'), 'alerta de fonte exibido');
+assert.ok(alertsText.includes('não visto'), 'contagem de não vistos exibida');
+assert.ok(!alertsText.includes('prazo_isencao'), 'enum cru do alerta não aparece');
+
+const emptyAlerts = Radar.renderAlerts(doc, {alerts: [], counts: {total: 0, unseen: 0}});
+assert.ok(flattenText(emptyAlerts).includes('Nenhum alerta'), 'sem alertas é explícito');
+
+// Atualização periódica: intervalo padrão conservador (sem body configurado → 60 s).
+eq(Radar.autoRefreshSeconds(), 60, 'intervalo padrão de atualização');
 
 console.log('OK');
 """
