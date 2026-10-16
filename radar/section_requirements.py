@@ -24,8 +24,12 @@ from radar.edital_requirements import _courses_from, classify_si_compatibility, 
 from radar.role_reconciliation import _clean_label
 
 # Seção numerada: "N.M NOME" — o nome vai até o primeiro subitem "N.M.k".
-# `(?<![\d.])` impede casar o "N.M" interno de um subitem "N.M.k".
-_SECTION = re.compile(r"(?<![\d.])(\d+\.\d+)\s+(.+?)\s+(?=\1\.\d+\s)", re.S)
+# `(?<![\d.])` impede casar o "N.M" interno de um subitem "N.M.k"; o nome não pode
+# conter outro "N.M" nem atravessar quebra de linha/página; e precisa começar por letra
+# maiúscula (cabeçalhos de cargo em editais), o que evita casar números soltos no meio
+# de uma frase (ex.: "o valor e 3.2 reais").
+_SECTION = re.compile(
+    r"(?<![\d.])(\d+\.\d+)\s+([A-ZÀ-Þ][^\n]{1,159}?)\s+(?=\1\.\d+\s)")
 # Subitem de requisitos: "N.M.k Requisitos:".
 _REQ_ITEM = re.compile(r"(?<!\d)(\d+)\.(\d+)\.(\d+)\s+Requisitos\s*:\s*", re.I)
 # Código embutido no cabeçalho: "(CARGO 200)" / "(CÓDIGO 200)" / "(CÓDIGOS 200 ATÉ 206)".
@@ -75,43 +79,99 @@ def _requirement_value(text: str, body_start: int, body_end: int, section_num: s
     return None
 
 
+_BLOCK_SEPARATOR = "\n"
+
+
+def build_logical_document(blocks: list[dict]) -> tuple[str, list[dict]]:
+    """Junta os blocos (páginas) num **texto lógico**, preservando o mapa de offsets.
+
+    Devolve ``(texto, spans)``; cada span é ``{block_index, page_number, start, end}``
+    (offsets no texto lógico). A junção é estrutural: as seções continuam ancoradas na
+    numeração, então um cabeçalho no fim de uma página e o subitem ``Requisitos:`` na
+    seguinte passam a ser reconhecidos como a **mesma** seção, sem perder a página de
+    origem de cada trecho.
+    """
+    parts: list[str] = []
+    spans: list[dict] = []
+    pos = 0
+    for index, block in enumerate(blocks):
+        text = block.get("text") or ""
+        if index > 0:
+            pos += len(_BLOCK_SEPARATOR)
+        spans.append({"block_index": index, "page_number": block.get("page_number"),
+                      "start": pos, "end": pos + len(text)})
+        parts.append(text)
+        pos += len(text)
+    return _BLOCK_SEPARATOR.join(parts), spans
+
+
+def _span_at(spans: list[dict], offset: int) -> dict | None:
+    for span in spans:
+        if span["start"] <= offset <= span["end"]:
+            return span
+    return None
+
+
 def extract_section_education(blocks: list[dict], contest_id: str, *,
                               label_prefix: str, method: str = "requisitos-secao") -> list[dict]:
     """Propõe ``education``/``accepted_courses``/``si_compatibility`` por seção numerada.
 
+    Reconstrói o **documento lógico** (junção das páginas com mapa de offsets) para que um
+    cabeçalho de seção no fim de uma página case com o subitem ``Requisitos:`` da página
+    seguinte. A evidência permanece ancorada ao bloco/página onde o requisito aparece.
+
     Seção com código → rótulo por código (identidade pelo fluxo de código). Seção sem
     código → rótulo pelo **nome** da seção (associação por nome na reconciliação).
     """
+    if not any((b.get("text") or "").lower().find("equisito") >= 0 for b in blocks):
+        return []
+    # Só blocos de página (PDF): linhas de tabela/parágrafos HTML têm page_number None e
+    # não fazem parte do documento lógico de páginas.
+    indexed = [(orig, b) for orig, b in enumerate(blocks) if b.get("page_number") is not None]
+    if not indexed:
+        return []
+    orig_index = [orig for orig, _ in indexed]
+    page_blocks = [b for _, b in indexed]
+    text, spans = build_logical_document(page_blocks)
     proposals = []
-    for index, block in enumerate(blocks):
-        if block.get("page_number") is None:
+    for head in parse_sections(text):
+        req = _requirement_value(text, head["body_start"], head["body_end"], head["num"])
+        if req is None:
             continue
-        text = block["text"]
-        if "equisito" not in text.lower():  # "Requisitos"/"REQUISITOS"/"requisito"
+        span = _span_at(spans, req["start"])
+        if span is None:
             continue
-        for head in parse_sections(text):
-            req = _requirement_value(text, head["body_start"], head["body_end"], head["num"])
-            if req is None:
-                continue
-            value = req["value"]
-            codes = parse_code_group(head["code_clause"]) if head["code_clause"] else []
+        # Evidência ancorada a um único bloco: trunca o valor no fim do bloco inicial e
+        # registra a continuidade (sem inventar offsets fora do bloco).
+        local_start = req["start"] - span["start"]
+        local_end = min(req["end"], span["end"]) - span["start"]
+        block_text = page_blocks[span["block_index"]]["text"]
+        quote = block_text[local_start:local_end]
+        value = quote.strip()
+        if not value:
+            continue
+        crosses = req["end"] > span["end"]
+        codes = parse_code_group(head["code_clause"]) if head["code_clause"] else []
+        base_extra = " — continua na página seguinte" if crosses else ""
+        for code in (codes or [None]):
             if codes:
-                for code in codes:
-                    label = code if len(codes) > 1 else f"{code} {head['name']}"
-                    ambiguity = (f"{label_prefix}{code} — bloco {head['code_clause'].strip()}"
-                                 if len(codes) > 1 else label_prefix + label)
-                    proposals.extend(_emit(contest_id, index, block, req, value, label, ambiguity, method))
+                label = code if len(codes) > 1 else f"{code} {head['name']}"
+                ambiguity = (f"{label_prefix}{code} — bloco {head['code_clause'].strip()}"
+                             if len(codes) > 1 else label_prefix + label)
             else:
                 label = head["name"]
                 ambiguity = f"{label_prefix}{label}"
-                proposals.extend(_emit(contest_id, index, block, req, value, label, ambiguity, method))
+            proposals.extend(_emit(contest_id, orig_index[span["block_index"]], span.get("page_number"),
+                                   quote, value, label, ambiguity + base_extra, method,
+                                   local_start, local_end))
     return proposals
 
 
-def _emit(contest_id, index, block, req, value, label, ambiguity, method):
-    evidence = dict(block_index=index, quote=block["text"][req["start"]:req["end"]],
-                    start_offset=req["start"], end_offset=req["end"],
-                    page_number=block.get("page_number"), header="Requisitos",
+def _emit(contest_id, block_index, page_number, quote, value, label, ambiguity, method,
+          start_offset, end_offset):
+    evidence = dict(block_index=block_index, quote=quote,
+                    start_offset=start_offset, end_offset=end_offset,
+                    page_number=page_number, header="Requisitos",
                     section=None, role_label=label)
     out = [dict(contest_id=contest_id, role_id=None, field_name="education",
                 value_json=json.dumps(value[:600]), value_type="string",

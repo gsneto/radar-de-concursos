@@ -19,16 +19,18 @@ _CODE_RE = re.compile(r"^(\d{2,5})\b")
 # Sufixos de anotação acrescentados pelo extrator após " — "; removidos para recuperar
 # o rótulo limpo sem enfraquecer a checagem de nome quando o cargo contém "—".
 _ANNOTATIONS = ("bloco ", "o edital cita", "categoria ampla", "cita área de computa",
-                "requisito de área alheia", "requisitos presentes", "sem texto de requisitos")
+                "requisito de área alheia", "requisitos presentes", "sem texto de requisitos",
+                "continua na página seguinte")
 
 
 def _clean_label(label: str) -> str:
+    """Remove a anotação **conhecida** mais à esquerda (não qualquer travessão em —)."""
+    cut = None
     for annotation in _ANNOTATIONS:
-        marker = " — " + annotation
-        index = label.find(marker)
-        if index >= 0:
-            return label[:index].strip()
-    return label.strip()
+        index = label.find(" — " + annotation)
+        if index >= 0 and (cut is None or index < cut):
+            cut = index
+    return (label[:cut] if cut is not None else label).strip()
 
 
 def _names_compatible(pdf_label: str, html_name: str) -> bool:
