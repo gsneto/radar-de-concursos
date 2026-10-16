@@ -16,6 +16,9 @@ _AUTHORIZED_SOURCES = (
         ("/arom/materia/", "/arom/download/materia/", "/arom/download/edicao/"))),
     # Segunda fonte oficial: matérias do Diário Oficial da União (Imprensa Nacional).
     ("www.in.gov.br", lambda path: path.startswith("/web/dou/-/")),
+    # Terceira fonte oficial: FGV Conhecimento (páginas e arquivos publicados).
+    ("conhecimento.fgv.br", lambda path: path.startswith(
+        ("/concursos/", "/sites/default/files/concursos/"))),
 )
 
 

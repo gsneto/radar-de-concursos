@@ -30,8 +30,9 @@ def _now() -> str:
 
 
 def default_sources() -> list[dict]:
-    """Fontes oficiais autorizadas: Guajará-Mirim (artigo) e DOU (Seção 3)."""
+    """Fontes oficiais autorizadas: Guajará-Mirim (artigo), DOU (Seção 3) e FGV."""
     from radar.dou_source import dou_source, fetch_article
+    from radar.fgv_source import fgv_source
     return [
         {
             "source_url": SOURCE_URL,
@@ -40,6 +41,8 @@ def default_sources() -> list[dict]:
         },
         # DOU: enriquece cada matéria com o ato oficial completo (texto-dou).
         dou_source(article_fetcher=fetch_article),
+        # FGV: catálogo de concursos, com identidade por concurso (multi-concurso).
+        fgv_source(),
     ]
 
 
@@ -122,16 +125,21 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
     source_url = source["source_url"]
     fonte_id = str(uuid4())
     checked_at = now()
-    with closing(connect_documents(db_path)) as conn:
-        observation = conn.execute(
-            "SELECT id,contest_id FROM observacoes_concurso WHERE source_url=? "
-            "ORDER BY competition_id LIMIT 1", (source_url,)).fetchone()
-    if observation is None:
-        _insert_fonte(db_path, fonte_id, cycle_id, source_url, "nao_verificada", checked_at,
-                      _last_success(db_path, source_url), None, "sem_observacao_v1", 0, 0, 0, 0,
-                      "nao_auditada", {})
-        return {"source_url": source_url, "state": "nao_verificada", "error_code": "sem_observacao_v1"}
-    observation_id, contest_id = observation
+    multi = bool(source.get("multi_contest"))
+    if multi:
+        observation_id = None
+        contest_id = None
+    else:
+        with closing(connect_documents(db_path)) as conn:
+            observation = conn.execute(
+                "SELECT id,contest_id FROM observacoes_concurso WHERE source_url=? "
+                "ORDER BY competition_id LIMIT 1", (source_url,)).fetchone()
+        if observation is None:
+            _insert_fonte(db_path, fonte_id, cycle_id, source_url, "nao_verificada", checked_at,
+                          _last_success(db_path, source_url), None, "sem_observacao_v1", 0, 0, 0, 0,
+                          "nao_auditada", {})
+            return {"source_url": source_url, "state": "nao_verificada", "error_code": "sem_observacao_v1"}
+        observation_id, contest_id = observation
     try:
         html = source["fetch"]()
     except Exception as error:  # fonte indisponível: preserva o último resultado válido
@@ -140,20 +148,36 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
                       "nao_auditada", {})
         return {"source_url": source_url, "state": "falhou", "error_code": type(error).__name__}
     try:
-        candidates = source["discover"](html, observation_id)
+        if multi:
+            candidates = source["discover"](db_path, html)
+        else:
+            candidates = source["discover"](html, observation_id)
     except Exception as error:
         _insert_fonte(db_path, fonte_id, cycle_id, source_url, "falhou", checked_at,
                       _last_success(db_path, source_url), None, type(error).__name__, 0, 0, 0, 0,
                       "nao_auditada", {})
         return {"source_url": source_url, "state": "falhou", "error_code": type(error).__name__}
 
-    with closing(connect_documents(db_path)) as conn:
-        known_ids = {row[0] for row in conn.execute(
-            "SELECT id FROM documentos WHERE observation_id=?", (observation_id,))}
+    known_by_obs: dict[str, set] = {}
+    involved_contests: set = set()
+    if contest_id is not None:
+        involved_contests.add(contest_id)
     documents_new = 0
+    new_ids = []
     errors = []
     inline_content = {}
     for candidate in candidates:
+        obs_id = candidate.get("observation_id")
+        if not obs_id:
+            errors.append({"stage": "candidate", "error_code": "sem_observacao"})
+            continue
+        if obs_id not in known_by_obs:
+            with closing(connect_documents(db_path)) as conn:
+                known_by_obs[obs_id] = {row[0] for row in conn.execute(
+                    "SELECT id FROM documentos WHERE observation_id=?", (obs_id,))}
+                row = conn.execute("SELECT contest_id FROM observacoes_concurso WHERE id=?", (obs_id,)).fetchone()
+                if row:
+                    involved_contests.add(row[0])
         try:
             document_id = register_document(db_path, candidate)
         except ValueError:
@@ -161,9 +185,10 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
         except Exception as error:
             errors.append({"stage": "register", "error_code": type(error).__name__})
             continue
-        if document_id not in known_ids:
-            known_ids.add(document_id)
+        if document_id not in known_by_obs[obs_id]:
+            known_by_obs[obs_id].add(document_id)
             documents_new += 1
+            new_ids.append(document_id)
         # Fontes cuja API já entrega o texto oficial gravam a versão sem rebaixar a página.
         body = candidate.get("inline_content")
         if body:
@@ -177,6 +202,12 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
         # consulta. Documentos de edições anteriores não são rebaixados pela página,
         # evitando versões/mudanças falsas e crescimento ilimitado por ciclo.
         targets = list(inline_content.keys())
+    elif source.get("download_new_only"):
+        # Fontes de catálogo (ex.: banca): baixa apenas documentos novos do ciclo,
+        # sem repetir todo o histórico a cada consulta.
+        targets = new_ids
+    elif contest_id is None:
+        targets = []  # fonte multi-concurso sem política de download: nada a rebaixar
     else:
         with closing(connect_documents(db_path)) as conn:
             targets = [row[0] for row in conn.execute(
@@ -209,8 +240,13 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
                     errors.append({"document_id": document_id, "error_code": type(error).__name__})
 
     with closing(connect_documents(db_path)) as conn:
-        pending = _pending_analysis(conn, contest_id)
-        coverage = _coverage_state(conn, contest_id)
+        if contest_id is not None:
+            pending = _pending_analysis(conn, contest_id)
+            coverage = _coverage_state(conn, contest_id)
+        else:
+            pending = sum(_pending_analysis(conn, cid) for cid in involved_contests)
+            coverage = "parcial" if any(
+                _coverage_state(conn, cid) != "nao_auditada" for cid in involved_contests) else "nao_auditada"
     state = "parcial" if errors else "concluido"
     summary = {"documents_found": len(candidates), "documents_new": documents_new,
                "versions_new": versions_new, "changes": changes, "errors": errors}
