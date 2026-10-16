@@ -126,6 +126,17 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self._send(HTTPStatus.OK, "application/json; charset=utf-8", body)
 
+    def _serve_confirmation(self):
+        from radar.confirmation import queue_status
+        try:
+            payload = queue_status(self.server.db_path)
+        except (ValueError, sqlite3.Error):
+            self._send(HTTPStatus.SERVICE_UNAVAILABLE, "application/json; charset=utf-8",
+                       b'{"error":"Migracao documental pendente"}')
+            return
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self._send(HTTPStatus.OK, "application/json; charset=utf-8", body)
+
     # --- Roteamento ----------------------------------------------------------
 
     def do_GET(self):
@@ -153,6 +164,11 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
             else:
                 self._serve_monitoring()
+        elif path == "/api/confirmacao":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_confirmation()
         elif path in ("/", "/index.html"):
             self._serve_file("index.html")
         elif path in _ASSET_ROUTES:

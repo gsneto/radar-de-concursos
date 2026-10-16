@@ -209,6 +209,12 @@ def to_candidate(candidate: dict, observation_id: str) -> dict:
         "issuer": PCI_AGENCY,
         "published_at": candidate.get("data_inicio"),
         "source_identifier": candidate["competition_id"],
+        # Metadados normalizados preservados para a fila de confirmação (a Fase 10
+        # não os usa; `register_document` ignora chaves desconhecidas).
+        "pci_meta": {key: candidate.get(key) for key in (
+            "competition_id", "pci_id", "title", "url", "uf", "regiao", "cargos_resumo",
+            "vagas_salario", "formacao", "data_inicio", "data_fim", "aberto",
+            "dias_restantes", "query", "discovered_at")},
         "inline_content": _content_bytes(candidate),
         "inline_content_type": "text/html",
     }

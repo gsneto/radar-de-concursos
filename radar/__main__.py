@@ -14,11 +14,13 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
+from radar import confirmation
 from radar.collector import collect, fetch_official
 from radar.document_store import migrate_document_schema, sync_v1_identifiers
 from radar.document_store import connect_documents, record_analysis, link_amendment, ensure_role
@@ -97,9 +99,19 @@ def _cmd_analyze(args: argparse.Namespace) -> None:
 
 
 def _cmd_monitor(args: argparse.Namespace) -> None:
-    import json
     summary = run_cycle(args.db, analyze=args.analyze)
     print(json.dumps(summary, ensure_ascii=False))
+
+
+def _cmd_confirmacao_lote(args: argparse.Namespace) -> None:
+    if args.enqueue:
+        confirmation.enqueue_pending(args.db, source_id=args.source_id)
+    if args.dry_run:
+        batch = confirmation.select_batch(args.db, limit=args.limit)
+        print(json.dumps({"dry_run": True, "eligible": len(batch),
+                          "items": [b["competition_id"] for b in batch]}, ensure_ascii=False))
+        return
+    print(json.dumps(confirmation.process_batch(args.db, limit=args.limit), ensure_ascii=False))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -213,6 +225,36 @@ def build_parser() -> argparse.ArgumentParser:
     role_parser.add_argument('--specialty', default=None)
     role_parser.set_defaults(func=lambda args: print(ensure_role(
         args.db, args.contest_id, args.observation_id, args.name, args.specialty)))
+
+    conf_status = subparsers.add_parser('confirmacao-status',
+        help='resumo da fila de confirmação documental')
+    conf_status.add_argument('--db', required=True)
+    conf_status.set_defaults(func=lambda args: print(json.dumps(
+        confirmation.queue_status(args.db), ensure_ascii=False)))
+
+    conf_reconcile = subparsers.add_parser('confirmacao-reconciliar',
+        help='reconcilia candidatos com documentos de outras fontes')
+    conf_reconcile.add_argument('--db', required=True)
+    conf_reconcile.set_defaults(func=lambda args: print(json.dumps(
+        confirmation.reconcile(args.db), ensure_ascii=False)))
+
+    conf_lote = subparsers.add_parser('confirmacao-lote',
+        help='processa um lote limitado da fila de confirmação')
+    conf_lote.add_argument('--db', required=True)
+    conf_lote.add_argument('--limit', type=int, default=confirmation.DEFAULT_BATCH_LIMIT)
+    conf_lote.add_argument('--enqueue', action='store_true',
+        help='enfileira observações da fonte ainda ausentes na fila antes do lote')
+    conf_lote.add_argument('--source-id', default='pci')
+    conf_lote.add_argument('--dry-run', action='store_true',
+        help='seleciona o lote sem processar (não persiste)')
+    conf_lote.set_defaults(func=_cmd_confirmacao_lote)
+
+    conf_item = subparsers.add_parser('confirmacao-item',
+        help='mostra o estado de um candidato da fila')
+    conf_item.add_argument('--db', required=True)
+    conf_item.add_argument('--observation-id', required=True)
+    conf_item.set_defaults(func=lambda args: print(json.dumps(
+        confirmation.get_item(args.db, args.observation_id), ensure_ascii=False)))
 
     return parser
 

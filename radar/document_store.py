@@ -152,6 +152,32 @@ _V4_COLUMNS = {
                       "changes_pending", "coverage_state", "summary_json"},
 }
 
+# v5: fila persistente de confirmação documental (aditivo; nada existente muda).
+_V5_QUEUE_TABLE = """CREATE TABLE fila_confirmacao (
+        observation_id TEXT PRIMARY KEY REFERENCES observacoes_concurso(id),
+        source_id TEXT NOT NULL, competition_id TEXT NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('pendente','em_processamento','fonte_oficial_localizada',
+            'documento_localizado','documento_registrado','documento_processado','revisao_pendente',
+            'confirmacao_parcial','nao_localizado','inconclusivo','falhou','concluido')),
+        attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts >= 0),
+        last_attempt_at TEXT, next_attempt_at TEXT, last_success_at TEXT,
+        official_url TEXT, official_source TEXT, document_id TEXT REFERENCES documentos(id),
+        priority_score INTEGER NOT NULL DEFAULT 0,
+        priority_reason TEXT, reason TEXT, ambiguity TEXT,
+        result_json TEXT, history_json TEXT, updated_at TEXT NOT NULL)"""
+_V5_INDEXES = (
+    "CREATE INDEX idx_fila_state ON fila_confirmacao(state)",
+    "CREATE INDEX idx_fila_priority ON fila_confirmacao(state, priority_score)",
+)
+_V5_DDL = (_V5_QUEUE_TABLE,) + _V5_INDEXES
+
+_V5_COLUMNS = {
+    "fila_confirmacao": {"observation_id", "source_id", "competition_id", "state", "attempts",
+                         "last_attempt_at", "next_attempt_at", "last_success_at", "official_url",
+                         "official_source", "document_id", "priority_score", "priority_reason",
+                         "reason", "ambiguity", "result_json", "history_json", "updated_at"},
+}
+
 _V2_COLUMNS = {
     "concursos_identidade": {"id", "created_at"},
     "observacoes_concurso": {"id", "contest_id", "source_url", "competition_id", "observed_at"},
@@ -170,11 +196,11 @@ _V2_COLUMNS = {
     "auditorias_cobertura": {"id", "contest_id", "state", "checked_at", "checked_urls_json", "reviewer", "note"},
 }
 
-# Versão corrente do esquema documental (v2 base + reconciliação/hash + monitoramento).
-SCHEMA_VERSION = 4
+# Versão corrente do esquema documental (v2 base + reconciliação/hash + monitoramento + fila).
+SCHEMA_VERSION = 5
 
-# Versões que as rotas de leitura aceitam sem migrar (v2, v3 e a corrente).
-_READABLE_VERSIONS = (2, 3, SCHEMA_VERSION)
+# Versões que as rotas de leitura aceitam sem migrar (v2..v5).
+_READABLE_VERSIONS = (2, 3, 4, SCHEMA_VERSION)
 
 
 def _validate_schema(conn, statements, columns_by_table, version_label):
@@ -222,6 +248,18 @@ def _apply_v4(conn) -> None:
             conn.execute(statement)
 
 
+def _apply_v5(conn) -> None:
+    """Adiciona componentes v5 ausentes, tolerando banco parcialmente atualizado."""
+    present = {row[0] for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type IN ('table','index')")}
+    if "fila_confirmacao" not in present:
+        conn.execute(_V5_QUEUE_TABLE)
+    for statement in _V5_INDEXES:
+        match = re.match(r"CREATE INDEX (\w+)", statement)
+        if match and match.group(1) not in present:
+            conn.execute(statement)
+
+
 def connect_documents(db_path) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path, timeout=15)
     conn.execute("PRAGMA foreign_keys=ON")
@@ -234,27 +272,29 @@ def migrate_document_schema(db_path) -> None:
     try:
         conn.execute("BEGIN IMMEDIATE")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 2, 3, SCHEMA_VERSION):
+        if version not in (0, 2, 3, 4, SCHEMA_VERSION):
             raise ValueError(f"versão de esquema não suportada: {version}")
+        _v3_extra = dict(
+            versoes_documento=_V2_COLUMNS["versoes_documento"] | {"comparison_sha256"},
+            reconciliacoes_cargo={"id", "contest_id", "label", "role_id", "reconciled_at", "reviewer", "reason"})
         if version == SCHEMA_VERSION:
-            _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL, dict(_V2_COLUMNS,
-                versoes_documento=_V2_COLUMNS["versoes_documento"] | {"comparison_sha256"},
-                reconciliacoes_cargo={"id", "contest_id", "label", "role_id", "reconciled_at", "reviewer", "reason"},
-                **_V4_COLUMNS),
-                f"v{SCHEMA_VERSION}")
+            _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL,
+                             dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS),
+                             f"v{SCHEMA_VERSION}")
         else:
             if version == 2:
                 _validate_schema(conn, _DDL, _V2_COLUMNS, "v2")
             elif version == 3:
-                _validate_schema(conn, _DDL + _V3_DDL, dict(_V2_COLUMNS,
-                    versoes_documento=_V2_COLUMNS["versoes_documento"] | {"comparison_sha256"},
-                    reconciliacoes_cargo={"id", "contest_id", "label", "role_id", "reconciled_at", "reviewer", "reason"}),
-                    "v3")
+                _validate_schema(conn, _DDL + _V3_DDL, dict(_V2_COLUMNS, **_v3_extra), "v3")
+            elif version == 4:
+                _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL,
+                                 dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS), "v4")
             else:
                 for statement in _DDL:
                     conn.execute(statement)
             _apply_v3(conn)
             _apply_v4(conn)
+            _apply_v5(conn)
             conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         conn.commit()
     except BaseException:
