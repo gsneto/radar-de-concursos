@@ -33,6 +33,7 @@ def default_sources() -> list[dict]:
     """Fontes oficiais autorizadas: Guajará-Mirim (artigo), DOU (Seção 3) e FGV."""
     from radar.dou_source import dou_source, fetch_article
     from radar.fgv_source import fgv_source
+    from radar.pci_source import pci_source
     return [
         {
             "source_url": SOURCE_URL,
@@ -43,6 +44,8 @@ def default_sources() -> list[dict]:
         dou_source(article_fetcher=fetch_article),
         # FGV: catálogo de concursos, com identidade por concurso (multi-concurso).
         fgv_source(),
+        # PCI: canal complementar de descoberta (agregador não oficial), via MCP.
+        pci_source(),
     ]
 
 
@@ -147,9 +150,19 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
                       _last_success(db_path, source_url), None, type(error).__name__, 0, 0, 0, 0,
                       "nao_auditada", {})
         return {"source_url": source_url, "state": "falhou", "error_code": type(error).__name__}
+    extra_summary = {}
+    source_partial = False
+    source_failed = False
     try:
         if multi:
-            candidates = source["discover"](db_path, html)
+            discovered = source["discover"](db_path, html)
+            if isinstance(discovered, dict):
+                candidates = discovered.get("candidates", [])
+                extra_summary = discovered.get("summary", {}) or {}
+                source_partial = bool(discovered.get("partial"))
+                source_failed = bool(discovered.get("failed"))
+            else:
+                candidates = discovered
         else:
             candidates = source["discover"](html, observation_id)
     except Exception as error:
@@ -247,9 +260,19 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
             pending = sum(_pending_analysis(conn, cid) for cid in involved_contests)
             coverage = "parcial" if any(
                 _coverage_state(conn, cid) != "nao_auditada" for cid in involved_contests) else "nao_auditada"
-    state = "parcial" if errors else "concluido"
+    if source_failed:
+        state = "falhou"  # nenhuma consulta teve sucesso: não é "sem novidades"
+    elif errors or source_partial:
+        state = "parcial"
+    else:
+        state = "concluido"
     summary = {"documents_found": len(candidates), "documents_new": documents_new,
                "versions_new": versions_new, "changes": changes, "errors": errors}
+    for key, value in extra_summary.items():
+        if key != "errors":
+            summary[key] = value
+    if "errors" in extra_summary:
+        summary["source_errors"] = extra_summary["errors"]
     _insert_fonte(db_path, fonte_id, cycle_id, source_url, state, checked_at,
                   checked_at if state == "concluido" else _last_success(db_path, source_url), None, None,
                   len(candidates), documents_new, versions_new, pending, coverage, summary)
