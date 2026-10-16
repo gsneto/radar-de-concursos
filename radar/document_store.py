@@ -389,6 +389,11 @@ def connect_documents(db_path) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
+
+def is_readable_schema(conn) -> bool:
+    """``True`` quando a versão do esquema é legível (migração documental aplicada)."""
+    return conn.execute("PRAGMA user_version").fetchone()[0] in _READABLE_VERSIONS
+
 def migrate_document_schema(db_path) -> None:
     """Aplica migração aditiva até a versão corrente, atomicamente e sem tocar v1."""
     conn = connect_documents(db_path)

@@ -682,3 +682,27 @@ button:focus-visible {
 .triage-action { font: inherit; font-size: var(--text-xs, 0.75rem); padding: 2px var(--space-2, 8px); border: 1px solid var(--rule-strong, #c8cfc9); border-radius: 6px; background: var(--surface, #fff); color: var(--ink-soft, #333); cursor: pointer; }
 .triage-action--danger { color: var(--st-conflict, #b00020); border-color: #e7c6c3; }
 .card--focused { outline: 3px solid var(--brand-deep, #14452f); outline-offset: 2px; transition: outline-color 0.3s ease; }
+
+/* Priorização de oportunidades (Fase 20) */
+.priorities__panel { border: 1px solid var(--border, #d8ded9); border-radius: 10px; padding: var(--space-3, 12px); background: var(--surface, #fff); }
+.prefs { display: flex; flex-wrap: wrap; gap: var(--space-2, 8px); align-items: flex-end; margin-bottom: var(--space-3, 12px); }
+.prefs__field { display: flex; flex-direction: column; font-size: var(--text-xs, 0.75rem); color: var(--muted); gap: 2px; }
+.prefs__field input, .prefs__field select { font: inherit; padding: 2px var(--space-2, 8px); border: 1px solid var(--rule-strong, #c8cfc9); border-radius: 6px; }
+.prefs__status { font-size: var(--text-sm, 0.85rem); color: var(--brand-deep, #14452f); }
+.priorities__summary { font-size: var(--text-sm, 0.85rem); color: var(--muted); margin: 0 0 var(--space-2, 8px); }
+.priorities__filters { display: flex; flex-wrap: wrap; gap: var(--space-1, 4px); margin-bottom: var(--space-3, 12px); }
+.priorities__select { font: inherit; font-size: var(--text-sm, 0.85rem); padding: 2px var(--space-2, 8px); border: 1px solid var(--rule-strong, #c8cfc9); border-radius: 6px; background: var(--surface, #fff); }
+.priority-item { border-left: 4px solid var(--muted); padding: var(--space-2, 8px) var(--space-3, 12px); border-radius: 6px; background: var(--surface, #fff); margin-bottom: var(--space-2, 8px); }
+.priority-item--boa_aderencia { border-left-color: var(--st-validated, #1f7a4d); }
+.priority-item--oportunidade_importante_distante { border-left-color: var(--brand-deep, #14452f); }
+.priority-item--exige_confirmacao { border-left-color: var(--st-ambiguous, #b8860b); }
+.priority-item--compatibilidade_desfavoravel { border-left-color: var(--st-conflict, #b00020); }
+.priority-item__head { display: flex; flex-wrap: wrap; gap: var(--space-2, 8px); align-items: center; }
+.priority-item__score { font-size: var(--text-xs, 0.75rem); color: var(--muted); margin-left: auto; }
+.priority-item__title { margin: var(--space-1, 4px) 0 0; font-size: var(--text-base, 1rem); }
+.priority-item__grid { display: flex; flex-direction: column; gap: 2px; margin: var(--space-1, 4px) 0 0; }
+.priority-item__line { margin: 0; font-size: var(--text-sm, 0.85rem); color: var(--ink-soft, #333); }
+.priority-item__factors { list-style: none; margin: var(--space-1, 4px) 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.factor { font-size: var(--text-xs, 0.75rem); color: var(--ink-soft, #333); }
+.factor--unknown { color: var(--muted); font-style: italic; }
+.priority-item__links { margin-top: var(--space-1, 4px); }

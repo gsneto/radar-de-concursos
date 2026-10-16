@@ -839,6 +839,241 @@
       });
   }
 
+  // --- Priorização de oportunidades (Fase 20) --------------------------------
+
+  var SI_LABEL = {
+    aceito_expressamente: 'Aceita Sistemas de Informação (explícito)',
+    abrangido_por_categoria: 'Abrangido por categoria de TI',
+    ambiguo: 'Compatibilidade ambígua',
+    incompativel_com_requisito_explicito: 'Incompatível (requisito explícito)',
+    nao_extraido: 'Não extraído',
+    nao_informado: 'Não informado'
+  };
+  var LOC_STATE_LABEL = {
+    confirmado_documentalmente: 'confirmado',
+    extraido_nao_revisado: 'extraído (não revisado)',
+    ambiguo: 'ambíguo',
+    em_conflito: 'em conflito',
+    nao_informado: 'não informado no documento',
+    nao_extraido: 'não extraído'
+  };
+
+  function prioFilter(name) {
+    var doc = global.document;
+    var body = doc && doc.body;
+    return body && body.getAttribute ? (body.getAttribute('data-prio-' + name) || '') : '';
+  }
+
+  function setPrioFilter(name, value) {
+    var doc = global.document;
+    if (doc && doc.body && doc.body.setAttribute) {
+      doc.body.setAttribute('data-prio-' + name, value || '');
+    }
+  }
+
+  function formatDistance(distance) {
+    if (!distance || !distance.known) {
+      return 'Distância desconhecida' + (distance && distance.reason ? ' (' + distance.reason + ')' : '');
+    }
+    // Sempre identificada como geográfica em linha reta (nunca rodoviária).
+    return distance.distance_km + ' km em linha reta (distância geográfica)';
+  }
+
+  function locationText(view) {
+    if (!view) return 'Desconhecido';
+    var state = LOC_STATE_LABEL[view.state] || view.state || 'desconhecido';
+    if (view.municipios && view.municipios.length) {
+      return view.municipios.join(', ') + (view.uf ? '/' + view.uf : '') + ' — ' + state;
+    }
+    if (view.uf) return view.uf + ' (estado) — ' + state;
+    if (view.scope && view.scope !== 'desconhecida') return 'abrangência ' + view.scope + ' — ' + state;
+    return 'Sem localização — ' + state;
+  }
+
+  function renderPriorities(document, payload) {
+    var section = el(document, 'div', 'priorities__inner');
+    payload = payload || {};
+    var items = payload.items || [];
+
+    section.appendChild(el(document, 'p', 'priorities__summary',
+      items.length + ' oportunidade(s) avaliada(s). Ordenadas por prioridade explicável. '
+      + 'Distâncias são geográficas (linha reta), não rodoviárias.'));
+
+    var filters = el(document, 'div', 'priorities__filters');
+    var ufFilter = prioFilter('uf');
+    var siFilter = prioFilter('si');
+    var unknownOnly = prioFilter('unknown') === '1';
+
+    var ufSelect = el(document, 'select', 'priorities__select');
+    ufSelect.appendChild(el(document, 'option', '', 'Todos os estados'));
+    var ufs = {};
+    items.forEach(function (i) { if (i.location && i.location.prova && i.location.prova.uf) ufs[i.location.prova.uf] = 1; });
+    Object.keys(ufs).sort().forEach(function (uf) {
+      var opt = el(document, 'option', '', uf);
+      opt.setAttribute('value', uf);
+      if (uf === ufFilter) opt.setAttribute('selected', 'selected');
+      ufSelect.appendChild(opt);
+    });
+    ufSelect.addEventListener('change', function () {
+      setPrioFilter('uf', ufSelect.value); fetchPriorities();
+    });
+    filters.appendChild(ufSelect);
+
+    var siSelect = el(document, 'select', 'priorities__select');
+    siSelect.appendChild(el(document, 'option', '', 'Toda compatibilidade'));
+    ['aceito_expressamente', 'abrangido_por_categoria', 'ambiguo',
+     'incompativel_com_requisito_explicito', 'nao_extraido', 'nao_informado'].forEach(function (state) {
+      var opt = el(document, 'option', '', SI_LABEL[state]);
+      opt.setAttribute('value', state);
+      if (state === siFilter) opt.setAttribute('selected', 'selected');
+      siSelect.appendChild(opt);
+    });
+    siSelect.addEventListener('change', function () {
+      setPrioFilter('si', siSelect.value); fetchPriorities();
+    });
+    filters.appendChild(siSelect);
+
+    var unknownBtn = el(document, 'button', 'triage__filter' + (unknownOnly ? ' is-active' : ''),
+      'Só localização não confirmada');
+    unknownBtn.type = 'button';
+    unknownBtn.addEventListener('click', function () {
+      setPrioFilter('unknown', unknownOnly ? '' : '1'); fetchPriorities();
+    });
+    filters.appendChild(unknownBtn);
+    section.appendChild(filters);
+
+    var shown = items.filter(function (i) {
+      var prova = i.location && i.location.prova;
+      if (ufFilter && (!prova || prova.uf !== ufFilter)) return false;
+      if (siFilter && (!i.si_compatibility || i.si_compatibility.state !== siFilter)) return false;
+      if (unknownOnly && prova && prova.state === 'confirmado_documentalmente') return false;
+      return true;
+    });
+    if (shown.length === 0) {
+      section.appendChild(el(document, 'p', 'muted', 'Nenhuma oportunidade nesta combinação de filtros.'));
+      return section;
+    }
+    shown.forEach(function (item) { section.appendChild(renderPriorityItem(document, item)); });
+    return section;
+  }
+
+  function renderPriorityItem(document, item) {
+    var card = el(document, 'article', 'priority-item priority-item--' + (item.label || 'sem_dados_suficientes'));
+    var head = el(document, 'div', 'priority-item__head');
+    head.appendChild(badge(document, item.label_text || item.label, 'kind'));
+    head.appendChild(el(document, 'span', 'priority-item__score',
+      'prioridade ' + item.score + '/' + item.max_score + ' (' + Math.round((item.coverage || 0) * 100) + '% dos dados)'));
+    if (item.exceptional) head.appendChild(badge(document, 'excepcional', 'validated'));
+    card.appendChild(head);
+
+    card.appendChild(el(document, 'h3', 'priority-item__title', 'Concurso ' + shortId(item.contest_id)));
+
+    var grid = el(document, 'div', 'priority-item__grid');
+    grid.appendChild(el(document, 'p', 'priority-item__line',
+      'Prova: ' + locationText(item.location && item.location.prova)));
+    grid.appendChild(el(document, 'p', 'priority-item__line',
+      'Lotação: ' + locationText(item.location && item.location.lotacao)));
+    grid.appendChild(el(document, 'p', 'priority-item__line', formatDistance(item.distance)));
+    grid.appendChild(el(document, 'p', 'priority-item__line',
+      'Vagas indígenas imediatas: ' + formatCount(item.indigenous_immediate)
+      + ' · Cadastro de reserva indígena: ' + formatCount(item.indigenous_reserve)));
+    grid.appendChild(el(document, 'p', 'priority-item__line',
+      'Compatibilidade: ' + (SI_LABEL[item.si_compatibility && item.si_compatibility.state]
+        || 'não informada')));
+    if (item.urgency) {
+      var urgency = item.urgency.state === 'expirado' ? 'prazo expirado'
+        : (item.urgency.state === 'proximo' ? 'prazo próximo' : item.urgency.state);
+      grid.appendChild(el(document, 'p', 'priority-item__line',
+        'Urgência (' + item.urgency.kind + '): ' + urgency + ' — ' + formatDate(item.urgency.date)));
+    }
+    card.appendChild(grid);
+
+    // Fatores que explicam a pontuação (rastreável).
+    var factors = el(document, 'ul', 'priority-item__factors');
+    (item.factors || []).forEach(function (factor) {
+      if (!factor.known) {
+        factors.appendChild(el(document, 'li', 'factor factor--unknown',
+          factor.key + ': desconhecido — ' + factor.reason));
+        return;
+      }
+      factors.appendChild(el(document, 'li', 'factor',
+        factor.key + ': ' + factor.points + '/' + factor.max + ' — ' + factor.reason));
+    });
+    card.appendChild(factors);
+
+    var links = el(document, 'div', 'priority-item__links');
+    var link = el(document, 'a', 'link', 'Abrir concurso');
+    link.setAttribute('href', '#concurso=' + encodeURIComponent(item.contest_id));
+    links.appendChild(link);
+    card.appendChild(links);
+    return card;
+  }
+
+  function fetchPriorities() {
+    var doc = global.document;
+    var container = doc && doc.getElementById('priorities-panel');
+    if (!container) return Promise.resolve();
+    return global.fetch('/api/prioridades?limit=200', {headers: {Accept: 'application/json'}})
+      .then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
+      .then(function (payload) {
+        container.textContent = '';
+        container.appendChild(renderPriorities(doc, payload));
+        if (payload && payload.preferences) loadPreferencesForm(doc, payload.preferences);
+      })
+      .catch(function (err) {
+        showError(err);
+        container.textContent = '';
+        container.appendChild(el(doc, 'p', 'muted',
+          'Priorização indisponível. Alertas e triagem continuam acessíveis.'));
+      });
+  }
+
+  function loadPreferencesForm(doc, prefs) {
+    var map = {municipio: 'pref-municipio', uf: 'pref-uf', interest: 'pref-interest',
+               distance: 'pref-distance', priority: 'pref-priority'};
+    var values = {
+      municipio: prefs.reference_municipio || '',
+      uf: prefs.reference_uf || '',
+      interest: (prefs.interest_states || []).join(','),
+      distance: prefs.practical_distance_km,
+      priority: prefs.priority || 'equilibrado'
+    };
+    Object.keys(map).forEach(function (key) {
+      var node = doc.getElementById(map[key]);
+      if (node) node.value = values[key];
+    });
+  }
+
+  function savePreferences() {
+    var doc = global.document;
+    var status = doc.getElementById('prefs-status');
+    var payload = {
+      reference_municipio: doc.getElementById('pref-municipio').value.trim() || null,
+      reference_uf: (doc.getElementById('pref-uf').value.trim() || '').toUpperCase() || null,
+      interest_states: doc.getElementById('pref-interest').value.split(',')
+        .map(function (s) { return s.trim().toUpperCase(); }).filter(Boolean),
+      practical_distance_km: parseInt(doc.getElementById('pref-distance').value, 10),
+      priority: doc.getElementById('pref-priority').value
+    };
+    return global.fetch('/api/preferencias', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', Accept: 'application/json'},
+      body: JSON.stringify(payload)
+    }).then(function (res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    }).then(function () {
+      if (status) status.textContent = 'Preferências salvas.';
+      return fetchPriorities();
+    }).catch(function (err) {
+      if (status) status.textContent = 'Não foi possível salvar (verifique UF e distância).';
+      showError(err);
+    });
+  }
+
   // Atualização periódica (sem recarregar a página). Intervalo configurável por
   // `data-refresh-seconds` no <body>; padrão conservador de 60 s.
   function autoRefreshSeconds() {
@@ -858,6 +1093,7 @@
       fetchMonitoring();
       fetchAlerts();
       fetchTriage();
+      fetchPriorities();
     }, interval);
   }
 
@@ -999,13 +1235,19 @@
   function init() {
     var doc = global.document;
     if (!doc) return;
-    var reload = function () { fetchData(); fetchMonitoring(); fetchAlerts(); fetchTriage(); };
+    var reload = function () { fetchData(); fetchMonitoring(); fetchAlerts(); fetchTriage(); fetchPriorities(); };
     var retry = doc.getElementById('retry-button');
     if (retry) retry.addEventListener('click', reload);
+    var prefsForm = doc.getElementById('preferences-form');
+    if (prefsForm) prefsForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      savePreferences();
+    });
     fetchData().then(focusContestFromHash).catch(function () {});
     fetchMonitoring();
     fetchAlerts();
     fetchTriage();
+    fetchPriorities();
     startAutoRefresh();
     if (global.addEventListener) {
       global.addEventListener('hashchange', function () { focusContestFromHash(); });
@@ -1026,6 +1268,7 @@
     renderMonitoring: renderMonitoring,
     renderAlerts: renderAlerts,
     renderTriage: renderTriage,
+    renderPriorities: renderPriorities,
     matchIdentity: matchIdentity,
     renderList: renderList,
     setState: setState,

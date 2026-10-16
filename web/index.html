@@ -69,6 +69,36 @@
       </div>
     </section>
 
+    <section class="priorities" aria-labelledby="priorities-title">
+      <h2 id="priorities-title" class="results__title">Priorização de oportunidades</h2>
+      <form id="preferences-form" class="prefs" aria-label="Preferências geográficas">
+        <label class="prefs__field">Município de referência
+          <input id="pref-municipio" name="reference_municipio" type="text" autocomplete="off">
+        </label>
+        <label class="prefs__field">UF de referência
+          <input id="pref-uf" name="reference_uf" type="text" maxlength="2" size="3" autocomplete="off">
+        </label>
+        <label class="prefs__field">Estados de interesse (vírgula)
+          <input id="pref-interest" name="interest_states" type="text" placeholder="BA,PE" autocomplete="off">
+        </label>
+        <label class="prefs__field">Distância prática (km)
+          <input id="pref-distance" name="practical_distance_km" type="number" min="0" step="10">
+        </label>
+        <label class="prefs__field">Prioridade
+          <select id="pref-priority" name="priority">
+            <option value="equilibrado">Equilibrado</option>
+            <option value="proximidade">Proximidade</option>
+            <option value="potencial">Potencial</option>
+          </select>
+        </label>
+        <button id="prefs-save" type="submit" class="button">Salvar preferências</button>
+        <span id="prefs-status" class="prefs__status" role="status" aria-live="polite"></span>
+      </form>
+      <div id="priorities-panel" class="priorities__panel" role="status" aria-live="polite">
+        <p class="muted">Carregando prioridades.</p>
+      </div>
+    </section>
+
     <section class="results" aria-labelledby="results-title">
       <h2 id="results-title" class="results__title">Concursos monitorados</h2>
 

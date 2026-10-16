@@ -46,9 +46,10 @@ _ASSET_ROUTES = {
 class _RadarHTTPServer(HTTPServer):
     """HTTPServer que carrega o caminho do banco para o handler."""
 
-    def __init__(self, server_address, db_path):
+    def __init__(self, server_address, db_path, config_path=None):
         super().__init__(server_address, _RadarRequestHandler)
         self.db_path = db_path
+        self.config_path = config_path
 
 
 class _RadarRequestHandler(BaseHTTPRequestHandler):
@@ -162,6 +163,60 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                        b'{"error":"Migracao documental pendente"}')
             return
         body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+        self._send(HTTPStatus.OK, "application/json; charset=utf-8", body)
+
+    def _serve_priorities(self, limit):
+        from radar import preferences, priority
+        from radar.ops_config import load_config
+        try:
+            config = load_config(self.server.config_path)
+            config["db_path"] = self.server.db_path
+            prefs = preferences.load(config)
+            payload = priority.prioritize(self.server.db_path, prefs, limit=limit)
+        except (ValueError, sqlite3.Error):
+            self._send(HTTPStatus.SERVICE_UNAVAILABLE, "application/json; charset=utf-8",
+                       b'{"error":"Migracao documental pendente"}')
+            return
+        body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+        self._send(HTTPStatus.OK, "application/json; charset=utf-8", body)
+
+    def _serve_preferences(self):
+        from radar import preferences
+        from radar.ops_config import load_config
+        payload = preferences.load(load_config(self.server.config_path))
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self._send(HTTPStatus.OK, "application/json; charset=utf-8", body)
+
+    def _save_preferences(self):
+        """POST /api/preferencias: valida e grava as preferências geográficas locais."""
+        from radar import preferences
+        from radar.ops_config import update_preferences
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except (TypeError, ValueError):
+            length = 0
+        if length <= 0 or length > 4096:
+            self._send_no_content(HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            self._send_no_content(HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            saved = preferences.validate(payload)
+        except preferences.PreferenceError as error:
+            body = json.dumps({"error": str(error)}, ensure_ascii=False).encode("utf-8")
+            self._send(HTTPStatus.BAD_REQUEST, "application/json; charset=utf-8", body)
+            return
+        try:
+            update_preferences(saved, self.server.config_path)
+        except (OSError, ValueError) as error:
+            body = json.dumps({"error": f"não foi possível gravar as preferências: {type(error).__name__}"},
+                              ensure_ascii=False).encode("utf-8")
+            self._send(HTTPStatus.INTERNAL_SERVER_ERROR, "application/json; charset=utf-8", body)
+            return
+        body = json.dumps(saved, ensure_ascii=False).encode("utf-8")
         self._send(HTTPStatus.OK, "application/json; charset=utf-8", body)
 
     def _serve_triage(self, include_seen, limit):
@@ -293,6 +348,22 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
             else:
                 self._serve_triage(include_seen, limit)
+        elif path == "/api/prioridades":
+            query = parse_qs(parts.query)
+            try:
+                limit = int(query.get("limit", ["200"])[0])
+            except ValueError:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+                return
+            if limit < 1 or set(query) - {"limit"}:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_priorities(limit)
+        elif path == "/api/preferencias":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_preferences()
         elif path in ("/", "/index.html"):
             self._serve_file("index.html")
         elif path in _ASSET_ROUTES:
@@ -300,8 +371,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         else:
             self._send_no_content(HTTPStatus.NOT_FOUND)
 
-    def _method_not_allowed(self):
-        self._send_no_content(HTTPStatus.METHOD_NOT_ALLOWED, {"Allow": "GET"})
+    def _method_not_allowed(self, allow="GET"):
+        self._send_no_content(HTTPStatus.METHOD_NOT_ALLOWED, {"Allow": allow})
 
     def do_POST(self):
         parts = urlsplit(self.path)
@@ -311,16 +382,26 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             if alert_id and "/" not in alert_id:
                 self._alert_action(alert_id)
                 return
+        if path == "/api/preferencias":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._save_preferences()
+            return
         self._method_not_allowed()
 
     def do_PUT(self):
-        self._method_not_allowed()
+        self._verb_not_allowed()
 
     def do_DELETE(self):
-        self._method_not_allowed()
+        self._verb_not_allowed()
 
     def do_PATCH(self):
-        self._method_not_allowed()
+        self._verb_not_allowed()
+
+    def _verb_not_allowed(self):
+        allow = "GET, POST" if urlsplit(self.path).path == "/api/preferencias" else "GET"
+        self._method_not_allowed(allow)
 
     def do_HEAD(self):
         if self.path.startswith('/api/concursos/'):
@@ -329,10 +410,11 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             self._send_no_content(HTTPStatus.METHOD_NOT_ALLOWED, {'Allow': 'GET'})
 
 
-def create_server(db_path, host="127.0.0.1", port=8000):
+def create_server(db_path, host="127.0.0.1", port=8000, config_path=None):
     """Cria e retorna o servidor HTTP configurado, sem iniciar serve_forever.
 
     O servidor liga o socket em ``(host, port)`` (use ``port=0`` para porta
     efêmera em testes), mas fica a cargo do chamador chamar ``serve_forever``.
+    ``config_path`` aponta para o ``radar_ops.json`` (preferências); ``None`` usa o padrão.
     """
-    return _RadarHTTPServer((host, port), db_path)
+    return _RadarHTTPServer((host, port), db_path, config_path)

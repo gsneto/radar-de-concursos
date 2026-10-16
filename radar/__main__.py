@@ -200,7 +200,49 @@ def _cmd_ops_identidade(args: argparse.Namespace) -> None:
     print(json.dumps(notifications.ensure_app_identity(), ensure_ascii=False, default=str))
 
 
+def _cmd_ops_prioridades(args: argparse.Namespace) -> None:
+    from radar import preferences, priority
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    prefs = preferences.load(cfg)
+    if args.reference_uf:
+        prefs["reference_uf"] = args.reference_uf
+    if args.reference_municipio:
+        prefs["reference_municipio"] = args.reference_municipio
+    print(json.dumps(priority.prioritize(cfg["db_path"], prefs, limit=args.limit),
+                     ensure_ascii=False, default=str))
+
+
+def _cmd_ops_preferencias(args: argparse.Namespace) -> None:
+    from radar import preferences
+    from radar.ops_config import load_config, update_preferences
+    cfg = load_config(args.config)
+    current = preferences.load(cfg)
+    changed = False
+    if args.reference_uf is not None:
+        current["reference_uf"] = args.reference_uf or None
+        changed = True
+    if args.reference_municipio is not None:
+        current["reference_municipio"] = args.reference_municipio or None
+        changed = True
+    if args.practical_distance_km is not None:
+        current["practical_distance_km"] = args.practical_distance_km
+        changed = True
+    if args.priority is not None:
+        current["priority"] = args.priority
+        changed = True
+    if args.interest_states is not None:
+        current["interest_states"] = [s.strip() for s in args.interest_states.split(",") if s.strip()]
+        changed = True
+    if changed:
+        saved = preferences.validate(current)
+        update_preferences(saved)
+        current = saved
+    print(json.dumps(current, ensure_ascii=False))
+
+
 def build_parser() -> argparse.ArgumentParser:
+    from radar.preferences import PRIORITIES
     parser = argparse.ArgumentParser(prog="python -m radar")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -413,6 +455,22 @@ def build_parser() -> argparse.ArgumentParser:
     ops_ident = subparsers.add_parser('ops-identidade', help='registra a identidade do app para toasts')
     ops_ident.add_argument('--config', default=None)
     ops_ident.set_defaults(func=_cmd_ops_identidade)
+
+    ops_prio = subparsers.add_parser('ops-prioridades', help='ranking explicável de oportunidades')
+    ops_prio.add_argument('--config', default=None)
+    ops_prio.add_argument('--limit', type=int, default=200)
+    ops_prio.add_argument('--reference-uf', default=None)
+    ops_prio.add_argument('--reference-municipio', default=None)
+    ops_prio.set_defaults(func=_cmd_ops_prioridades)
+
+    ops_pref = subparsers.add_parser('ops-preferencias', help='mostra/atualiza preferências geográficas')
+    ops_pref.add_argument('--config', default=None)
+    ops_pref.add_argument('--reference-uf', default=None)
+    ops_pref.add_argument('--reference-municipio', default=None)
+    ops_pref.add_argument('--practical-distance-km', type=int, default=None)
+    ops_pref.add_argument('--priority', default=None, choices=PRIORITIES)
+    ops_pref.add_argument('--interest-states', default=None, help='UFs separadas por vírgula, ex.: BA,PE')
+    ops_pref.set_defaults(func=_cmd_ops_preferencias)
 
     return parser
 

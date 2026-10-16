@@ -43,6 +43,13 @@ DEFAULTS = {
     },
     "triage_horizon_days": 7,
     "max_new_alerts_per_cycle": 200,
+    "preferences": {
+        "reference_municipio": None,
+        "reference_uf": None,
+        "interest_states": ["BA", "PE"],
+        "practical_distance_km": 300,
+        "priority": "equilibrado",
+    },
 }
 
 # Intervalos mínimos por fonte (evita consultas repetidas entre ciclos).
@@ -190,6 +197,33 @@ def save_default_config(path: str | Path | None = None, *, overwrite: bool = Fal
         "analyze": cfg["analyze"],
         "sources": cfg["sources"],
         "notifications": cfg["notifications"],
+        "preferences": cfg["preferences"],
     }
     target.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return target
+
+
+def update_preferences(prefs: dict, path: str | Path | None = None) -> Path:
+    """Atualiza apenas a chave ``preferences`` no arquivo de configuração (sem segredos).
+
+    Lê o arquivo cru (não resolve caminhos) para preservar as demais chaves. Se o arquivo
+    existir mas não for um JSON válido, **recusa** a escrita (em vez de apagar `db_path`,
+    `python`, `sources` etc.), preservando o conteúdo. Grava de forma atômica (tmp +
+    ``os.replace``). Nunca envia dados a serviços externos.
+    """
+    target = Path(path) if path else default_config_path()
+    data = {}
+    if target.exists():
+        try:
+            loaded = json.loads(target.read_text(encoding="utf-8"))
+        except (ValueError, OSError) as error:
+            raise ValueError(
+                f"configuração existente inválida; não será sobrescrita: {target}") from error
+        if not isinstance(loaded, dict):
+            raise ValueError(f"configuração existente não é um objeto JSON: {target}")
+        data = loaded
+    data["preferences"] = prefs
+    temp = target.with_name(target.name + ".tmp")
+    temp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(temp, target)
     return target

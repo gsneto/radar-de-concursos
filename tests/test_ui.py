@@ -191,6 +191,21 @@ class TestAppStatic(unittest.TestCase):
             self.assertIn(token, css, "styles.css deve apresentar %r" % token)
 
 
+    def test_renders_priorities(self):
+        js = read(APP_PATH)
+        for token in ("renderPriorities", "/api/prioridades", "fetchPriorities",
+                      "renderPriorityItem", "priorities-panel", "/api/preferencias",
+                      "savePreferences", "loadPreferencesForm", "linha reta",
+                      "distância geográfica"):
+            self.assertIn(token, js, "app.js deve apresentar %r" % token)
+        html = read(os.path.join(WEB, "index.html"))
+        self.assertIn('id="priorities-panel"', html)
+        self.assertIn('id="preferences-form"', html)
+        css = read(STYLES_PATH)
+        for token in (".priorities__panel", ".priority-item", ".factor--unknown", ".prefs"):
+            self.assertIn(token, css, "styles.css deve apresentar %r" % token)
+
+
 class TestStylesStatic(unittest.TestCase):
     """Responsividade e acessibilidade do styles.css."""
 
@@ -586,6 +601,54 @@ assert.strictEqual(collectAnchors(triage).length, 2, 'somente grupos com contest
 
 const emptyTriage = Radar.renderTriage(doc, {groups: [], counts: {total: 0, unseen: 0}});
 assert.ok(flattenText(emptyTriage).includes('Nenhum alerta'), 'triagem vazia é explícita');
+
+// Priorização: rótulos, prova x lotação, distância honesta e desconhecido explícito.
+const prio = Radar.renderPriorities(doc, {items: [
+  {contest_id: 'c1', score: 14, max_score: 17, coverage: 0.82, label: 'boa_aderencia',
+   label_text: 'Boa aderência atual', exceptional: false,
+   indigenous_immediate: 3, indigenous_reserve: null,
+   si_compatibility: {state: 'aceito_expressamente', value: 'aceito_expressamente'},
+   location: {prova: {state: 'confirmado_documentalmente', uf: 'BA', municipios: ['Salvador']},
+              lotacao: {state: 'nao_informado', uf: null, municipios: []}},
+   distance: {known: true, distance_km: 12.5, kind: 'geografica_linha_reta', reason: null},
+   urgency: null,
+   factors: [{key: 'compatibilidade_si', points: 4, max: 4, known: true,
+              reason: 'o edital cita expressamente Sistemas de Informação'},
+             {key: 'vagas_indigenas_reserva', points: null, max: 2, known: false,
+              reason: 'cadastro de reserva indígena não informado'}]},
+  {contest_id: 'c2', score: 11, max_score: 17, coverage: 0.6, label: 'oportunidade_importante_distante',
+   label_text: 'Oportunidade importante (distante)', exceptional: true,
+   indigenous_immediate: 12, indigenous_reserve: 2,
+   si_compatibility: {state: 'aceito_expressamente', value: 'aceito_expressamente'},
+   location: {prova: {state: 'extraido_nao_revisado', uf: 'AM', municipios: ['Manaus']},
+              lotacao: {state: 'nao_informado', uf: null, municipios: []}},
+   distance: {known: true, distance_km: 2900.0, kind: 'geografica_linha_reta', reason: null},
+   urgency: null, factors: []},
+  {contest_id: 'c3', score: 4, max_score: 17, coverage: 0.3, label: 'sem_dados_suficientes',
+   label_text: 'Sem dados suficientes', exceptional: false,
+   indigenous_immediate: null, indigenous_reserve: null,
+   si_compatibility: {state: 'nao_extraido', value: null},
+   location: {prova: {state: 'nao_informado', uf: null, municipios: []},
+              lotacao: {state: 'nao_informado', uf: null, municipios: []}},
+   distance: {known: false, distance_km: null, kind: 'geografica_linha_reta',
+              reason: 'município/UF de destino não confirmados'},
+   urgency: {kind: 'exemption_end', state: 'expirado', days: -5, date: '2020-01-01'}, factors: []}
+]});
+const prioText = flattenText(prio);
+assert.ok(prioText.includes('Boa aderência atual'), 'rótulo legível da prioridade');
+assert.ok(prioText.includes('Oportunidade importante (distante)'), 'oportunidade distante visível');
+assert.ok(prioText.includes('excepcional'), 'marca de excepcional visível');
+assert.ok(prioText.includes('linha reta'), 'distância identificada como linha reta');
+assert.ok(prioText.includes('Distância desconhecida'), 'distância desconhecida explícita');
+assert.ok(prioText.includes('Salvador/BA'), 'prova exibida');
+assert.ok(prioText.includes('Lotação'), 'lotação exibida separada da prova');
+assert.ok(prioText.includes('desconhecido'), 'fator desconhecido explicitado');
+assert.ok(prioText.includes('Cadastro de reserva indígena'), 'reserva separada das imediatas');
+assert.ok(!prioText.includes('distância rodoviária') && !prioText.includes('km rodovi'),
+  'nunca apresenta distância rodoviária como valor');
+assert.ok(!prioText.includes('probabilidade') && !prioText.includes('chance de'), 'sem falsa probabilidade');
+assert.ok(prioText.includes('prazo expirado'), 'urgência exibida à parte');
+assert.strictEqual(collectAnchors(prio).length, 3, 'um link de concurso por item');
 
 console.log('OK');
 """
