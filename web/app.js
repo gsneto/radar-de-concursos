@@ -647,6 +647,198 @@
       });
   }
 
+  // --- Central de triagem (Fase 19) ------------------------------------------
+
+  var TRIAGE_BUCKET = {
+    hoje: {label: 'Ação necessária hoje', variant: 'conflict'},
+    proximos: {label: 'Prazos próximos', variant: 'ambiguous'},
+    retificacoes: {label: 'Retificações e alterações', variant: 'ambiguous'},
+    novos: {label: 'Novos editais para avaliar', variant: 'extracted'},
+    falhas: {label: 'Falhas de coleta', variant: 'conflict'},
+    outros: {label: 'Outros', variant: 'neutral'}
+  };
+
+  function triageFilter() {
+    var doc = global.document;
+    var body = doc && doc.body;
+    return body && body.getAttribute ? body.getAttribute('data-triage-filter') : '';
+  }
+
+  function contestHashId() {
+    var hash = (global.location && global.location.hash) ? global.location.hash : '';
+    var match = /#concurso=([^&]+)/.exec(hash);
+    return match ? decodeURIComponent(match[1]) : null;
+  }
+
+  function focusContestFromHash() {
+    var doc = global.document;
+    var contestId = contestHashId();
+    if (!doc || !contestId) return;
+    var node = doc.querySelector ? doc.querySelector('[data-contest-id="' + contestId + '"]') : null;
+    if (!node) return;
+    if (typeof node.scrollIntoView === 'function') node.scrollIntoView({block: 'start'});
+    if (node.classList && node.classList.add) {
+      node.classList.add('card--focused');
+      if (typeof global.setTimeout === 'function') {
+        global.setTimeout(function () { node.classList.remove('card--focused'); }, 2500);
+      }
+    }
+  }
+
+  function setTriageFilter(value) {
+    var doc = global.document;
+    if (doc && doc.body && doc.body.setAttribute) {
+      doc.body.setAttribute('data-triage-filter', value || '');
+    }
+  }
+
+  function alertAction(id, action, until) {
+    var payload = {action: action};
+    if (until) payload.until = until;
+    return global.fetch('/api/alertas/' + encodeURIComponent(id), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', Accept: 'application/json'},
+      body: JSON.stringify(payload)
+    }).then(function (res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return fetchTriage();
+    }).catch(function (err) { showError(err); });
+  }
+
+  function snoozeOneDay(id) {
+    var until = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+    return alertAction(id, 'snooze', until);
+  }
+
+  function renderTriage(document, payload) {
+    var section = el(document, 'div', 'triage__inner');
+    payload = payload || {};
+    var groups = payload.groups || [];
+    var counts = payload.counts || {};
+    var filter = triageFilter();
+
+    var head = el(document, 'p', 'triage__summary',
+      (counts.unseen || 0) + ' alerta(s) não visto(s) de ' + (counts.total || 0) + '.');
+    section.appendChild(head);
+
+    // Filtros por categoria (ação real: restringe os grupos exibidos).
+    var filters = el(document, 'div', 'triage__filters');
+    var options = [['', 'Todos']].concat(Object.keys(TRIAGE_BUCKET).map(function (k) {
+      return [k, TRIAGE_BUCKET[k].label];
+    }));
+    options.forEach(function (pair) {
+      var active = (filter || '') === pair[0];
+      var btn = el(document, 'button', 'triage__filter' + (active ? ' is-active' : ''), pair[1]);
+      btn.type = 'button';
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+      btn.addEventListener('click', function () {
+        setTriageFilter(pair[0]);
+        fetchTriage();
+      });
+      filters.appendChild(btn);
+    });
+    section.appendChild(filters);
+
+    var shown = groups.filter(function (g) { return !filter || g.urgency === filter; });
+    if (shown.length === 0) {
+      section.appendChild(el(document, 'p', 'muted', 'Nenhum alerta nesta categoria.'));
+      return section;
+    }
+    shown.forEach(function (group) {
+      section.appendChild(renderTriageGroup(document, group));
+    });
+    return section;
+  }
+
+  function renderTriageGroup(document, group) {
+    var card = el(document, 'article', 'triage-group triage-group--' + (group.urgency || 'outros'));
+    var head = el(document, 'div', 'triage-group__head');
+    var bucket = TRIAGE_BUCKET[group.urgency] || TRIAGE_BUCKET.outros;
+    head.appendChild(badge(document, bucket.label, bucket.variant));
+    head.appendChild(el(document, 'span', 'triage-group__count', group.alert_count + ' evento(s)'));
+    card.appendChild(head);
+
+    var title = el(document, 'h3', 'triage-group__title',
+      group.contest_id ? 'Concurso ' + shortId(group.contest_id) : 'Sem concurso identificado');
+    card.appendChild(title);
+
+    var meta = el(document, 'p', 'triage-group__meta');
+    var parts = [];
+    if (group.exemption_end) parts.push('Isenção até ' + formatDate(group.exemption_end));
+    if (group.sources && group.sources.length) parts.push('Fonte: ' + group.sources.join(', '));
+    meta.textContent = parts.length ? parts.join(' · ') : 'Sem prazo documentado para este grupo.';
+    card.appendChild(meta);
+
+    var list = el(document, 'ul', 'triage-group__alerts');
+    (group.alerts || []).forEach(function (item) {
+      list.appendChild(renderTriageAlert(document, item));
+    });
+    card.appendChild(list);
+
+    if (group.contest_id) {
+      var link = el(document, 'a', 'link', 'Abrir concurso');
+      link.setAttribute('href', '#concurso=' + encodeURIComponent(group.contest_id));
+      card.appendChild(link);
+    }
+    return card;
+  }
+
+  function renderTriageAlert(document, item) {
+    var row = el(document, 'li', 'triage-alert triage-alert--' + (item.severity || 'info'));
+    var line = el(document, 'div', 'triage-alert__line');
+    line.appendChild(badge(document, ALERT_KIND_LABEL[item.kind] || formatText(item.kind), 'kind'));
+    var sev = ALERT_SEVERITY[item.severity] || ALERT_SEVERITY.info;
+    line.appendChild(badge(document, sev.label, sev.variant));
+    line.appendChild(el(document, 'span', 'triage-alert__when', formatVerifiedAt(item.created_at)));
+    row.appendChild(line);
+    row.appendChild(el(document, 'p', 'triage-alert__title', formatText(item.title)));
+    if (item.detail) row.appendChild(el(document, 'p', 'triage-alert__detail', formatText(item.detail)));
+
+    var actions = el(document, 'div', 'triage-alert__actions');
+    var seenBtn = el(document, 'button', 'triage-action', 'Marcar visto');
+    seenBtn.type = 'button';
+    seenBtn.addEventListener('click', function () { alertAction(item.id, 'seen'); });
+    actions.appendChild(seenBtn);
+    var snoozeBtn = el(document, 'button', 'triage-action', 'Adiar 1 dia');
+    snoozeBtn.type = 'button';
+    snoozeBtn.addEventListener('click', function () { snoozeOneDay(item.id); });
+    actions.appendChild(snoozeBtn);
+    var reopenBtn = el(document, 'button', 'triage-action', 'Reabrir');
+    reopenBtn.type = 'button';
+    reopenBtn.addEventListener('click', function () { alertAction(item.id, 'reopen'); });
+    actions.appendChild(reopenBtn);
+    var dismissBtn = el(document, 'button', 'triage-action triage-action--danger', 'Dispensar');
+    dismissBtn.type = 'button';
+    dismissBtn.addEventListener('click', function () { alertAction(item.id, 'dismiss'); });
+    actions.appendChild(dismissBtn);
+    if (isHttpsUrl(item.source_id)) {
+      actions.appendChild(makeLink(document, item.source_id, 'Ver fonte'));
+    }
+    row.appendChild(actions);
+    return row;
+  }
+
+  function fetchTriage() {
+    var doc = global.document;
+    var container = doc && doc.getElementById('triage-panel');
+    if (!container) return Promise.resolve();
+    return global.fetch('/api/triagem?limit=200', {headers: {Accept: 'application/json'}})
+      .then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
+      .then(function (payload) {
+        container.textContent = '';
+        container.appendChild(renderTriage(doc, payload));
+      })
+      .catch(function (err) {
+        showError(err);
+        container.textContent = '';
+        container.appendChild(el(doc, 'p', 'muted',
+          'Triagem indisponível. Os alertas persistentes continuam acessíveis.'));
+      });
+  }
+
   // Atualização periódica (sem recarregar a página). Intervalo configurável por
   // `data-refresh-seconds` no <body>; padrão conservador de 60 s.
   function autoRefreshSeconds() {
@@ -665,6 +857,7 @@
       fetchData();
       fetchMonitoring();
       fetchAlerts();
+      fetchTriage();
     }, interval);
   }
 
@@ -700,6 +893,8 @@
         card.appendChild(el(document, 'p', 'muted', 'Histórico documental ainda não sincronizado.'));
         return;
       }
+      card.setAttribute('data-contest-id', identity.id);
+      card.setAttribute('id', 'concurso-' + identity.id);
       var footer = el(document, 'div', 'card__docs');
       var button = el(document, 'button', 'button button--ghost', 'Ver histórico documental');
       button.setAttribute('type', 'button');
@@ -804,13 +999,17 @@
   function init() {
     var doc = global.document;
     if (!doc) return;
-    var reload = function () { fetchData(); fetchMonitoring(); fetchAlerts(); };
+    var reload = function () { fetchData(); fetchMonitoring(); fetchAlerts(); fetchTriage(); };
     var retry = doc.getElementById('retry-button');
     if (retry) retry.addEventListener('click', reload);
-    fetchData();
+    fetchData().then(focusContestFromHash).catch(function () {});
     fetchMonitoring();
     fetchAlerts();
+    fetchTriage();
     startAutoRefresh();
+    if (global.addEventListener) {
+      global.addEventListener('hashchange', function () { focusContestFromHash(); });
+    }
   }
 
   var Radar = {
@@ -826,6 +1025,7 @@
     renderDocumentDetails: renderDocumentDetails,
     renderMonitoring: renderMonitoring,
     renderAlerts: renderAlerts,
+    renderTriage: renderTriage,
     matchIdentity: matchIdentity,
     renderList: renderList,
     setState: setState,

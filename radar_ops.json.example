@@ -16,5 +16,14 @@
     "quadrix": {"enabled": true, "min_interval_hours": 6},
     "pci": {"enabled": true, "min_interval_hours": 6}
   },
-  "notifications": {"local": false}
+  "notifications": {
+    "local": false,
+    "categories": ["prazo_isencao", "retificacao", "falha_fonte"],
+    "min_severity": "atencao",
+    "max_per_cycle": 5,
+    "min_interval_seconds": 30,
+    "base_url": "http://127.0.0.1:8000"
+  },
+  "triage_horizon_days": 7,
+  "max_new_alerts_per_cycle": 200
 }

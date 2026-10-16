@@ -91,11 +91,16 @@ python -m radar ops-config --write          # grava radar_ops.json com os defaul
 python -m radar ops-ciclo --limit 10        # coleta + reconcilia + fila em lote + alertas
 python -m radar ops-saude                   # saude real (config, banco, ciclos, fila, alertas)
 python -m radar ops-alertas --unseen        # alertas persistentes
+python -m radar ops-triagem                 # central de triagem (grupos por concurso/prazo)
+python -m radar ops-identidade              # registra a identidade de app (atalho/AUMID)
+python -m radar ops-notificar               # despacha notificacoes nativas elegiveis
 ```
 
 **Agendamento (Windows):** `pwsh -File .\scripts\install_tasks.ps1` registra a tarefa "Radar de Concursos - Ciclo" (a cada 6 h, sem sobrepor execucoes, recuperando apos reinicio), usando o Python do `radar_ops.json` e a conta do usuario, **sem senha armazenada**. `verify_tasks.ps1` mostra estado/proxima execucao; `uninstall_tasks.ps1` remove as tarefas **sem apagar dados**. O servidor local (loopback) pode ser iniciado por `pwsh -File .\scripts\serve.ps1`.
 
 Alertas persistentes (novo candidato, documento recuperado, retificacao, fonte indisponivel, prazo de isencao proximo/expirado) ficam no banco e aparecem na secao **Alertas** da interface, que se atualiza periodicamente. `GET /api/alertas` e `GET /api/saude` expoem os dados. Ver [`docs/superpowers/specs/2026-10-16-autonomous-operation-design.md`](docs/superpowers/specs/2026-10-16-autonomous-operation-design.md).
+
+**Notificacoes nativas e central de triagem:** alertas criticos/oportunidades podem virar **notificacoes nativas do Windows** (toast WinRT com identidade `RadarDeConcursos.Radar`; `scripts/install_app_identity.ps1` registra o atalho/AUMID). O canal e **opcional** (`notifications.local`, padrao `false`) e, quando ligado, aplica dedup por evento, severidade minima, categorias e limite por ciclo (`max_per_cycle`), retomando o excedente nos ciclos seguintes. A **central de triagem** (`GET /api/triagem`, `#triage-panel`) agrupa alertas **apenas por `contest_id` provado** (nunca por semelhanca de titulo), ordena por prazo documentado e oferece acoes reais (`POST /api/alertas/<id>`: visto/dispensar/adiar/reabrir) que **preservam historico e documentos**. Ver [`docs/superpowers/specs/2026-10-16-windows-notifications-triage-design.md`](docs/superpowers/specs/2026-10-16-windows-notifications-triage-design.md).
 
 ## Fontes oficiais
 
@@ -142,5 +147,7 @@ python -m unittest discover -s tests -q
 - Extração de PDF apenas quando há texto; documentos digitalizados (imagem) não são lidos por OCR.
 - A extração produz propostas que precisam de revisão humana para virarem fatos confirmados.
 - A data exibida indica quando a fonte foi consultada, não garante a situação atual do certame; confirme sempre nos documentos oficiais.
+- Notificações nativas são **opcionais** (`notifications.local`) e a exibição visual depende das configurações de foco/notificação do Windows; a entrega é confirmável, a exibição não é garantida.
+- Ainda **não** há priorização geográfica (Bahia/Pernambuco, prova × lotação, deslocamento desde Paulo Afonso) nem casamento com conteúdo programático/perfil pessoal — lacunas identificadas na Fase 19.
 
 Detalhes técnicos de operação, processamento e desenvolvimento ficam em [`docs/`](docs/) e no [registro de trabalho](docs/AUTONOMOUS_WORK_LOG.md).

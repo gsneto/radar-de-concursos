@@ -207,6 +207,25 @@ _V8_COLUMNS = {"alertas": {"id", "kind", "severity", "contest_id", "observation_
                            "source_id", "dedup_key", "title", "detail", "event_at",
                            "created_at", "seen_at", "dismissed_at", "payload_json"}}
 
+# v9: estado de notificação/adiamento dos alertas + estado operacional (aditivo).
+_V9_ADD_COLUMNS = (
+    "ALTER TABLE alertas ADD COLUMN notified_at TEXT",
+    "ALTER TABLE alertas ADD COLUMN notify_state TEXT",
+    "ALTER TABLE alertas ADD COLUMN notify_attempts INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE alertas ADD COLUMN notify_error TEXT",
+    "ALTER TABLE alertas ADD COLUMN snoozed_until TEXT",
+)
+_V9_STATE_TABLE = """CREATE TABLE ops_state (
+        key TEXT PRIMARY KEY, value TEXT, updated_at TEXT NOT NULL)"""
+_V9_DDL = _V9_ADD_COLUMNS + (_V9_STATE_TABLE,)
+_V9_ALERT_INDEXES = (
+    "CREATE INDEX IF NOT EXISTS idx_documentos_discovered ON documentos(discovered_at)",
+    "CREATE INDEX IF NOT EXISTS idx_versoes_fetched ON versoes_documento(fetched_at)",
+)
+_V9_COLUMNS = {"alertas": {"notified_at", "notify_state", "notify_attempts",
+                           "notify_error", "snoozed_until"},
+               "ops_state": {"key", "value", "updated_at"}}
+
 _V2_COLUMNS = {
     "concursos_identidade": {"id", "created_at"},
     "observacoes_concurso": {"id", "contest_id", "source_url", "competition_id", "observed_at"},
@@ -226,10 +245,10 @@ _V2_COLUMNS = {
 }
 
 # Versão corrente do esquema documental (v2 base + reconciliação/hash + monitoramento + fila).
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
-# Versões que as rotas de leitura aceitam sem migrar (v2..v8).
-_READABLE_VERSIONS = (2, 3, 4, 5, 6, 7, SCHEMA_VERSION)
+# Versões que as rotas de leitura aceitam sem migrar (v2..v9).
+_READABLE_VERSIONS = (2, 3, 4, 5, 6, 7, 8, SCHEMA_VERSION)
 
 
 def _validate_schema(conn, statements, columns_by_table, version_label):
@@ -318,6 +337,53 @@ def _apply_v8(conn) -> None:
             conn.execute(statement)
 
 
+def _apply_v9(conn) -> None:
+    """Adiciona estado de notificação/adiamento e `ops_state`, tolerando banco parcial."""
+    present = {row[0] for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type IN ('table','index')")}
+    if "ops_state" not in present:
+        conn.execute(_V9_STATE_TABLE)
+    alert_cols = {row[1] for row in conn.execute("PRAGMA table_info(alertas)")}
+    for statement in _V9_ADD_COLUMNS:
+        column = statement.rsplit("ADD COLUMN ", 1)[1].split()[0]
+        if column not in alert_cols:
+            conn.execute(statement)
+
+
+_ALERT_WATERMARKS = (
+    ("documentos", "discovered_at", "alerts.watermark.documentos"),
+    ("versoes_documento", "fetched_at", "alerts.watermark.versoes"),
+)
+
+
+def _seed_alert_watermarks(conn) -> None:
+    """Semeia os watermarks de alertas com o cursor atual, quando ainda ausentes.
+
+    Sem isso, a primeira geração de alertas após a migração para v9 reprocessaria **todo**
+    o histórico de documentos/versões. Alertas cuja chave de dedup mudou (ex.:
+    `documento_recuperado`) seriam então inseridos de novo, duplicando eventos - e, com as
+    notificações ligadas, reemitindo toasts. O watermark também evita o full scan por ciclo.
+    Só semeia quando há linhas e nenhum watermark prévio (idempotente).
+    """
+    for table, column, key in _ALERT_WATERMARKS:
+        if conn.execute("SELECT 1 FROM ops_state WHERE key=?", (key,)).fetchone():
+            continue
+        row = conn.execute(
+            f"SELECT {column}, id FROM {table} ORDER BY {column} DESC, id DESC LIMIT 1"
+        ).fetchone()
+        if row is None:
+            continue
+        conn.execute(
+            "INSERT OR IGNORE INTO ops_state(key, value, updated_at) VALUES(?,?,?)",
+            (key, json.dumps([row[0], row[1]]), _now()))
+
+
+def _ensure_alert_indexes(conn) -> None:
+    """Índices para a varredura por watermark dos alertas (idempotente)."""
+    for statement in _V9_ALERT_INDEXES:
+        conn.execute(statement)
+
+
 def connect_documents(db_path) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path, timeout=15)
     conn.execute("PRAGMA foreign_keys=ON")
@@ -329,7 +395,7 @@ def migrate_document_schema(db_path) -> None:
     try:
         conn.execute("BEGIN IMMEDIATE")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 2, 3, 4, 5, 6, 7, SCHEMA_VERSION):
+        if version not in (0, 2, 3, 4, 5, 6, 7, 8, SCHEMA_VERSION):
             raise ValueError(f"versão de esquema não suportada: {version}")
         _v3_extra = dict(
             versoes_documento=_V2_COLUMNS["versoes_documento"] | {"comparison_sha256"},
@@ -338,10 +404,14 @@ def migrate_document_schema(db_path) -> None:
         _v7_extra = dict(_V6_COLUMNS, documentos=_V2_COLUMNS["documentos"] | {"tipo_documental"},
                          cargos_identidade=_V2_COLUMNS["cargos_identidade"] | {"code"})
         _v8_extra = dict(_v7_extra, **_V8_COLUMNS)
+        _v9_extra = dict(_v8_extra)
+        _v9_extra["alertas"] = _V8_COLUMNS["alertas"] | _V9_COLUMNS["alertas"]
+        _v9_extra["ops_state"] = _V9_COLUMNS["ops_state"]
         if version == SCHEMA_VERSION:
-            _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL,
-                             dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v8_extra),
+            _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL,
+                             dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v9_extra),
                              f"v{SCHEMA_VERSION}")
+            _seed_alert_watermarks(conn)
         else:
             if version == 2:
                 _validate_schema(conn, _DDL, _V2_COLUMNS, "v2")
@@ -359,6 +429,9 @@ def migrate_document_schema(db_path) -> None:
             elif version == 7:
                 _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL,
                                  dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v7_extra), "v7")
+            elif version == 8:
+                _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL,
+                                 dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v8_extra), "v8")
             else:
                 for statement in _DDL:
                     conn.execute(statement)
@@ -368,7 +441,10 @@ def migrate_document_schema(db_path) -> None:
             _apply_v6(conn)
             _apply_v7(conn)
             _apply_v8(conn)
+            _apply_v9(conn)
+            _seed_alert_watermarks(conn)
             conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+        _ensure_alert_indexes(conn)
         conn.commit()
     except BaseException:
         conn.rollback()

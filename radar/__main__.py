@@ -178,6 +178,28 @@ def _cmd_ops_config(args: argparse.Namespace) -> None:
     print(json.dumps({"config": cfg, "errors": validate_config(cfg)}, ensure_ascii=False, default=str))
 
 
+def _cmd_ops_triagem(args: argparse.Namespace) -> None:
+    from radar import ops
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    print(json.dumps(ops.triage(cfg["db_path"], include_seen=args.include_seen, limit=args.limit,
+                                horizon_days=int(cfg.get("triage_horizon_days", 7))),
+                     ensure_ascii=False, default=str))
+
+
+def _cmd_ops_notificar(args: argparse.Namespace) -> None:
+    from radar import notifications
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    print(json.dumps(notifications.dispatch(cfg["db_path"], cfg, limit=args.limit),
+                     ensure_ascii=False, default=str))
+
+
+def _cmd_ops_identidade(args: argparse.Namespace) -> None:
+    from radar import notifications
+    print(json.dumps(notifications.ensure_app_identity(), ensure_ascii=False, default=str))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m radar")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -376,6 +398,21 @@ def build_parser() -> argparse.ArgumentParser:
     ops_conf.add_argument('--config', default=None)
     ops_conf.add_argument('--write', action='store_true', help='grava um radar_ops.json com os defaults')
     ops_conf.set_defaults(func=_cmd_ops_config)
+
+    ops_tri = subparsers.add_parser('ops-triagem', help='central de triagem: alertas agrupados por concurso')
+    ops_tri.add_argument('--config', default=None)
+    ops_tri.add_argument('--include-seen', action='store_true')
+    ops_tri.add_argument('--limit', type=int, default=200)
+    ops_tri.set_defaults(func=_cmd_ops_triagem)
+
+    ops_notif = subparsers.add_parser('ops-notificar', help='despacha notificações nativas dos alertas elegíveis')
+    ops_notif.add_argument('--config', default=None)
+    ops_notif.add_argument('--limit', type=int, default=None)
+    ops_notif.set_defaults(func=_cmd_ops_notificar)
+
+    ops_ident = subparsers.add_parser('ops-identidade', help='registra a identidade do app para toasts')
+    ops_ident.add_argument('--config', default=None)
+    ops_ident.set_defaults(func=_cmd_ops_identidade)
 
     return parser
 

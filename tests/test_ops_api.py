@@ -5,6 +5,7 @@ import json
 import tempfile
 import threading
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from radar.__main__ import build_parser
@@ -27,10 +28,11 @@ class OpsApiTest(unittest.TestCase):
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
 
-    def request(self, path, method="GET"):
+    def request(self, path, method="GET", body=None):
         client = http.client.HTTPConnection("127.0.0.1", self.server.server_address[1], timeout=5)
         try:
-            client.request(method, path)
+            headers = {"Content-Type": "application/json"} if body is not None else {}
+            client.request(method, path, body=body, headers=headers)
             response = client.getresponse()
             return response.status, response.read()
         finally:
@@ -79,6 +81,47 @@ class OpsApiTest(unittest.TestCase):
 
     def test_unmigrated_alerts_is_service_unavailable(self):
         self.assertEqual(self.request("/api/alertas")[0], 503)
+
+    def test_triage_endpoint(self):
+        self._seed_alert()
+        before = self.request("/api/concursos")[1]
+        status, body = self.request("/api/triagem")
+        self.assertEqual(status, 200)
+        payload = json.loads(body)
+        self.assertIn("groups", payload)
+        self.assertIn("counts", payload)
+        self.assertEqual(self.request("/api/concursos")[1], before)  # v1 intacto
+
+    def test_alert_action_marks_seen(self):
+        self._seed_alert()
+        alert_id = json.loads(self.request("/api/alertas")[1])["alerts"][0]["id"]
+        status, _ = self.request(f"/api/alertas/{alert_id}", method="POST",
+                                 body=json.dumps({"action": "seen"}))
+        self.assertEqual(status, 200)
+        after = json.loads(self.request("/api/alertas")[1])
+        self.assertEqual(after["counts"]["unseen"], 0)
+
+    def test_alert_action_snooze_and_reopen(self):
+        self._seed_alert()
+        alert_id = json.loads(self.request("/api/alertas")[1])["alerts"][0]["id"]
+        future = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
+        self.assertEqual(self.request(f"/api/alertas/{alert_id}", method="POST",
+                                      body=json.dumps({"action": "snooze", "until": future}))[0], 200)
+        self.assertEqual(json.loads(self.request("/api/triagem")[1])["groups"], [])
+        self.assertEqual(self.request(f"/api/alertas/{alert_id}", method="POST",
+                                      body=json.dumps({"action": "reopen"}))[0], 200)
+
+    def test_alert_action_rejects_bad_requests(self):
+        self._seed_alert()
+        alert_id = json.loads(self.request("/api/alertas")[1])["alerts"][0]["id"]
+        self.assertEqual(self.request(f"/api/alertas/{alert_id}", method="POST",
+                                      body=json.dumps({"action": "x"}))[0], 400)
+        self.assertEqual(self.request(f"/api/alertas/{alert_id}", method="POST",
+                                      body=json.dumps({"action": "snooze"}))[0], 400)
+        self.assertEqual(self.request("/api/alertas/inexistente", method="POST",
+                                      body=json.dumps({"action": "seen"}))[0], 404)
+        self.assertEqual(self.request("/api/alertas", method="POST",
+                                      body=json.dumps({"action": "seen"}))[0], 405)
 
 
 class OpsCliTest(unittest.TestCase):

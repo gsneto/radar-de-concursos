@@ -656,3 +656,29 @@ button:focus-visible {
 .alert-row__when { font-size: var(--text-xs, 0.75rem); color: var(--muted); margin-left: auto; }
 .alert-row__title { margin: var(--space-1, 4px) 0 0; font-weight: 600; }
 .alert-row__detail { margin: var(--space-1, 4px) 0 0; font-size: var(--text-sm, 0.85rem); color: var(--muted); }
+
+/* Central de triagem (Fase 19) */
+.triage__panel { border: 1px solid var(--border, #d8ded9); border-radius: 10px; padding: var(--space-3, 12px); background: var(--surface, #fff); }
+.triage__summary { font-size: var(--text-sm, 0.85rem); color: var(--muted); margin: 0 0 var(--space-2, 8px); }
+.triage__filters { display: flex; flex-wrap: wrap; gap: var(--space-1, 4px); margin-bottom: var(--space-3, 12px); }
+.triage__filter { font: inherit; font-size: var(--text-sm, 0.85rem); padding: 2px var(--space-2, 8px); border: 1px solid var(--rule-strong, #c8cfc9); border-radius: 999px; background: var(--surface, #fff); color: var(--ink-soft, #333); cursor: pointer; }
+.triage__filter.is-active { background: var(--brand-deep, #14452f); color: #fff; border-color: var(--brand-deep, #14452f); }
+.triage-group { border-left: 4px solid var(--muted); padding: var(--space-2, 8px) var(--space-3, 12px); border-radius: 6px; background: var(--surface, #fff); margin-bottom: var(--space-2, 8px); }
+.triage-group--hoje { border-left-color: var(--st-conflict, #b00020); }
+.triage-group--proximos, .triage-group--retificacoes { border-left-color: var(--st-ambiguous, #b8860b); }
+.triage-group--novos { border-left-color: var(--st-validated, #1f7a4d); }
+.triage-group--falhas { border-left-color: var(--st-conflict, #b00020); }
+.triage-group__head { display: flex; flex-wrap: wrap; gap: var(--space-2, 8px); align-items: center; }
+.triage-group__count { font-size: var(--text-xs, 0.75rem); color: var(--muted); margin-left: auto; }
+.triage-group__title { margin: var(--space-1, 4px) 0 0; font-size: var(--text-base, 1rem); }
+.triage-group__meta { margin: var(--space-1, 4px) 0 0; font-size: var(--text-sm, 0.85rem); color: var(--muted); }
+.triage-group__alerts { list-style: none; margin: var(--space-2, 8px) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1, 4px); }
+.triage-alert { border-top: 1px solid var(--rule, #e6eae6); padding-top: var(--space-1, 4px); }
+.triage-alert__line { display: flex; flex-wrap: wrap; gap: var(--space-2, 8px); align-items: center; }
+.triage-alert__when { font-size: var(--text-xs, 0.75rem); color: var(--muted); margin-left: auto; }
+.triage-alert__title { margin: var(--space-1, 4px) 0 0; font-weight: 600; }
+.triage-alert__detail { margin: var(--space-1, 4px) 0 0; font-size: var(--text-sm, 0.85rem); color: var(--muted); }
+.triage-alert__actions { display: flex; flex-wrap: wrap; gap: var(--space-1, 4px); margin-top: var(--space-1, 4px); }
+.triage-action { font: inherit; font-size: var(--text-xs, 0.75rem); padding: 2px var(--space-2, 8px); border: 1px solid var(--rule-strong, #c8cfc9); border-radius: 6px; background: var(--surface, #fff); color: var(--ink-soft, #333); cursor: pointer; }
+.triage-action--danger { color: var(--st-conflict, #b00020); border-color: #e7c6c3; }
+.card--focused { outline: 3px solid var(--brand-deep, #14452f); outline-offset: 2px; transition: outline-color 0.3s ease; }

@@ -164,6 +164,74 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
         self._send(HTTPStatus.OK, "application/json; charset=utf-8", body)
 
+    def _serve_triage(self, include_seen, limit):
+        from radar import ops
+        from radar.ops_config import load_config
+        try:
+            config = load_config()
+            config["db_path"] = self.server.db_path
+            payload = ops.triage(self.server.db_path, include_seen=include_seen, limit=limit,
+                                 horizon_days=int(config.get("triage_horizon_days", 7)))
+        except (ValueError, sqlite3.Error):
+            self._send(HTTPStatus.SERVICE_UNAVAILABLE, "application/json; charset=utf-8",
+                       b'{"error":"Migracao documental pendente"}')
+            return
+        body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+        self._send(HTTPStatus.OK, "application/json; charset=utf-8", body)
+
+    def _alert_action(self, alert_id):
+        """POST /api/alertas/<id>: visto/dispensar/adiar (não apaga histórico)."""
+        from radar import ops
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except (TypeError, ValueError):
+            length = 0
+        if length <= 0 or length > 4096:
+            self._send_no_content(HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            self._send_no_content(HTTPStatus.BAD_REQUEST)
+            return
+        if not isinstance(payload, dict):
+            self._send_no_content(HTTPStatus.BAD_REQUEST)
+            return
+        action = payload.get("action")
+        seen = dismissed = None
+        snooze_until = None
+        if action == "seen":
+            seen = True
+        elif action == "dismiss":
+            dismissed = True
+        elif action == "reopen":
+            seen = False
+            dismissed = False
+            snooze_until = ""
+        elif action == "snooze":
+            snooze_until = payload.get("until")
+            if not isinstance(snooze_until, str) or not snooze_until:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+                return
+        else:
+            self._send_no_content(HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            ok = ops.mark_alert(self.server.db_path, alert_id, seen=seen, dismissed=dismissed,
+                                snooze_until=snooze_until)
+        except ValueError:
+            self._send_no_content(HTTPStatus.BAD_REQUEST)
+            return
+        except sqlite3.Error:
+            self._send(HTTPStatus.SERVICE_UNAVAILABLE, "application/json; charset=utf-8",
+                       b'{"error":"Migracao documental pendente"}')
+            return
+        if not ok:
+            self._send_no_content(HTTPStatus.NOT_FOUND)
+            return
+        body = json.dumps({"id": alert_id, "action": action, "updated": True}).encode("utf-8")
+        self._send(HTTPStatus.OK, "application/json; charset=utf-8", body)
+
     # --- Roteamento ----------------------------------------------------------
 
     def do_GET(self):
@@ -213,6 +281,18 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
             else:
                 self._serve_health()
+        elif path == "/api/triagem":
+            query = parse_qs(parts.query)
+            try:
+                limit = int(query.get("limit", ["200"])[0])
+            except ValueError:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+                return
+            include_seen = query.get("include_seen", ["0"])[0] in ("1", "true", "yes")
+            if set(query) - {"include_seen", "limit"}:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_triage(include_seen, limit)
         elif path in ("/", "/index.html"):
             self._serve_file("index.html")
         elif path in _ASSET_ROUTES:
@@ -224,6 +304,13 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         self._send_no_content(HTTPStatus.METHOD_NOT_ALLOWED, {"Allow": "GET"})
 
     def do_POST(self):
+        parts = urlsplit(self.path)
+        path = parts.path
+        if path.startswith("/api/alertas/") and not parts.query:
+            alert_id = path[len("/api/alertas/"):]
+            if alert_id and "/" not in alert_id:
+                self._alert_action(alert_id)
+                return
         self._method_not_allowed()
 
     def do_PUT(self):

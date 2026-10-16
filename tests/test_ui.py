@@ -177,6 +177,20 @@ class TestAppStatic(unittest.TestCase):
         self.assertIn("data-refresh-seconds", html)
 
 
+    def test_renders_triage_center(self):
+        js = read(APP_PATH)
+        for token in ("renderTriage", "/api/triagem", "fetchTriage", "renderTriageGroup",
+                      "triage-panel", "alertAction", "/api/alertas/", "snoozeOneDay",
+                      "Ação necessária hoje", "Adiar 1 dia", "Dispensar", "Reabrir",
+                      "focusContestFromHash", "data-contest-id"):
+            self.assertIn(token, js, "app.js deve apresentar %r" % token)
+        html = read(os.path.join(WEB, "index.html"))
+        self.assertIn('id="triage-panel"', html)
+        css = read(STYLES_PATH)
+        for token in (".triage__panel", ".triage-group", ".triage-action", ".card--focused"):
+            self.assertIn(token, css, "styles.css deve apresentar %r" % token)
+
+
 class TestStylesStatic(unittest.TestCase):
     """Responsividade e acessibilidade do styles.css."""
 
@@ -244,6 +258,7 @@ function makeDoc() {
       _classes: [],
     };
     el.appendChild = function (c) { el.children.push(c); return c; };
+    el.addEventListener = function () { return undefined; };
     el.setAttribute = function (k, v) { el.attrs[k] = String(v); };
     el.getAttribute = function (k) {
       return Object.prototype.hasOwnProperty.call(el.attrs, k) ? el.attrs[k] : null;
@@ -535,6 +550,42 @@ assert.ok(flattenText(emptyAlerts).includes('Nenhum alerta'), 'sem alertas é ex
 
 // Atualização periódica: intervalo padrão conservador (sem body configurado → 60 s).
 eq(Radar.autoRefreshSeconds(), 60, 'intervalo padrão de atualização');
+
+// Central de triagem: agrupa por concurso, urgência por data documentada e ações.
+const triage = Radar.renderTriage(doc, {
+  counts: {total: 4, unseen: 3},
+  groups: [
+    {contest_id: 'contest-abc', urgency: 'hoje', alert_count: 1, exemption_end: '2026-10-15',
+     sources: ['PCI'], alerts: [
+       {id: 't1', kind: 'prazo_isencao', severity: 'critico', title: 'Isenção expirada',
+        detail: 'Fim: 2026-10-15', created_at: '2026-10-16T12:00:00+00:00'}]},
+    {contest_id: 'contest-def', urgency: 'proximos', alert_count: 2, exemption_end: null,
+     sources: [], alerts: [
+       {id: 't2', kind: 'retificacao', severity: 'atencao', title: 'Retificação publicada',
+        detail: null, created_at: '2026-10-16T12:01:00+00:00'}]},
+    {contest_id: null, urgency: 'falhas', alert_count: 1, exemption_end: null,
+     sources: ['Dou'], alerts: [
+       {id: 't3', kind: 'falha_fonte', severity: 'atencao', title: 'Fonte indisponível',
+        detail: 'TimeoutError', created_at: '2026-10-16T12:02:00+00:00'}]}
+  ]
+});
+const ttext = flattenText(triage);
+assert.ok(ttext.includes('Ação necessária hoje'), 'bucket de urgência imediata rotulado');
+assert.ok(ttext.includes('Prazos próximos'), 'bucket de prazos próximos rotulado');
+assert.ok(ttext.includes('Falhas de coleta'), 'bucket de falhas rotulado');
+assert.ok(ttext.includes('Sem concurso identificado'), 'alerta sem concurso é explicitado, não fundido');
+assert.ok(ttext.includes('Sem prazo documentado'), 'prazo desconhecido é explícito (não finge expirado)');
+assert.ok(ttext.includes('3 evento(s)') || ttext.includes('evento(s)'), 'contagem de eventos exibida');
+assert.ok(ttext.includes('não visto'), 'resumo de não vistos exibido');
+assert.ok(ttext.includes('Marcar visto') && ttext.includes('Adiar 1 dia') && ttext.includes('Dispensar'),
+  'ações da triagem presentes');
+assert.ok(ttext.includes('Abrir concurso'), 'navegação para o concurso presente');
+assert.ok(!ttext.includes('prazo_isencao') && !ttext.includes('falha_fonte'),
+  'enum cru de alerta não vaza na triagem');
+assert.strictEqual(collectAnchors(triage).length, 2, 'somente grupos com contest_id geram link');
+
+const emptyTriage = Radar.renderTriage(doc, {groups: [], counts: {total: 0, unseen: 0}});
+assert.ok(flattenText(emptyTriage).includes('Nenhum alerta'), 'triagem vazia é explícita');
 
 console.log('OK');
 """

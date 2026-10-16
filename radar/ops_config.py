@@ -33,7 +33,16 @@ DEFAULTS = {
     "max_documents_per_source": 5,
     "analyze": True,
     "sources": {},                 # {nome: {"enabled": bool, "min_interval_hours": int}}
-    "notifications": {"local": False},
+    "notifications": {
+        "local": False,
+        "categories": ["prazo_isencao", "retificacao", "falha_fonte"],
+        "min_severity": "atencao",
+        "max_per_cycle": 5,
+        "min_interval_seconds": 30,
+        "base_url": "http://127.0.0.1:8000",
+    },
+    "triage_horizon_days": 7,
+    "max_new_alerts_per_cycle": 200,
 }
 
 # Intervalos mínimos por fonte (evita consultas repetidas entre ciclos).
@@ -119,7 +128,6 @@ def load_config(path: str | Path | None = None) -> dict:
     notes.update(cfg.get("notifications") or {})
     cfg["notifications"] = notes
     return cfg
-
 
 def _resolve(root: Path, value: str) -> str:
     p = Path(value).expanduser()

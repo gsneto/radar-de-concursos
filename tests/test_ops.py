@@ -254,19 +254,21 @@ class AlertTest(OpsBase):
             ambiguity_reason="x", evidence=dict(block_index=0, quote="x", start_offset=0, end_offset=1))])
         return contest
 
+    def _prazo_alert(self):
+        return next(a for a in ops.list_alerts(self.db) if a["kind"] == "prazo_isencao")
+
     def test_near_exemption_deadline_creates_alert(self):
         self._deadline_proposal(self.db, 3)
         created = ops.generate_alerts(self.db, now=_now())
         self.assertEqual(created["created"]["prazo_isencao"], 1)
-        alert = ops.list_alerts(self.db)[0]
+        alert = self._prazo_alert()
         self.assertEqual(alert["kind"], "prazo_isencao")
         self.assertEqual(alert["severity"], "atencao")
 
     def test_expired_deadline_is_critical(self):
         self._deadline_proposal(self.db, -1)
         ops.generate_alerts(self.db, now=_now())
-        alert = ops.list_alerts(self.db)[0]
-        self.assertEqual(alert["severity"], "critico")
+        self.assertEqual(self._prazo_alert()["severity"], "critico")
 
     def test_deadline_escalates_from_atencao_to_critico(self):
         # Regressão: um prazo que primeiro entra no horizonte (atencao) deve gerar um
@@ -275,11 +277,11 @@ class AlertTest(OpsBase):
         self._deadline_proposal(self.db, 3)
         first = ops.generate_alerts(self.db, now=_now())
         self.assertEqual(first["created"]["prazo_isencao"], 1)
-        self.assertEqual(ops.list_alerts(self.db)[0]["severity"], "atencao")
+        self.assertEqual(self._prazo_alert()["severity"], "atencao")
         later = (datetime.now(timezone.utc) + _td(days=10)).isoformat()
         second = ops.generate_alerts(self.db, now=later)
         self.assertEqual(second["created"]["prazo_isencao"], 1)  # escala para crítico
-        severities = {a["severity"] for a in ops.list_alerts(self.db)}
+        severities = {a["severity"] for a in ops.list_alerts(self.db) if a["kind"] == "prazo_isencao"}
         self.assertIn("critico", severities)
 
     def test_malformed_deadline_value_does_not_abort(self):
@@ -325,11 +327,22 @@ class AlertTest(OpsBase):
     def test_mark_alert_seen_and_dismissed(self):
         self._deadline_proposal(self.db, 2)
         ops.generate_alerts(self.db, now=_now())
-        alert_id = ops.list_alerts(self.db)[0]["id"]
+        alert_id = self._prazo_alert()["id"]
         self.assertTrue(ops.mark_alert(self.db, alert_id, seen=True))
-        self.assertEqual(ops.alert_counts(self.db)["unseen"], 0)
+        remaining = {a["id"] for a in ops.list_alerts(self.db, unseen_only=True)}
+        self.assertNotIn(alert_id, remaining)
         self.assertTrue(ops.mark_alert(self.db, alert_id, dismissed=True))
-        self.assertEqual(ops.list_alerts(self.db, unseen_only=True), [])
+        self.assertNotIn(alert_id, {a["id"] for a in ops.list_alerts(self.db, unseen_only=True)})
+
+    def test_mark_alert_snooze_preserves_history(self):
+        self._deadline_proposal(self.db, 2)
+        ops.generate_alerts(self.db, now=_now())
+        alert_id = self._prazo_alert()["id"]
+        future = (datetime.now(timezone.utc) + timedelta(days=3)).isoformat()
+        self.assertTrue(ops.mark_alert(self.db, alert_id, snooze_until=future))
+        # Some da triagem agora, mas o histórico permanece.
+        self.assertNotIn(alert_id, {a["id"] for a in ops.triage(self.db)["groups"][0]["alerts"]})
+        self.assertIn(alert_id, {a["id"] for a in ops.list_alerts(self.db)})
 
     def test_source_failure_generates_alert(self):
         r = ops.run_cycle(self.cfg, sources=[self._fake_source(fail=True)], logger=self.logger)
@@ -357,7 +370,7 @@ class HealthTest(OpsBase):
         self.assertIsNotNone(h["last_cycle"])
         self.assertIn("queue", h)
         self.assertIn("alerts", h)
-        self.assertEqual(h["database"]["schema_version"], 8)
+        self.assertEqual(h["database"]["schema_version"], 9)
 
     def _touch(self, db_path):
         obs = ensure_observation(db_path, "https://exemplo.test/a/", "X-1")
