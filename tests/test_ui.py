@@ -236,6 +236,17 @@ class TestAppStatic(unittest.TestCase):
         for token in (".prep__panel", ".prep__stats", ".prep__basis"):
             self.assertIn(token, css, "styles.css deve apresentar %r" % token)
 
+    def test_renders_sources_catalog(self):
+        js = read(APP_PATH)
+        for token in ("renderSources", "fetchSources", "/api/fontes", "sources-panel",
+                      "SOURCE_STATUS_LABEL", "PERMISSION_LABEL",
+                      "Persistência não verificada", "Aguardando credencial"):
+            self.assertIn(token, js, "app.js deve apresentar %r" % token)
+        html = read(os.path.join(WEB, "index.html"))
+        for token in ('id="sources-panel"', 'id="sources-refresh"',
+                      "Catálogo de fontes", "permissão"):
+            self.assertIn(token, html)
+
     def test_renders_review_center_and_blocked_documents(self):
         js = read(APP_PATH)
         for token in ("renderReviewList", "renderReviewDetail", "fetchReview",

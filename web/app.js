@@ -2230,6 +2230,94 @@
     });
   }
 
+  // --- Catálogo de fontes (Fase 29) ---
+
+  var SOURCE_STATUS_LABEL = {
+    habilitada: 'Habilitada',
+    aguardando_credencial: 'Aguardando credencial',
+    aguardando_validacao_de_uso: 'Aguardando validação de uso',
+    bloqueada: 'Bloqueada',
+    nao_implementada: 'Não implementada',
+    desativada: 'Desativada'
+  };
+
+  var PERMISSION_LABEL = {
+    persistencia_permitida: 'Persistência permitida',
+    uso_transitorio: 'Somente uso transitório',
+    persistencia_nao_verificada: 'Persistência não verificada',
+    acesso_bloqueado: 'Acesso bloqueado',
+    importacao_manual_controlada: 'Importação manual'
+  };
+
+  function sourcesStatus(message) {
+    var doc = global.document;
+    var node = doc && doc.getElementById('sources-status');
+    if (node) node.textContent = message || '';
+  }
+
+  function renderSources(document, payload) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    var catalogo = payload.catalogo || {};
+    wrap.appendChild(el(document, 'p', 'prep__basis',
+      payload.total + ' fonte(s) catalogada(s) · ' +
+      Object.keys(catalogo.por_estado || {}).map(function (state) {
+        return state + ': ' + catalogo.por_estado[state];
+      }).join(' · ')));
+    if (payload.revisao_vencida && payload.revisao_vencida.length) {
+      wrap.appendChild(el(document, 'p', 'prep__basis',
+        'Revisão de política vencida: ' + payload.revisao_vencida.join(', ')));
+    }
+    payload.items.forEach(function (item) {
+      var card = el(document, 'article', 'study-disc');
+      card.appendChild(el(document, 'h4', 'study-disc__title', item.name));
+      card.appendChild(el(document, 'p', 'prep__basis',
+        item.category + ' · ' + item.nature + ' · ' + item.access + ' · ' +
+        (SOURCE_STATUS_LABEL[item.status] || item.status) +
+        (item.credential_env ? ' · credencial: ' + item.credential_env : '')));
+      var persistence = el(document, 'ul', 'study__revisions');
+      Object.keys(item.persistence || {}).forEach(function (contentType) {
+        persistence.appendChild(el(document, 'li', 'study__revision',
+          contentType + ': ' + (PERMISSION_LABEL[item.persistence[contentType]] ||
+                                item.persistence[contentType])));
+      });
+      card.appendChild(persistence);
+      if (item.last_run) {
+        card.appendChild(el(document, 'p', 'prep__basis',
+          'última execução: ' + item.last_run.calls + ' chamada(s), ' +
+          item.last_run.items + ' item(ns), ' + item.last_run.credits +
+          ' crédito(s), ' + item.last_run.cost + ' ' + (item.currency || '') +
+          ' · ' + item.last_run.status));
+      } else {
+        card.appendChild(el(document, 'p', 'muted', 'Ainda não executada.'));
+      }
+      if (item.last_error) {
+        card.appendChild(el(document, 'p', 'prep__basis', 'Erro: ' + item.last_error));
+      }
+      wrap.appendChild(card);
+    });
+    return wrap;
+  }
+
+  function fetchSources() {
+    var doc = global.document;
+    if (!doc || !doc.getElementById('sources-panel')) return Promise.resolve();
+    sourcesStatus('Atualizando…');
+    return global.fetch('/api/fontes', {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        var node = doc.getElementById('sources-panel');
+        clearContainer(node);
+        node.appendChild(renderSources(doc, payload));
+        sourcesStatus('');
+      })
+      .catch(function (error) {
+        sourcesStatus('Fontes indisponíveis (' + error.message + ').');
+      });
+  }
+
   // --- Revisão humana e documentos bloqueados (Fase 28) ---
 
   var reviewState = {limit: 10, offset: 0, total: 0, field: '', state: 'pendente',
@@ -3077,6 +3165,8 @@
     if (blockedRefresh) blockedRefresh.addEventListener('click', fetchBlocked);
     var assocRefresh = doc.getElementById('assoc-refresh');
     if (assocRefresh) assocRefresh.addEventListener('click', fetchAssociations);
+    var sourcesRefresh = doc.getElementById('sources-refresh');
+    if (sourcesRefresh) sourcesRefresh.addEventListener('click', fetchSources);
     var coverageRefresh = doc.getElementById('coverage-refresh');
     if (coverageRefresh) coverageRefresh.addEventListener('click', function () { fetchCoverage(); });
     fetchData().then(focusContestFromHash).catch(function () {});
@@ -3092,6 +3182,7 @@
     fetchReview();
     fetchBlocked();
     fetchAssociations();
+    fetchSources();
     restoreBatch();
     startAutoRefresh();
     if (global.addEventListener) {
@@ -3131,6 +3222,8 @@
     fetchBlocked: fetchBlocked,
     renderAssociations: renderAssociations,
     fetchAssociations: fetchAssociations,
+    renderSources: renderSources,
+    fetchSources: fetchSources,
     fetchCoverage: fetchCoverage,
     readFileAsBase64: readFileAsBase64,
     formatClock: formatClock,

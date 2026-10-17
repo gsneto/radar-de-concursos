@@ -541,6 +541,52 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             else:
                 from radar import association
                 self._serve_study(association.suspect_associations)
+        elif path == "/api/fontes":
+            if parts.query:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import budget
+            self._serve_study(budget.state_report)
+        elif path.startswith("/api/fontes/"):
+            remainder = path[len("/api/fontes/"):]
+            if not remainder or "/" in remainder or parts.query:
+                self._bad_request("fonte inválida")
+                return
+            from radar import budget, connectors, source_policy
+            try:
+                source_policy.catalog.get_source(remainder)
+            except KeyError:
+                self._bad_request("fonte desconhecida")
+                return
+            def detail(db):
+                try:
+                    connector = connectors.get_connector(remainder).describe()
+                    implemented = True
+                except connectors.ConnectorError:
+                    connector, implemented = None, False
+                return {
+                    "source": source_policy.catalog.get_source(remainder),
+                    "connector": connector,
+                    "implemented": implemented,
+                    "policy": [source_policy.decision(remainder, content_type)
+                               for content_type in
+                               source_policy.catalog.get_source(remainder)["content"]],
+                    "reviews": source_policy.review_history(db, remainder)["itens"],
+                }
+            self._serve_study(detail)
+        elif path == "/api/fontes-consumo":
+            query = parse_qs(parts.query)
+            if set(query) - {"source_id", "limit"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["50"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            from radar import budget
+            self._serve_study(budget.consumption_report,
+                              source_id=query.get("source_id", [None])[0], limit=limit)
         elif path == "/api/revisao/fila":
             self._review_queue(parts)
         elif path.startswith("/api/revisao/proposta/"):

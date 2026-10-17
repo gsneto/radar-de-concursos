@@ -213,6 +213,8 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
     new_ids = []
     skip_download = {}
     allowed_hosts = {}
+    policy_stripped = []
+    policy_skipped = []
     errors = []
     inline_content = {}
     for candidate in candidates:
@@ -227,6 +229,31 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
                 row = conn.execute("SELECT contest_id FROM observacoes_concurso WHERE id=?", (obs_id,)).fetchone()
                 if row:
                     involved_contests.add(row[0])
+        # Porta única de persistência: o tipo de conteúdo do candidato é decidido aqui e
+        # consultado na política antes de qualquer escrita.
+        from radar import source_policy
+        policy_source = source.get("id") or "guajara"
+        content_type = ("documento" if candidate.get("inline_content")
+                        or candidate.get("kind") in ("edital", "retificacao")
+                        else "metadados")
+        body_denied = False
+        if not source_policy.can_persist(policy_source, content_type):
+            if candidate.get("inline_content") and source_policy.can_persist(
+                    policy_source, "metadados"):
+                # Metadados/URL continuam como pista; o corpo de terceiro não é gravado.
+                candidate = {k: v for k, v in candidate.items()
+                             if k not in ("inline_content", "inline_content_type")}
+                body_denied = True
+                policy_stripped.append({"document_url": candidate.get("official_url"),
+                                        "content_type": content_type,
+                                        "permission": source_policy.decision(
+                                            policy_source, content_type)["permission"]})
+            else:
+                policy_skipped.append({"document_url": candidate.get("official_url"),
+                                       "content_type": content_type,
+                                       "permission": source_policy.decision(
+                                           policy_source, content_type)["permission"]})
+                continue
         try:
             document_id = register_document(db_path, candidate)
         except ValueError:
@@ -238,6 +265,9 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
             known_by_obs[obs_id].add(document_id)
             documents_new += 1
             new_ids.append(document_id)
+        if body_denied:
+            # Corpo de terceiro não autorizado: nem download, nem versão. Metadados ficam.
+            skip_download[document_id] = "politica_conteudo"
         # Candidato cujo host não é autorizado para download (ex.: CDN com robots.txt
         # restritivo) é registrado com metadados e URL, mas o byte não é buscado.
         if candidate.get("fetch_allowed") is False:
@@ -340,7 +370,9 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
         bloqueados[motivo] = bloqueados.get(motivo, 0) + 1
     summary = {"documents_found": len(candidates), "documents_new": documents_new,
                "versions_new": versions_new, "changes": changes, "errors": errors,
-               "downloads_bloqueados": bloqueados}
+               "downloads_bloqueados": bloqueados,
+               "politica_nao_persistido": policy_skipped,
+               "politica_sem_corpo": policy_stripped}
     for key, value in extra_summary.items():
         if key != "errors":
             summary[key] = value
@@ -352,7 +384,9 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
     return {"source_url": source_url, "state": state, "documents_found": len(candidates),
             "documents_new": documents_new, "versions_new": versions_new, "changes": changes,
             "changes_pending": pending, "coverage_state": coverage, "errors": errors,
-            "downloads_bloqueados": bloqueados}
+            "downloads_bloqueados": bloqueados,
+            "politica_nao_persistido": len(policy_skipped),
+            "politica_sem_corpo": len(policy_stripped)}
 
 
 def _insert_fonte(db_path, fonte_id, cycle_id, source_url, state, checked_at, last_success_at,

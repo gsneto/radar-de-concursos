@@ -501,6 +501,86 @@ _V15_COLUMNS = {
 # - ``ingestoes_documentais``: procedência de documento fornecido manualmente. O arquivo
 #   nunca vira "oficial" só porque foi declarado; guarda origem declarada, URL original,
 #   canal, data, hash local e resultado da validação.
+# v18: catálogo de fontes — estado operacional, consumo por execução e histórico de revisão
+# de política. O catálogo em si é código versionado (radar/source_catalog.py); aqui ficam
+# apenas fatos de execução, sem segredos.
+_V18_TABLES = (
+    """CREATE TABLE fontes_estado (
+        source_id TEXT PRIMARY KEY,
+        enabled INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'nao_testada',
+        last_run_at TEXT,
+        last_run_status TEXT,
+        last_result_json TEXT,
+        last_error TEXT,
+        calls_total INTEGER NOT NULL DEFAULT 0,
+        credits_total REAL NOT NULL DEFAULT 0,
+        cost_total REAL NOT NULL DEFAULT 0,
+        cost_currency TEXT,
+        quota_json TEXT,
+        updated_at TEXT NOT NULL)""",
+    """CREATE TABLE fontes_consumo (
+        id TEXT PRIMARY KEY,
+        source_id TEXT NOT NULL,
+        run_id TEXT NOT NULL UNIQUE,
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        calls INTEGER NOT NULL DEFAULT 0,
+        items INTEGER NOT NULL DEFAULT 0,
+        credits REAL NOT NULL DEFAULT 0,
+        cost_amount REAL NOT NULL DEFAULT 0,
+        cost_currency TEXT,
+        status TEXT NOT NULL,
+        checkpoint_json TEXT,
+        limits_json TEXT,
+        notes TEXT)""",
+    """CREATE TABLE fontes_revisoes (
+        id TEXT PRIMARY KEY,
+        source_id TEXT NOT NULL,
+        reviewed_at TEXT NOT NULL,
+        reviewer TEXT NOT NULL,
+        decision TEXT NOT NULL,
+        note TEXT NOT NULL)""",
+    """CREATE TABLE localidades_ibge (
+        codigo TEXT PRIMARY KEY,
+        municipio TEXT NOT NULL,
+        uf TEXT NOT NULL,
+        atualizado_em TEXT NOT NULL)""",
+)
+_V18_INDEXES = (
+    "CREATE INDEX IF NOT EXISTS idx_consumo_fonte ON fontes_consumo(source_id, started_at)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_consumo_run ON fontes_consumo(run_id)",
+    "CREATE INDEX IF NOT EXISTS idx_revisoes_fonte ON fontes_revisoes(source_id, reviewed_at)",
+    "CREATE INDEX IF NOT EXISTS idx_localidades_nome ON localidades_ibge(municipio, uf)",
+)
+_V18_DDL = _V18_TABLES
+_V18_COLUMNS = {
+    "fontes_estado": {"source_id", "enabled", "status", "last_run_at", "last_run_status",
+                      "last_result_json", "last_error", "calls_total", "credits_total",
+                      "cost_total", "cost_currency", "quota_json", "updated_at"},
+    "fontes_consumo": {"id", "source_id", "run_id", "started_at", "finished_at", "calls",
+                       "items", "credits", "cost_amount", "cost_currency", "status",
+                       "checkpoint_json", "notes"},
+    "fontes_revisoes": {"id", "source_id", "reviewed_at", "reviewer", "decision", "note"},
+    "localidades_ibge": {"codigo", "municipio", "uf", "atualizado_em"},
+}
+
+
+def _apply_v18(conn) -> None:
+    present = {row[0] for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type IN ('table','index')")}
+    for statement in _V18_TABLES:
+        name = re.match(r"CREATE TABLE (\w+)", statement).group(1)
+        if name not in present:
+            conn.execute(statement)
+    # Coluna adicionada durante a própria fase: bancos v18 já criados recebem o ALTER.
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(fontes_estado)")}
+    if "last_run_status" not in columns:
+        conn.execute("ALTER TABLE fontes_estado ADD COLUMN last_run_status TEXT")
+    for statement in _V18_INDEXES:
+        conn.execute(statement)
+
+
 # Eventos documentais aceitos. ``politica_robots`` (restrição de robots, sem requisição) é
 # distinto de ``download_bloqueado`` (negativa HTTP real); ``identidade_pendente`` sinaliza
 # divergência de identidade para revisão humana.
@@ -639,10 +719,10 @@ _V2_COLUMNS = {
 }
 
 # Versão corrente do esquema documental (v2 base + reconciliação/hash + monitoramento + fila).
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 
 # Versões que as rotas de leitura aceitam sem migrar (v2..v13 + atual).
-_READABLE_VERSIONS = (2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, SCHEMA_VERSION)
+_READABLE_VERSIONS = (2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, SCHEMA_VERSION)
 
 
 def _validate_schema(conn, statements, columns_by_table, version_label):
@@ -923,7 +1003,7 @@ def migrate_document_schema(db_path) -> None:
     try:
         conn.execute("BEGIN IMMEDIATE")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, SCHEMA_VERSION):
+        if version not in (0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, SCHEMA_VERSION):
             raise ValueError(f"versão de esquema não suportada: {version}")
         _v3_extra = dict(
             versoes_documento=_V2_COLUMNS["versoes_documento"] | {"comparison_sha256"},
@@ -953,7 +1033,11 @@ def migrate_document_schema(db_path) -> None:
                                              | _V16_COLUMNS["revisoes_campo"])
             for _table in ("lotes_revisao", "lote_revisao_itens", "ingestoes_documentais"):
                 _v16_columns[_table] = _V16_COLUMNS[_table]
-            _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL + _V12_DDL + _V14_DDL + _V15_DDL + _V16_DDL,
+            for _table, _columns in _V18_COLUMNS.items():
+                _v16_columns[_table] = _columns
+            # v18 é da fase corrente: garante tabela/coluna antes de validar (idempotente).
+            _apply_v18(conn)
+            _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL + _V12_DDL + _V14_DDL + _V15_DDL + _V16_DDL + _V18_DDL,
                              _v16_columns, f"v{SCHEMA_VERSION}")
             _seed_alert_watermarks(conn)
             _apply_v10(conn)  # garante índices v10 (ex.: sessão aberta única) em base já migrada
@@ -964,6 +1048,7 @@ def migrate_document_schema(db_path) -> None:
             _apply_v15(conn)
             _apply_v16(conn)
             _apply_v17(conn)
+            _apply_v18(conn)
         else:
             if version == 2:
                 _validate_schema(conn, _DDL, _V2_COLUMNS, "v2")
@@ -1008,6 +1093,9 @@ def migrate_document_schema(db_path) -> None:
             elif version == 16:
                 _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL + _V12_DDL + _V14_DDL + _V15_DDL + _V16_DDL,
                                  dict(_v15_extra, **_V16_COLUMNS), "v16")
+            elif version == 17:
+                _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL + _V12_DDL + _V14_DDL + _V15_DDL + _V16_DDL,
+                                 dict(_v15_extra, **_V16_COLUMNS), "v17")
             else:
                 for statement in _DDL:
                     conn.execute(statement)
@@ -1026,6 +1114,7 @@ def migrate_document_schema(db_path) -> None:
             _apply_v15(conn)
             _apply_v16(conn)
             _apply_v17(conn)
+            _apply_v18(conn)
             _seed_alert_watermarks(conn)
             conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         _ensure_alert_indexes(conn)

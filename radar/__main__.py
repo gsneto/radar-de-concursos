@@ -691,6 +691,48 @@ def _cmd_documentos_importar(args: argparse.Namespace) -> None:
         ensure_ascii=False, default=str))
 
 
+def _cmd_fontes(args: argparse.Namespace) -> None:
+    from radar import budget, source_catalog
+    report = budget.state_report(args.db)
+    if args.validar:
+        report["catalogo_erros"] = source_catalog.validate_catalog()
+    print(json.dumps(report, ensure_ascii=False, default=str))
+
+
+def _cmd_fontes_consumo(args: argparse.Namespace) -> None:
+    from radar import budget
+    print(json.dumps(budget.consumption_report(args.db, source_id=args.source_id,
+                                               limit=args.limit),
+                     ensure_ascii=False, default=str))
+
+
+def _cmd_fontes_revisar(args: argparse.Namespace) -> None:
+    from radar import source_policy
+    print(json.dumps(source_policy.record_review(
+        args.db, args.source_id, reviewer=args.reviewer, review_decision=args.decision,
+        note=args.note), ensure_ascii=False, default=str))
+
+
+def _cmd_fontes_politica(args: argparse.Namespace) -> None:
+    from radar import source_policy
+    if args.source_id:
+        print(json.dumps(source_policy.review_history(args.db, args.source_id),
+                         ensure_ascii=False, default=str))
+        return
+    print(json.dumps(source_policy.audit(), ensure_ascii=False, default=str))
+
+
+def _cmd_localidades(args: argparse.Namespace) -> None:
+    from radar import ibge_source
+    if args.validar:
+        print(json.dumps(ibge_source.validate_proposals(
+            args.db, limit=args.limit, contest_id=args.contest_id),
+            ensure_ascii=False, default=str))
+        return
+    print(json.dumps(ibge_source.sync_snapshot(args.db, force=args.force),
+                     ensure_ascii=False, default=str))
+
+
 def build_parser() -> argparse.ArgumentParser:
     from radar.preferences import PRIORITIES
     parser = argparse.ArgumentParser(prog="python -m radar")
@@ -1119,6 +1161,41 @@ def build_parser() -> argparse.ArgumentParser:
     arev.add_argument('--revisor', required=True)
     arev.add_argument('--motivo', required=True)
     arev.set_defaults(func=_cmd_associacao_revisar)
+
+    fontes = subparsers.add_parser('fontes', help='catálogo de fontes e estado operacional')
+    fontes.add_argument('--db', required=True)
+    fontes.add_argument('--validar', action='store_true', help='valida o catálogo')
+    fontes.set_defaults(func=_cmd_fontes)
+
+    fontes_consumo = subparsers.add_parser('fontes-consumo', help='consumo por execução')
+    fontes_consumo.add_argument('--db', required=True)
+    fontes_consumo.add_argument('--source-id')
+    fontes_consumo.add_argument('--limit', type=int, default=50)
+    fontes_consumo.set_defaults(func=_cmd_fontes_consumo)
+
+    fontes_rev = subparsers.add_parser('fontes-revisar', help='registra revisão de política')
+    fontes_rev.add_argument('--db', required=True)
+    fontes_rev.add_argument('--source-id', required=True)
+    fontes_rev.add_argument('--reviewer', required=True)
+    fontes_rev.add_argument('--decision', required=True,
+                            choices=('manter', 'restringir', 'ampliar', 'suspender'))
+    fontes_rev.add_argument('--note', required=True)
+    fontes_rev.set_defaults(func=_cmd_fontes_revisar)
+
+    fontes_pol = subparsers.add_parser('fontes-politica',
+                                       help='decisões de persistência e histórico de revisão')
+    fontes_pol.add_argument('--db', required=True)
+    fontes_pol.add_argument('--source-id')
+    fontes_pol.set_defaults(func=_cmd_fontes_politica)
+
+    localidades = subparsers.add_parser('localidades',
+                                        help='snapshot IBGE e validação de local de prova')
+    localidades.add_argument('--db', required=True)
+    localidades.add_argument('--validar', action='store_true')
+    localidades.add_argument('--force', action='store_true')
+    localidades.add_argument('--limit', type=int, default=100)
+    localidades.add_argument('--contest-id')
+    localidades.set_defaults(func=_cmd_localidades)
 
     rev_fila = subparsers.add_parser('revisao-fila', help='fila priorizada de propostas')
     rev_fila.add_argument('--db', required=True)

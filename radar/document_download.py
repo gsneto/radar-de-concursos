@@ -173,7 +173,7 @@ def download_document(db_path, document_id: str, transport=None, *, allowed_host
                 break
         except Exception as error:  # timeout/conexão: transitório, com backoff
             last_error = error
-            if index == attempts - 1:
+            if not _is_transient(error) or index == attempts - 1:
                 break
         if backoff_seconds:
             sleep(backoff_seconds * (index + 1))
@@ -219,6 +219,19 @@ def download_document(db_path, document_id: str, transport=None, *, allowed_host
                 "VALUES (?,?,'falha',?,?)",
                 (str(uuid4()), document_id, now, json.dumps(
                     {"code": error.code, "http_status": error.http_status}, ensure_ascii=False)))
+        raise
+    except Exception as error:
+        # Falha de persistência (disco/DB) também precisa ficar auditável.
+        with closing(connect_documents(db_path)) as conn, conn:
+            conn.execute("INSERT INTO tentativas_download VALUES (?,?,?,?,?,?,?)",
+                         (attempt_id, document_id, now, "falhou", None,
+                          "falha_persistencia", None))
+            conn.execute(
+                "INSERT INTO eventos_documentais (id,document_id,event_type,occurred_at,note) "
+                "VALUES (?,?,'falha',?,?)",
+                (str(uuid4()), document_id, now, json.dumps(
+                    {"code": "falha_persistencia", "error": type(error).__name__},
+                    ensure_ascii=False)))
         raise
     with closing(connect_documents(db_path)) as conn, conn:
         conn.execute("UPDATE documentos SET final_url=?,last_checked_at=? WHERE id=?",
