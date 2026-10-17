@@ -1514,6 +1514,247 @@
     });
   }
 
+  // --- Prática: flashcards, questões e simulados (Fase 23) --------------------
+
+  var QUALITY_LABEL = {0: 'Esqueci', 1: 'Errei', 2: 'Difícil', 3: 'Ok', 4: 'Bom', 5: 'Fácil'};
+
+  function renderFlashcards(document, queue, stats) {
+    var wrap = el(document, 'div', 'practice__inner');
+    stats = stats || {};
+    var summary = el(document, 'p', 'prep__state',
+      'Cartões ativos: ' + (stats.ativos || 0) + ' · novos: ' + (stats.novos || 0)
+      + ' · pendentes: ' + (stats.pendentes || 0)
+      + (stats.pct_acerto === null || stats.pct_acerto === undefined
+        ? ' · acerto não calculável' : ' · acerto: ' + stats.pct_acerto + '%'));
+    wrap.appendChild(summary);
+    wrap.appendChild(el(document, 'p', 'prep__basis', stats.basis || ''));
+
+    var cards = (queue && queue.fila) || [];
+    if (!cards.length) {
+      wrap.appendChild(el(document, 'p', 'muted', 'Nenhum cartão pendente.'));
+      return wrap;
+    }
+    cards.slice(0, 20).forEach(function (card) {
+      var row = el(document, 'article', 'study-disc');
+      row.appendChild(el(document, 'h4', 'study-disc__title', card.frente));
+      var answer = el(document, 'p', 'muted', 'Resposta oculta');
+      var reveal = el(document, 'button', 'triage-action', 'Mostrar resposta');
+      reveal.type = 'button';
+      reveal.addEventListener('click', function () {
+        answer.textContent = card.verso;
+        answer.className = 'practice__answer';
+      });
+      row.appendChild(reveal);
+      row.appendChild(answer);
+      var actions = el(document, 'div', 'triage-alert__actions');
+      [0, 3, 4, 5].forEach(function (quality) {
+        var btn = el(document, 'button', 'triage-action', QUALITY_LABEL[quality]);
+        btn.type = 'button';
+        btn.addEventListener('click', function () {
+          studyPost('/api/estudos/flashcards', {action: 'review', id: card.id, qualidade: quality})
+            .then(fetchPractice).catch(showError);
+        });
+        actions.appendChild(btn);
+      });
+      row.appendChild(actions);
+      wrap.appendChild(row);
+    });
+    return wrap;
+  }
+
+  function renderQuestions(document, questions) {
+    var wrap = el(document, 'div', 'practice__inner');
+    if (!questions || !questions.length) {
+      wrap.appendChild(el(document, 'p', 'muted', 'Nenhuma questão cadastrada.'));
+      return wrap;
+    }
+    questions.slice(0, 20).forEach(function (q) {
+      var card = el(document, 'article', 'study-disc');
+      card.appendChild(el(document, 'h4', 'study-disc__title', q.enunciado));
+      var meta = el(document, 'p', 'prep__basis',
+        (q.disciplina || 'sem disciplina') + ' · ' + (q.topico || 'sem tópico')
+        + ' · versão ' + q.versao);
+      card.appendChild(meta);
+      var options = el(document, 'div', 'triage-alert__actions');
+      (q.alternativas || []).forEach(function (alt) {
+        var btn = el(document, 'button', 'triage-action', alt.id + ') ' + alt.texto);
+        btn.type = 'button';
+        btn.addEventListener('click', function () {
+          studyPost('/api/estudos/tentativas', {questao_id: q.id, resposta: alt.id})
+            .then(function (result) {
+              var feedback = el(document, 'p', result.correta ? 'practice__ok' : 'practice__fail',
+                result.correta ? 'Correta!' : 'Incorreta. Gabarito: ' + result.gabarito);
+              card.appendChild(feedback);
+              return fetchPractice();
+            }).catch(showError);
+        });
+        options.appendChild(btn);
+      });
+      card.appendChild(options);
+      wrap.appendChild(card);
+    });
+    return wrap;
+  }
+
+  function renderExams(document, exams) {
+    var wrap = el(document, 'div', 'practice__inner');
+    if (!exams || !exams.length) {
+      wrap.appendChild(el(document, 'p', 'muted', 'Nenhum simulado criado.'));
+      return wrap;
+    }
+    exams.slice(0, 10).forEach(function (exam) {
+      var card = el(document, 'article', 'study-disc');
+      card.appendChild(el(document, 'h4', 'study-disc__title', exam.nome));
+      card.appendChild(el(document, 'p', 'prep__basis',
+        'estado: ' + exam.estado + ' · iniciado ' + formatVerifiedAt(exam.iniciado_em)));
+      if (exam.estado === 'em_andamento') {
+        var open = el(document, 'button', 'triage-action', 'Responder / retomar');
+        open.type = 'button';
+        open.addEventListener('click', function () {
+          studyRequest('/api/estudos/simulados/' + encodeURIComponent(exam.id) + '/questoes')
+            .then(function (payload) { renderExamRunner(document, card, payload); })
+            .catch(showError);
+        });
+        card.appendChild(open);
+      } else {
+        var link = el(document, 'button', 'triage-action', 'Ver resultado');
+        link.type = 'button';
+        link.addEventListener('click', function () {
+          studyRequest('/api/estudos/simulados/' + encodeURIComponent(exam.id) + '/resultado')
+            .then(function (payload) { showExamResult(document, card, payload); }).catch(showError);
+        });
+        card.appendChild(link);
+      }
+      wrap.appendChild(card);
+    });
+    return wrap;
+  }
+
+  function renderExamRunner(document, card, payload) {
+    var exam = payload.simulado || {};
+    var questions = payload.questoes || [];
+    var box = el(document, 'div', 'practice__result');
+    var clock = el(document, 'p', 'timer__display', '');
+    var remaining = payload.restante_segundos;
+    function tick() {
+      if (remaining === null || remaining === undefined) { clock.textContent = 'sem limite'; return; }
+      clock.textContent = formatClock(remaining);
+    }
+    tick();
+    box.appendChild(clock);
+    if (remaining !== null && remaining !== undefined && typeof global.setInterval === 'function') {
+      var timer = global.setInterval(function () {
+        remaining = Math.max(0, remaining - 1);
+        tick();
+        if (remaining === 0) {
+          global.clearInterval(timer);
+          studyPost('/api/estudos/simulados/' + encodeURIComponent(exam.id) + '/finalizar', {})
+            .then(fetchPractice).catch(showError);
+        }
+      }, 1000);
+    }
+    questions.forEach(function (q) {
+      var item = el(document, 'div', 'study-disc');
+      item.appendChild(el(document, 'p', 'study-disc__title',
+        (q.ordem + 1) + '. ' + q.enunciado));
+      var options = el(document, 'div', 'triage-alert__actions');
+      (q.alternativas || []).forEach(function (alt) {
+        var btn = el(document, 'button', 'triage-action'
+          + (q.resposta === alt.id ? ' is-active' : ''), alt.id + ') ' + alt.texto);
+        btn.type = 'button';
+        btn.addEventListener('click', function () {
+          studyPost('/api/estudos/simulados/' + encodeURIComponent(exam.id) + '/responder',
+            {ordem: q.ordem, resposta: alt.id}).then(function () {
+              q.resposta = alt.id;
+              Array.prototype.forEach.call(options.children, function (node) {
+                node.classList.remove('is-active');
+              });
+              btn.classList.add('is-active');
+            }).catch(showError);
+        });
+        options.appendChild(btn);
+      });
+      item.appendChild(options);
+      box.appendChild(item);
+    });
+    var finish = el(document, 'button', 'button', 'Finalizar simulado');
+    finish.type = 'button';
+    finish.addEventListener('click', function () {
+      studyPost('/api/estudos/simulados/' + encodeURIComponent(exam.id) + '/finalizar', {})
+        .then(function () { return fetchPractice(); }).catch(showError);
+    });
+    box.appendChild(finish);
+    card.appendChild(box);
+  }
+
+  function showExamResult(document, card, payload) {
+    var res = payload.resultado || {};
+    var box = el(document, 'div', 'practice__result');
+    box.appendChild(el(document, 'p', 'practice__answer',
+      'Acertos: ' + (res.acertos || 0) + '/' + (res.total || 0)
+      + (res.pct === null || res.pct === undefined ? '' : ' (' + res.pct + '%)')));
+    box.appendChild(el(document, 'p', 'prep__basis', res.basis || ''));
+    (res.por_disciplina || []).forEach(function (g) {
+      box.appendChild(el(document, 'p', 'study__revision',
+        g.grupo + ': ' + g.acertos + '/' + g.total
+        + (g.pct === null ? '' : ' (' + g.pct + '%)')));
+    });
+    card.appendChild(box);
+  }
+
+  function renderPerformance(document, report) {
+    var wrap = el(document, 'div', 'practice__inner');
+    var geral = (report && report.geral) || {};
+    wrap.appendChild(el(document, 'p', 'prep__state',
+      'Tentativas: ' + (geral.total || 0) + ' · acertos: ' + (geral.acertos || 0)
+      + ' · brancos: ' + (geral.brancos || 0)));
+    wrap.appendChild(el(document, 'p', 'prep__basis', geral.basis || ''));
+    var byDisc = (report && report.por_disciplina) || [];
+    if (byDisc.length) {
+      wrap.appendChild(el(document, 'h3', 'study__subtitle', 'Desempenho por disciplina'));
+      var list = el(document, 'ul', 'study__revisions');
+      byDisc.forEach(function (g) {
+        list.appendChild(el(document, 'li', 'study__revision',
+          g.grupo + ': ' + g.acertos + '/' + g.total + (g.pct === null ? '' : ' (' + g.pct + '%)')));
+      });
+      wrap.appendChild(list);
+    }
+    return wrap;
+  }
+
+  function fetchPractice() {
+    var doc = global.document;
+    if (!doc || !doc.getElementById('fc-panel')) return Promise.resolve();
+    return Promise.all([
+      global.fetch('/api/estudos/flashcards/fila?limit=20', {headers: {Accept: 'application/json'}})
+        .then(function (r) { return r.ok ? r.json() : {}; }),
+      global.fetch('/api/estudos/flashcards/estatisticas', {headers: {Accept: 'application/json'}})
+        .then(function (r) { return r.ok ? r.json() : {}; }),
+      global.fetch('/api/estudos/questoes', {headers: {Accept: 'application/json'}})
+        .then(function (r) { return r.ok ? r.json() : []; }),
+      global.fetch('/api/estudos/simulados', {headers: {Accept: 'application/json'}})
+        .then(function (r) { return r.ok ? r.json() : []; }),
+      global.fetch('/api/estudos/desempenho', {headers: {Accept: 'application/json'}})
+        .then(function (r) { return r.ok ? r.json() : {}; })
+    ]).then(function (parts) {
+      var targets = [['fc-panel', renderFlashcards(doc, parts[0], parts[1])],
+                     ['q-panel', renderQuestions(doc, parts[2])],
+                     ['exam-panel', renderExams(doc, parts[3])],
+                     ['perf-panel', renderPerformance(doc, parts[4])]];
+      targets.forEach(function (pair) {
+        var node = doc.getElementById(pair[0]);
+        if (node) { node.textContent = ''; node.appendChild(pair[1]); }
+      });
+    }).catch(function (err) {
+      showError(err);
+      var node = doc.getElementById('fc-panel');
+      if (node) {
+        node.textContent = '';
+        node.appendChild(el(doc, 'p', 'muted', 'Prática indisponível.'));
+      }
+    });
+  }
+
   // Atualização periódica (sem recarregar a página). Intervalo configurável por
   // `data-refresh-seconds` no <body>; padrão conservador de 60 s.
   function autoRefreshSeconds() {
@@ -1707,6 +1948,53 @@
     if (prepSelect) prepSelect.addEventListener('change', function () { fetchPrep(); });
     var prepReload = doc.getElementById('prep-reload');
     if (prepReload) prepReload.addEventListener('click', function () { fetchPrep(); });
+    var fcForm = doc.getElementById('fc-form');
+    if (fcForm) fcForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var frente = doc.getElementById('fc-frente').value.trim();
+      var verso = doc.getElementById('fc-verso').value.trim();
+      if (!frente || !verso) return;
+      studyPost('/api/estudos/flashcards', {frente: frente, verso: verso}).then(function () {
+        doc.getElementById('fc-frente').value = '';
+        doc.getElementById('fc-verso').value = '';
+        return fetchPractice();
+      }).catch(showError);
+    });
+    var fcRefresh = doc.getElementById('fc-refresh');
+    if (fcRefresh) fcRefresh.addEventListener('click', function () { fetchPractice(); });
+    var qForm = doc.getElementById('q-form');
+    if (qForm) qForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var alternativas = doc.getElementById('q-alternativas').value.split('|')
+        .map(function (s) { return s.trim(); }).filter(Boolean);
+      studyPost('/api/estudos/questoes', {
+        enunciado: doc.getElementById('q-enunciado').value.trim(),
+        alternativas: alternativas,
+        gabarito: doc.getElementById('q-gabarito').value.trim(),
+        disciplina: doc.getElementById('q-disciplina').value.trim() || null
+      }).then(function () {
+        ['q-enunciado', 'q-alternativas', 'q-gabarito'].forEach(function (id) {
+          doc.getElementById(id).value = '';
+        });
+        return fetchPractice();
+      }).catch(function (err) {
+        var status = doc.getElementById('q-status');
+        if (status) status.textContent = err.message || 'Falha ao criar questão.';
+      });
+    });
+    var examForm = doc.getElementById('exam-form');
+    if (examForm) examForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var minutos = parseInt(doc.getElementById('exam-duracao').value, 10) || 0;
+      studyPost('/api/estudos/simulados', {
+        nome: doc.getElementById('exam-nome').value.trim() || 'Simulado',
+        limit: parseInt(doc.getElementById('exam-limit').value, 10) || 10,
+        duracao_segundos: minutos > 0 ? minutos * 60 : null
+      }).then(function () { return fetchPractice(); }).catch(function (err) {
+        var status = doc.getElementById('exam-status');
+        if (status) status.textContent = err.message || 'Falha ao montar simulado.';
+      });
+    });
     fetchData().then(focusContestFromHash).catch(function () {});
     fetchMonitoring();
     fetchAlerts();
@@ -1714,6 +2002,7 @@
     fetchPriorities();
     fetchStudy();
     fetchPerfil();
+    fetchPractice();
     startAutoRefresh();
     if (global.addEventListener) {
       global.addEventListener('hashchange', function () { focusContestFromHash(); });
@@ -1738,6 +2027,10 @@
     renderStudy: renderStudy,
     renderPrep: renderPrep,
     renderPerfil: renderPerfil,
+    renderFlashcards: renderFlashcards,
+    renderQuestions: renderQuestions,
+    renderExams: renderExams,
+    renderPerformance: renderPerformance,
     formatClock: formatClock,
     matchIdentity: matchIdentity,
     renderList: renderList,

@@ -169,6 +169,75 @@
       </div>
     </section>
 
+    <section class="practice" aria-labelledby="practice-title">
+      <h2 id="practice-title" class="results__title">Prática: flashcards, questões e simulados</h2>
+
+      <div class="practice__block">
+        <h3 class="study__subtitle">Flashcards</h3>
+        <form id="fc-form" class="prefs" aria-label="Novo flashcard">
+          <label class="prefs__field">Frente
+            <input id="fc-frente" type="text" autocomplete="off" placeholder="Pergunta">
+          </label>
+          <label class="prefs__field">Verso
+            <input id="fc-verso" type="text" autocomplete="off" placeholder="Resposta">
+          </label>
+          <button type="submit" class="button">Criar cartão</button>
+          <button id="fc-refresh" type="button" class="button button--ghost">Atualizar fila</button>
+          <span id="fc-status" class="prefs__status" role="status" aria-live="polite"></span>
+        </form>
+        <div id="fc-panel" class="practice__panel" role="status" aria-live="polite">
+          <p class="muted">Carregando flashcards.</p>
+        </div>
+      </div>
+
+      <div class="practice__block">
+        <h3 class="study__subtitle">Banco de questões</h3>
+        <form id="q-form" class="prefs" aria-label="Nova questão">
+          <label class="prefs__field">Enunciado
+            <input id="q-enunciado" type="text" autocomplete="off" placeholder="Enunciado">
+          </label>
+          <label class="prefs__field">Alternativas (uma por linha)
+            <input id="q-alternativas" type="text" autocomplete="off" placeholder="A|B|C">
+          </label>
+          <label class="prefs__field">Gabarito
+            <input id="q-gabarito" type="text" maxlength="2" size="3" autocomplete="off" placeholder="A">
+          </label>
+          <label class="prefs__field">Disciplina
+            <input id="q-disciplina" type="text" autocomplete="off">
+          </label>
+          <button type="submit" class="button">Criar questão</button>
+          <span id="q-status" class="prefs__status" role="status" aria-live="polite"></span>
+        </form>
+        <div id="q-panel" class="practice__panel" role="status" aria-live="polite">
+          <p class="muted">Carregando questões.</p>
+        </div>
+      </div>
+
+      <div class="practice__block">
+        <h3 class="study__subtitle">Simulados</h3>
+        <form id="exam-form" class="prefs" aria-label="Novo simulado">
+          <label class="prefs__field">Nome
+            <input id="exam-nome" type="text" autocomplete="off" placeholder="Simulado 1">
+          </label>
+          <label class="prefs__field">Questões
+            <input id="exam-limit" type="number" min="1" value="10">
+          </label>
+          <label class="prefs__field">Duração (min)
+            <input id="exam-duracao" type="number" min="0" value="60">
+          </label>
+          <button type="submit" class="button">Montar simulado</button>
+          <span id="exam-status" class="prefs__status" role="status" aria-live="polite"></span>
+        </form>
+        <div id="exam-panel" class="practice__panel" role="status" aria-live="polite">
+          <p class="muted">Carregando simulados.</p>
+        </div>
+      </div>
+
+      <div id="perf-panel" class="practice__panel" role="status" aria-live="polite">
+        <p class="muted">Carregando desempenho.</p>
+      </div>
+    </section>
+
     <section class="results" aria-labelledby="results-title">
       <h2 id="results-title" class="results__title">Concursos monitorados</h2>
 

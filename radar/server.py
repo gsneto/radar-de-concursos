@@ -259,6 +259,30 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
         self._send(HTTPStatus.OK, "application/json; charset=utf-8", body)
 
+    def _serve_exam(self, loader):
+        """Resposta de simulado com códigos corretos: 404 ausente, 409 em andamento, 200 ok."""
+        try:
+            payload = loader()
+        except ValueError as error:
+            message = str(error)
+            if "inexistente" in message:
+                self._send(HTTPStatus.NOT_FOUND, "application/json; charset=utf-8",
+                           json.dumps({"error": message}, ensure_ascii=False).encode("utf-8"))
+                return
+            status = HTTPStatus.CONFLICT if "em andamento" in message else HTTPStatus.BAD_REQUEST
+            self._send(status, "application/json; charset=utf-8",
+                       json.dumps({"error": message}, ensure_ascii=False).encode("utf-8"))
+            return
+        except sqlite3.Error:
+            self._send(HTTPStatus.SERVICE_UNAVAILABLE, "application/json; charset=utf-8",
+                       b'{"error":"Migracao documental pendente"}')
+            return
+        if payload is None:
+            self._send_no_content(HTTPStatus.NOT_FOUND)
+            return
+        body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+        self._send(HTTPStatus.OK, "application/json; charset=utf-8", body)
+
     def _serve_triage(self, include_seen, limit):
         from radar import ops
         from radar.ops_config import load_config
@@ -330,7 +354,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
     # --- Roteamento ----------------------------------------------------------
 
     def do_GET(self):
-        from radar import study_store, knowledge_store, study_backup
+        from radar import study_store, knowledge_store, study_backup, practice_store
         parts = urlsplit(self.path)
         path = parts.path
         if path == "/api/concursos":
@@ -473,6 +497,86 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
             else:
                 self._serve_study(study_backup.export_study_data)
+        # --- Prática: flashcards, questões e simulados (Fase 23) ---
+        elif path == "/api/estudos/flashcards":
+            query = parse_qs(parts.query)
+            if set(query) - {"incluir_arquivados"}:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_study(practice_store.list_flashcards,
+                                  include_archived=query.get("incluir_arquivados", ["0"])[0] in ("1", "true"))
+        elif path == "/api/estudos/flashcards/fila":
+            query = parse_qs(parts.query)
+            try:
+                limit = int(query.get("limit", ["20"])[0])
+            except ValueError:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+                return
+            if limit < 1 or set(query) - {"limit"}:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_study(practice_store.study_queue, limit=limit)
+        elif path == "/api/estudos/flashcards/estatisticas":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_study(practice_store.flashcard_stats)
+        elif path == "/api/estudos/questoes":
+            query = parse_qs(parts.query)
+            if set(query) - {"incluir_arquivadas", "disciplina", "topico"}:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_study(practice_store.list_questions,
+                                  include_archived=query.get("incluir_arquivadas", ["0"])[0] in ("1", "true"),
+                                  disciplina=query.get("disciplina", [None])[0],
+                                  topico=query.get("topico", [None])[0])
+        elif path == "/api/estudos/tentativas":
+            query = parse_qs(parts.query)
+            try:
+                limit = int(query.get("limit", ["200"])[0])
+            except ValueError:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+                return
+            if limit < 1 or set(query) - {"limit", "simulado_id"}:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_study(practice_store.list_attempts, limit=limit,
+                                  simulado_id=query.get("simulado_id", [None])[0])
+        elif path == "/api/estudos/desempenho":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_study(practice_store.performance_report)
+        elif path.startswith("/api/estudos/simulados/"):
+            if parts.query:
+                self._bad_request("rota dinâmica de simulado não aceita parâmetros")
+                return
+            rest = path[len("/api/estudos/simulados/"):]
+            if rest.endswith("/resultado"):
+                exam_id = rest[:-len("/resultado")]
+                if exam_id and "/" not in exam_id:
+                    self._serve_exam(lambda: practice_store.exam_result(self.server.db_path, exam_id))
+                    return
+            elif rest.endswith("/questoes"):
+                exam_id = rest[:-len("/questoes")]
+                if exam_id and "/" not in exam_id:
+                    self._serve_exam(lambda: practice_store.exam_questions(self.server.db_path, exam_id))
+                    return
+            elif rest and "/" not in rest:
+                self._serve_exam(lambda: practice_store.get_exam(self.server.db_path, rest))
+                return
+            self._send_no_content(HTTPStatus.NOT_FOUND)
+        elif path == "/api/estudos/simulados":
+            query = parse_qs(parts.query)
+            try:
+                limit = int(query.get("limit", ["50"])[0])
+            except ValueError:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+                return
+            if limit < 1 or set(query) - {"limit"}:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_study(practice_store.list_exams, limit=limit)
         elif path in ("/", "/index.html"):
             self._serve_file("index.html")
         elif path in _ASSET_ROUTES:
@@ -484,7 +588,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         self._send_no_content(HTTPStatus.METHOD_NOT_ALLOWED, {"Allow": allow})
 
     def do_POST(self):
-        from radar import study_store, knowledge_store, study_backup
+        from radar import study_store, knowledge_store, study_backup, practice_store
         parts = urlsplit(self.path)
         path = parts.path
         if path.startswith("/api/alertas/") and not parts.query:
@@ -605,6 +709,113 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             out = json.dumps(report, ensure_ascii=False, default=str).encode("utf-8")
             self._send(status, "application/json; charset=utf-8", out)
             return
+        if path == "/api/estudos/flashcards":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+                return
+            body = self._read_json(max_len=32768)
+            if body is None:
+                return
+            action = body.get("action") or "create"
+            if action == "create":
+                self._serve_study(practice_store.create_flashcard,
+                                  frente=body.get("frente"), verso=body.get("verso"),
+                                  disciplina_id=body.get("disciplina_id"),
+                                  topico_id=body.get("topico_id"),
+                                  contest_id=body.get("contest_id") or "",
+                                  conceito_key=body.get("conceito_key"),
+                                  tags=body.get("tags"), fonte=body.get("fonte"),
+                                  licenca=body.get("licenca"))
+            elif action == "update":
+                self._serve_study(practice_store.update_flashcard, body.get("id"),
+                                  frente=body.get("frente"), verso=body.get("verso"),
+                                  tags=body.get("tags"), estado=body.get("estado"))
+            elif action == "review":
+                self._serve_study(practice_store.review_flashcard, body.get("id"),
+                                  body.get("qualidade"))
+            else:
+                self._bad_request("ação de flashcard inválida")
+            return
+        if path == "/api/estudos/questoes":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+                return
+            body = self._read_json(max_len=32768)
+            if body is None:
+                return
+            action = body.get("action") or "create"
+            if action == "create":
+                self._serve_study(practice_store.create_question,
+                                  enunciado=body.get("enunciado"),
+                                  alternativas=body.get("alternativas"),
+                                  gabarito=body.get("gabarito"),
+                                  tipo=body.get("tipo") or "escolha_unica",
+                                  comentario=body.get("comentario"),
+                                  disciplina=body.get("disciplina"),
+                                  topico=body.get("topico"),
+                                  dificuldade=body.get("dificuldade"),
+                                  tags=body.get("tags"), fonte=body.get("fonte"),
+                                  licenca=body.get("licenca"),
+                                  procedencia=body.get("procedencia"),
+                                  conceito_key=body.get("conceito_key"))
+            elif action == "update":
+                self._serve_study(practice_store.update_question, body.get("id"),
+                                  enunciado=body.get("enunciado"),
+                                  alternativas=body.get("alternativas"),
+                                  gabarito=body.get("gabarito"),
+                                  comentario=body.get("comentario"),
+                                  disciplina=body.get("disciplina"),
+                                  topico=body.get("topico"),
+                                  dificuldade=body.get("dificuldade"),
+                                  tags=body.get("tags"))
+            elif action == "archive":
+                self._serve_study(practice_store.archive_question, body.get("id"))
+            else:
+                self._bad_request("ação de questão inválida")
+            return
+        if path == "/api/estudos/tentativas":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+                return
+            body = self._read_json(max_len=32768)
+            if body is None:
+                return
+            self._serve_study(practice_store.answer_question, body.get("questao_id"),
+                              body.get("resposta"),
+                              duracao_segundos=body.get("duracao_segundos"),
+                              origem="pratica")
+            return
+        if path == "/api/estudos/simulados":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+                return
+            body = self._read_json(max_len=32768)
+            if body is None:
+                return
+            self._serve_study(practice_store.create_exam,
+                              nome=body.get("nome"),
+                              limit=body.get("limit") if body.get("limit") is not None else 10,
+                              duracao_segundos=body.get("duracao_segundos"),
+                              seed=body.get("seed"),
+                              shuffle=body.get("shuffle", True),
+                              exclude_answered=body.get("exclude_answered", True),
+                              disciplina=body.get("disciplina"), topico=body.get("topico"),
+                              dificuldade=body.get("dificuldade"), tags=body.get("tags"))
+            return
+        if path.startswith("/api/estudos/simulados/") and not parts.query:
+            rest = path[len("/api/estudos/simulados/"):]
+            parts_rest = rest.split("/")
+            if len(parts_rest) == 2 and parts_rest[0] and parts_rest[1] in ("responder", "finalizar"):
+                exam_id, verb = parts_rest
+                body = self._read_json()
+                if body is None:
+                    return
+                if verb == "responder":
+                    self._serve_study(practice_store.save_exam_answer, exam_id,
+                                      body.get("ordem"), body.get("resposta"))
+                else:
+                    self._serve_study(practice_store.finish_exam, exam_id)
+                return
         self._method_not_allowed()
 
     def do_PUT(self):
@@ -639,7 +850,9 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         post_paths = ("/api/preferencias", "/api/estudos/disciplinas", "/api/estudos/topicos",
                       "/api/estudos/progresso", "/api/estudos/sessoes", "/api/estudos/revisoes",
-                      "/api/estudos/perfil", "/api/estudos/lacuna", "/api/estudos/importar")
+                      "/api/estudos/perfil", "/api/estudos/lacuna", "/api/estudos/importar",
+                      "/api/estudos/flashcards", "/api/estudos/questoes",
+                      "/api/estudos/tentativas", "/api/estudos/simulados")
         allow = "GET, POST" if path in post_paths else "GET"
         if path == "/api/estudos/perfil":
             allow = "GET, POST, DELETE"

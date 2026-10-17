@@ -301,6 +301,111 @@ _V11_COLUMNS = {"estudo_perfil": {"id", "conceito_key", "disciplina", "rotulo", 
                                   "revisar", "confianca", "observacoes", "origem",
                                   "created_at", "updated_at"}}
 
+# v12: prática e avaliação (Fase 23) — flashcards, banco de questões, tentativas e simulados.
+# Tudo é **dado pessoal** (nunca exposto pelo contrato v1). Questões guardam a **versão**
+# respondida nas tentativas, para que editar/arquivar não reescreva o histórico.
+_V12_TABLES = (
+    """CREATE TABLE pratica_flashcards (
+        id TEXT PRIMARY KEY,
+        disciplina_id TEXT REFERENCES estudo_disciplinas(id),
+        topico_id TEXT REFERENCES estudo_topicos(id),
+        contest_id TEXT NOT NULL DEFAULT '',
+        conceito_key TEXT, frente TEXT NOT NULL, verso TEXT NOT NULL,
+        tags TEXT, fonte TEXT, licenca TEXT,
+        estado TEXT NOT NULL DEFAULT 'ativo' CHECK(estado IN ('ativo','arquivado')),
+        ease REAL NOT NULL DEFAULT 2.5, intervalo INTEGER NOT NULL DEFAULT 0,
+        repeticoes INTEGER NOT NULL DEFAULT 0, proxima_revisao TEXT,
+        ultima_revisao TEXT, revisoes INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL)""",
+    """CREATE TABLE pratica_flashcard_revisoes (
+        id TEXT PRIMARY KEY,
+        flashcard_id TEXT NOT NULL REFERENCES pratica_flashcards(id),
+        qualidade INTEGER NOT NULL, ease REAL NOT NULL, intervalo INTEGER NOT NULL,
+        repeticoes INTEGER NOT NULL, revisado_em TEXT NOT NULL,
+        proxima_revisao TEXT NOT NULL)""",
+    """CREATE TABLE pratica_questoes (
+        id TEXT PRIMARY KEY,
+        versao INTEGER NOT NULL DEFAULT 1,
+        disciplina TEXT, topico TEXT, conceito_key TEXT,
+        enunciado TEXT NOT NULL, alternativas_json TEXT NOT NULL,
+        gabarito TEXT NOT NULL, comentario TEXT, dificuldade TEXT, tags TEXT,
+        fonte TEXT, licenca TEXT, procedencia TEXT,
+        estado TEXT NOT NULL DEFAULT 'ativo' CHECK(estado IN ('ativo','arquivado')),
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL)""",
+    """CREATE TABLE pratica_questao_versoes (
+        id TEXT PRIMARY KEY,
+        questao_id TEXT NOT NULL REFERENCES pratica_questoes(id),
+        versao INTEGER NOT NULL, enunciado TEXT NOT NULL, alternativas_json TEXT NOT NULL,
+        gabarito TEXT NOT NULL, comentario TEXT, registrado_em TEXT NOT NULL,
+        UNIQUE(questao_id, versao))""",
+    """CREATE TABLE pratica_tentativas (
+        id TEXT PRIMARY KEY,
+        questao_id TEXT NOT NULL REFERENCES pratica_questoes(id),
+        questao_versao INTEGER NOT NULL,
+        resposta TEXT, correta INTEGER, respondida INTEGER NOT NULL DEFAULT 0,
+        duracao_segundos INTEGER, origem TEXT NOT NULL CHECK(origem IN ('pratica','simulado')),
+        simulado_id TEXT, disciplina TEXT, topico TEXT, conceito_key TEXT,
+        created_at TEXT NOT NULL)""",
+    """CREATE TABLE pratica_simulados (
+        id TEXT PRIMARY KEY, nome TEXT NOT NULL,
+        duracao_segundos INTEGER, iniciado_em TEXT NOT NULL, finalizado_em TEXT,
+        estado TEXT NOT NULL DEFAULT 'em_andamento'
+            CHECK(estado IN ('em_andamento','finalizado','expirado')),
+        created_at TEXT NOT NULL)""",
+    """CREATE TABLE pratica_simulado_questoes (
+        simulado_id TEXT NOT NULL REFERENCES pratica_simulados(id),
+        ordem INTEGER NOT NULL,
+        questao_id TEXT NOT NULL REFERENCES pratica_questoes(id),
+        questao_versao INTEGER NOT NULL,
+        resposta TEXT, respondida_em TEXT,
+        PRIMARY KEY(simulado_id, ordem))""",
+)
+_V12_INDEXES = (
+    "CREATE INDEX IF NOT EXISTS idx_pratica_fc_estado ON pratica_flashcards(estado)",
+    "CREATE INDEX IF NOT EXISTS idx_pratica_fc_proxima ON pratica_flashcards(proxima_revisao)",
+    "CREATE INDEX IF NOT EXISTS idx_pratica_fcr_card ON pratica_flashcard_revisoes(flashcard_id)",
+    "CREATE INDEX IF NOT EXISTS idx_pratica_q_estado ON pratica_questoes(estado)",
+    "CREATE INDEX IF NOT EXISTS idx_pratica_tent_questao ON pratica_tentativas(questao_id)",
+    "CREATE INDEX IF NOT EXISTS idx_pratica_tent_simulado ON pratica_tentativas(simulado_id)",
+)
+_V12_DDL = _V12_TABLES
+_V12_COLUMNS = {
+    "pratica_flashcards": {"id", "disciplina_id", "topico_id", "contest_id", "conceito_key",
+                           "frente", "verso", "tags", "fonte", "licenca", "estado", "ease",
+                           "intervalo", "repeticoes", "proxima_revisao", "ultima_revisao",
+                           "revisoes", "created_at", "updated_at"},
+    "pratica_flashcard_revisoes": {"id", "flashcard_id", "qualidade", "ease", "intervalo",
+                                   "repeticoes", "revisado_em", "proxima_revisao"},
+    "pratica_questoes": {"id", "versao", "disciplina", "topico", "conceito_key", "enunciado",
+                         "alternativas_json", "gabarito", "comentario", "dificuldade", "tags",
+                         "fonte", "licenca", "procedencia", "estado", "created_at", "updated_at"},
+    "pratica_questao_versoes": {"id", "questao_id", "versao", "enunciado", "alternativas_json",
+                                "gabarito", "comentario", "registrado_em"},
+    "pratica_tentativas": {"id", "questao_id", "questao_versao", "resposta", "correta",
+                           "respondida", "duracao_segundos", "origem", "simulado_id",
+                           "disciplina", "topico", "conceito_key", "created_at"},
+    "pratica_simulados": {"id", "nome", "duracao_segundos", "iniciado_em", "finalizado_em",
+                          "estado", "created_at"},
+    "pratica_simulado_questoes": {"simulado_id", "ordem", "questao_id", "questao_versao",
+                                  "resposta", "respondida_em"},
+}
+
+# v13: idempotência da finalização do simulado (`tentativas_gravadas`) e **snapshot** de
+# disciplina/tópico por questão aplicada (a revisão deve refletir o que foi aplicado, mesmo que
+# a questão seja editada depois).
+_V13_ADD_COLUMNS = (
+    "ALTER TABLE pratica_simulados ADD COLUMN tentativas_gravadas INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE pratica_simulado_questoes ADD COLUMN disciplina TEXT",
+    "ALTER TABLE pratica_simulado_questoes ADD COLUMN topico TEXT",
+    "ALTER TABLE pratica_questoes ADD COLUMN tipo TEXT NOT NULL DEFAULT 'escolha_unica'",
+)
+_V13_DDL = _V13_ADD_COLUMNS
+_V13_COLUMNS = {
+    "pratica_simulados": {"tentativas_gravadas"},
+    "pratica_simulado_questoes": {"disciplina", "topico"},
+    "pratica_questoes": {"tipo"},
+}
+
 _V2_COLUMNS = {
     "concursos_identidade": {"id", "created_at"},
     "observacoes_concurso": {"id", "contest_id", "source_url", "competition_id", "observed_at"},
@@ -320,10 +425,10 @@ _V2_COLUMNS = {
 }
 
 # Versão corrente do esquema documental (v2 base + reconciliação/hash + monitoramento + fila).
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 13
 
 # Versões que as rotas de leitura aceitam sem migrar (v2..v10).
-_READABLE_VERSIONS = (2, 3, 4, 5, 6, 7, 8, 9, 10, SCHEMA_VERSION)
+_READABLE_VERSIONS = (2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, SCHEMA_VERSION)
 
 
 def _validate_schema(conn, statements, columns_by_table, version_label):
@@ -412,6 +517,33 @@ def _apply_v8(conn) -> None:
             conn.execute(statement)
 
 
+def _apply_v13(conn) -> None:
+    """Adiciona a flag de idempotência, o snapshot de escopo e o tipo de questão (v13)."""
+    plan = (
+        ("pratica_simulados", _V13_ADD_COLUMNS[0]),
+        ("pratica_simulado_questoes", _V13_ADD_COLUMNS[1]),
+        ("pratica_simulado_questoes", _V13_ADD_COLUMNS[2]),
+        ("pratica_questoes", _V13_ADD_COLUMNS[3]),
+    )
+    for table, statement in plan:
+        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        column = statement.rsplit("ADD COLUMN ", 1)[1].split()[0]
+        if column not in columns:
+            conn.execute(statement)
+
+
+def _apply_v12(conn) -> None:
+    """Cria as tabelas de prática/simulados (v12), tolerando banco parcialmente atualizado."""
+    present = {row[0] for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type IN ('table','index')")}
+    for statement in _V12_TABLES:
+        name = re.match(r"CREATE TABLE (\w+)", statement).group(1)
+        if name not in present:
+            conn.execute(statement)
+    for statement in _V12_INDEXES:
+        conn.execute(statement)
+
+
 def _apply_v11(conn) -> None:
     """Cria a tabela do perfil pessoal (v11), tolerando banco parcialmente atualizado."""
     present = {row[0] for row in conn.execute(
@@ -495,7 +627,7 @@ def migrate_document_schema(db_path) -> None:
     try:
         conn.execute("BEGIN IMMEDIATE")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 2, 3, 4, 5, 6, 7, 8, 9, 10, SCHEMA_VERSION):
+        if version not in (0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, SCHEMA_VERSION):
             raise ValueError(f"versão de esquema não suportada: {version}")
         _v3_extra = dict(
             versoes_documento=_V2_COLUMNS["versoes_documento"] | {"comparison_sha256"},
@@ -509,13 +641,17 @@ def migrate_document_schema(db_path) -> None:
         _v9_extra["ops_state"] = _V9_COLUMNS["ops_state"]
         _v10_extra = dict(_v9_extra, **_V10_COLUMNS)
         _v11_extra = dict(_v10_extra, **_V11_COLUMNS)
+        _v12_extra = dict(_v11_extra, **_V12_COLUMNS)
+        _v13_extra = dict(_v12_extra, **_V13_COLUMNS)
         if version == SCHEMA_VERSION:
-            _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL,
-                             dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v11_extra),
+            _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL + _V12_DDL,
+                             dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v13_extra),
                              f"v{SCHEMA_VERSION}")
             _seed_alert_watermarks(conn)
             _apply_v10(conn)  # garante índices v10 (ex.: sessão aberta única) em base já migrada
             _apply_v11(conn)
+            _apply_v12(conn)
+            _apply_v13(conn)
         else:
             if version == 2:
                 _validate_schema(conn, _DDL, _V2_COLUMNS, "v2")
@@ -542,6 +678,12 @@ def migrate_document_schema(db_path) -> None:
             elif version == 10:
                 _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL,
                                  dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v10_extra), "v10")
+            elif version == 11:
+                _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL,
+                                 dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v11_extra), "v11")
+            elif version == 12:
+                _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL + _V12_DDL,
+                                 dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v12_extra), "v12")
             else:
                 for statement in _DDL:
                     conn.execute(statement)
@@ -554,6 +696,8 @@ def migrate_document_schema(db_path) -> None:
             _apply_v9(conn)
             _apply_v10(conn)
             _apply_v11(conn)
+            _apply_v12(conn)
+            _apply_v13(conn)
             _seed_alert_watermarks(conn)
             conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         _ensure_alert_indexes(conn)

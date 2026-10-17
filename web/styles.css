@@ -737,3 +737,11 @@ button:focus-visible {
 .prep__stats { display: flex; flex-wrap: wrap; gap: var(--space-2, 8px); margin-bottom: var(--space-2, 8px); }
 .prep__basis { font-size: var(--text-xs, 0.75rem); color: var(--muted); margin: 0 0 var(--space-2, 8px); }
 .prep__page { font-size: var(--text-xs, 0.75rem); color: var(--muted); }
+
+/* Prática: flashcards, questões e simulados (Fase 23) */
+.practice__block { margin-bottom: var(--space-4, 20px); }
+.practice__panel { border: 1px solid var(--border, #d8ded9); border-radius: 10px; padding: var(--space-3, 12px); background: var(--surface, #fff); }
+.practice__answer { margin: var(--space-1, 4px) 0; font-size: var(--text-sm, 0.85rem); color: var(--ink-soft, #333); }
+.practice__ok { color: var(--st-validated, #1f7a4d); font-size: var(--text-sm, 0.85rem); font-weight: 600; }
+.practice__fail { color: var(--st-conflict, #b00020); font-size: var(--text-sm, 0.85rem); font-weight: 600; }
+.practice__result { margin-top: var(--space-2, 8px); padding-top: var(--space-2, 8px); border-top: 1px solid var(--rule, #e6eae6); }

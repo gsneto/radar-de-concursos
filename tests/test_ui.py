@@ -236,6 +236,24 @@ class TestAppStatic(unittest.TestCase):
         for token in (".prep__panel", ".prep__stats", ".prep__basis"):
             self.assertIn(token, css, "styles.css deve apresentar %r" % token)
 
+    def test_renders_practice(self):
+        js = read(APP_PATH)
+        for token in ("renderFlashcards", "renderQuestions", "renderExams",
+                      "renderPerformance", "renderExamRunner", "fetchPractice",
+                      "/api/estudos/flashcards", "/api/estudos/questoes",
+                      "/api/estudos/tentativas", "/api/estudos/simulados",
+                      "/api/estudos/desempenho", "fc-panel", "q-panel", "exam-panel",
+                      "perf-panel", "Mostrar resposta", "/responder", "/finalizar",
+                      "Responder / retomar"):
+            self.assertIn(token, js, "app.js deve apresentar %r" % token)
+        html = read(os.path.join(WEB, "index.html"))
+        for token in ('id="fc-panel"', 'id="q-panel"', 'id="exam-panel"', 'id="perf-panel"',
+                      'id="fc-form"', 'id="q-form"', 'id="exam-form"'):
+            self.assertIn(token, html)
+        css = read(STYLES_PATH)
+        for token in (".practice__panel", ".practice__answer", ".practice__result"):
+            self.assertIn(token, css, "styles.css deve apresentar %r" % token)
+
 
 class TestStylesStatic(unittest.TestCase):
     """Responsividade e acessibilidade do styles.css."""
@@ -728,6 +746,30 @@ const perfil = Radar.renderPerfil(doc, [
   {conceito_key: 'informatica::redes', disciplina: 'INFORMÁTICA', rotulo: 'Redes', nivel: 'basico', revisar: 0}]);
 const perfilText = flattenText(perfil);
 assert.ok(perfilText.includes('Redes') && perfilText.includes('Básico'), 'perfil exibido com nível');
+
+// Prática: flashcards (resposta oculta), questões e desempenho.
+const fc = Radar.renderFlashcards(doc, {fila: [
+  {id: 'c1', frente: 'O que é SM-2?', verso: 'Algoritmo de repetição espaçada'}]},
+  {ativos: 1, novos: 1, pendentes: 1, pct_acerto: null, basis: 'sem revisões registradas'});
+const fcText = flattenText(fc);
+assert.ok(fcText.includes('O que é SM-2?'), 'frente do cartão exibida');
+assert.ok(fcText.includes('Resposta oculta'), 'resposta oculta antes de revelar');
+assert.ok(!fcText.includes('Algoritmo de repetição espaçada'), 'verso não vaza antes da revelação');
+assert.ok(fcText.includes('Mostrar resposta'), 'botão de revelar presente');
+
+const qs = Radar.renderQuestions(doc, [{id: 'q1', enunciado: 'Quanto é 2+2?', versao: 1,
+  disciplina: 'Mat', topico: 'Arit',
+  alternativas: [{id: 'A', texto: '3'}, {id: 'B', texto: '4'}]}]);
+const qText = flattenText(qs);
+assert.ok(qText.includes('Quanto é 2+2?') && qText.includes('B) 4'), 'questão e alternativas exibidas');
+assert.ok(!qText.includes('gabarito'), 'gabarito não é revelado na listagem');
+
+const perf = Radar.renderPerformance(doc, {geral: {total: 3, acertos: 2, brancos: 1, pct: 67,
+  basis: '67% sobre 2 tentativa(s) respondida(s)'}, por_disciplina: [
+  {grupo: 'Mat', total: 2, acertos: 2, pct: 100}]});
+const perfText = flattenText(perf);
+assert.ok(perfText.includes('67% sobre 2'), 'denominador do desempenho explicado');
+assert.ok(perfText.includes('Mat: 2/2'), 'desempenho por disciplina');
 
 console.log('OK');
 """

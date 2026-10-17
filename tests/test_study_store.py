@@ -22,7 +22,7 @@ class StudyStoreTest(unittest.TestCase):
     def test_migracao_v10_cria_tabelas_e_e_idempotente(self):
         conn = connect_documents(self.db)
         try:
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 11)
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 13)
             tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         finally:
             conn.close()

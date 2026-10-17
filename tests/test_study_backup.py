@@ -174,5 +174,98 @@ class BackupRestoreTest(BackupBase):
         self.assertEqual(len(study_store.list_disciplinas(self.db)), 1)  # origem intacta
 
 
+class PracticeBackupTest(BackupBase):
+    """Formato v2: prática incluída; v1 continua importável."""
+
+    def _seed_practice(self, db):
+        from radar import practice_store
+        card = practice_store.create_flashcard(db, frente="F?", verso="V")
+        practice_store.review_flashcard(db, card["id"], 4)
+        q = practice_store.create_question(db, enunciado="Pergunta número 1?",
+                                          alternativas=["a", "b"], gabarito="A")
+        practice_store.answer_question(db, q["id"], "A")
+        for i in range(2):
+            practice_store.create_question(db, enunciado=f"Outra {i}?", alternativas=["a", "b"],
+                                           gabarito="A")
+        exam = practice_store.create_exam(db, nome="S", limit=2, seed=1, exclude_answered=False)
+        practice_store.save_exam_answer(db, exam["id"], 0, "A")
+        practice_store.finish_exam(db, exam["id"])
+
+    def test_export_inclui_pratica(self):
+        self._seed_practice(self.db)
+        payload = study_backup.export_study_data(self.db)
+        self.assertEqual(payload["format_version"], 2)
+        self.assertEqual(payload["counts"]["flashcards"], 1)
+        self.assertEqual(payload["counts"]["questoes"], 3)
+        self.assertEqual(payload["counts"]["simulados"], 1)
+        self.assertEqual(study_backup.validate_export(payload), [])
+
+    def test_roundtrip_da_pratica(self):
+        self._seed_practice(self.db)
+        payload = study_backup.export_study_data(self.db)
+        target = str(Path(self.tmp.name) / "tgt.sqlite3")
+        migrate_document_schema(target)
+        report = study_backup.import_study_data(target, payload)
+        self.assertTrue(report["ok"], report["errors"])
+        self.assertEqual(report["created"], 14)
+        second = study_backup.import_study_data(target, payload)
+        self.assertEqual(second["created"], 0)  # idempotente
+        self.assertEqual(second["skipped"], 14)
+
+    def test_arquivo_v1_continua_importavel(self):
+        # Compatibilidade: um arquivo v1 (sem prática) não pode quebrar a importação.
+        v1 = {"format": "radar-estudos", "format_version": 1,
+              "data": {k: [] for k in ("disciplinas", "topicos", "progresso", "sessoes",
+                                       "revisoes", "perfil")}}
+        self.assertEqual(study_backup.validate_export(v1), [])
+        report = study_backup.import_study_data(self.db, v1)
+        self.assertTrue(report["ok"])
+
+    def test_ordem_zero_nao_e_campo_ausente(self):
+        # Regressão: `ordem=0` é válido (não pode ser tratado como ausente).
+        payload = {"format": "radar-estudos", "format_version": 2, "data": {
+            "disciplinas": [], "topicos": [], "progresso": [], "sessoes": [], "revisoes": [],
+            "perfil": [], "flashcards": [], "flashcard_revisoes": [],
+            "questoes": [{"id": "q1", "enunciado": "Pergunta?", "gabarito": "A"}],
+            "questao_versoes": [], "tentativas": [],
+            "simulados": [{"id": "s1", "nome": "S", "estado": "finalizado"}],
+            "simulado_questoes": [{"simulado_id": "s1", "ordem": 0, "questao_id": "q1",
+                                   "questao_versao": 1}]}}
+        self.assertEqual(study_backup.validate_export(payload), [])
+
+    def test_versao_divergente_nao_corrompe_a_cadeia(self):
+        # Regressão C2: importar uma versão superior não pode travar a edição futura.
+        from radar import practice_store
+        q = practice_store.create_question(self.db, enunciado="Pergunta original?",
+                                           alternativas=["a", "b"], gabarito="A")
+        # Arquivo de outra máquina com a MESMA questão na versão 2.
+        payload = {"format": "radar-estudos", "format_version": 2, "data": {
+            "disciplinas": [], "topicos": [], "progresso": [], "sessoes": [], "revisoes": [],
+            "perfil": [], "flashcards": [], "flashcard_revisoes": [], "tentativas": [],
+            "simulados": [], "simulado_questoes": [],
+            "questoes": [{"id": q["id"], "versao": 2, "enunciado": "Pergunta original?",
+                          "gabarito": "A"}],
+            "questao_versoes": [{"id": "other-line", "questao_id": q["id"], "versao": 2,
+                                 "enunciado": "Pergunta editada?", "gabarito": "A"}]}}
+        report = study_backup.import_study_data(self.db, payload)
+        self.assertTrue(report["ok"], report["errors"])
+        # A questão local continua editável (não colide em UNIQUE(questao_id, versao)).
+        updated = practice_store.update_question(self.db, q["id"], enunciado="Nova edição?")
+        self.assertGreater(updated["versao"], 2)
+
+    def test_enum_invalido_rejeitado_na_validacao(self):
+        # Regressão I2: domínio inválido deve ser erro de arquivo (400), não IntegrityError.
+        payload = {"format": "radar-estudos", "format_version": 2, "data": {
+            "disciplinas": [], "topicos": [], "progresso": [], "sessoes": [], "revisoes": [],
+            "perfil": [], "flashcards": [{"id": "f1", "frente": "F", "verso": "V",
+                                          "estado": "deleted"}],
+            "flashcard_revisoes": [], "questoes": [], "questao_versoes": [], "tentativas": [],
+            "simulados": [], "simulado_questoes": []}}
+        errors = study_backup.validate_export(payload)
+        self.assertTrue(any("estado inválido" in e for e in errors))
+        report = study_backup.import_study_data(self.db, payload)
+        self.assertFalse(report["ok"])
+
+
 if __name__ == "__main__":
     unittest.main()

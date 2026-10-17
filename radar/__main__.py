@@ -359,6 +359,73 @@ def _cmd_estudos_backup(args: argparse.Namespace) -> None:
                      ensure_ascii=False, default=str))
 
 
+def _cmd_pratica_flashcard(args: argparse.Namespace) -> None:
+    from radar import practice_store
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    action = args.fc_action
+    if action == "create":
+        out = practice_store.create_flashcard(cfg["db_path"], frente=args.frente,
+                                              verso=args.verso, disciplina_id=args.disciplina,
+                                              topico_id=args.topico)
+    elif action == "review":
+        out = practice_store.review_flashcard(cfg["db_path"], args.id, args.qualidade)
+    elif action == "archive":
+        out = practice_store.update_flashcard(cfg["db_path"], args.id, estado="arquivado")
+    elif action == "fila":
+        out = practice_store.study_queue(cfg["db_path"], limit=args.limit)
+    elif action == "stats":
+        out = practice_store.flashcard_stats(cfg["db_path"])
+    else:
+        out = practice_store.list_flashcards(cfg["db_path"])
+    print(json.dumps(out, ensure_ascii=False, default=str))
+
+
+def _cmd_pratica_questao(args: argparse.Namespace) -> None:
+    from radar import practice_store
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    if args.q_action == "create":
+        out = practice_store.create_question(
+            cfg["db_path"], enunciado=args.enunciado, alternativas=args.alternativa,
+            gabarito=args.gabarito, disciplina=args.disciplina, topico=args.topico,
+            comentario=args.comentario)
+    elif args.q_action == "answer":
+        out = practice_store.answer_question(cfg["db_path"], args.id, args.resposta)
+    elif args.q_action == "archive":
+        out = practice_store.archive_question(cfg["db_path"], args.id)
+    else:
+        out = practice_store.list_questions(cfg["db_path"])
+    print(json.dumps(out, ensure_ascii=False, default=str))
+
+
+def _cmd_pratica_simulado(args: argparse.Namespace) -> None:
+    from radar import practice_store
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    action = args.sim_action
+    if action == "create":
+        out = practice_store.create_exam(cfg["db_path"], nome=args.nome, limit=args.limit,
+                                         duracao_segundos=args.duracao, seed=args.seed)
+    elif action == "answer":
+        out = practice_store.save_exam_answer(cfg["db_path"], args.id, args.ordem, args.resposta)
+    elif action == "finish":
+        out = practice_store.finish_exam(cfg["db_path"], args.id)
+    elif action == "result":
+        out = practice_store.exam_result(cfg["db_path"], args.id)
+    else:
+        out = practice_store.list_exams(cfg["db_path"])
+    print(json.dumps(out, ensure_ascii=False, default=str))
+
+
+def _cmd_pratica_desempenho(args: argparse.Namespace) -> None:
+    from radar import practice_store
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    print(json.dumps(practice_store.performance_report(cfg["db_path"]),
+                     ensure_ascii=False, default=str))
+
+
 def build_parser() -> argparse.ArgumentParser:
     from radar.preferences import PRIORITIES
     parser = argparse.ArgumentParser(prog="python -m radar")
@@ -655,6 +722,49 @@ def build_parser() -> argparse.ArgumentParser:
     est_bak.add_argument('--config', default=None)
     est_bak.add_argument('--dest', required=True)
     est_bak.set_defaults(func=_cmd_estudos_backup)
+
+    fc = subparsers.add_parser('estudos-flashcard', help='flashcards: criar, revisar, arquivar, fila, estatísticas')
+    fc.add_argument('--config', default=None)
+    fc.add_argument('fc_action', nargs='?', default='list',
+                    choices=['list', 'create', 'review', 'archive', 'fila', 'stats'])
+    fc.add_argument('--frente', default=None)
+    fc.add_argument('--verso', default=None)
+    fc.add_argument('--disciplina', default=None)
+    fc.add_argument('--topico', default=None)
+    fc.add_argument('--id', default=None)
+    fc.add_argument('--qualidade', type=int, default=None)
+    fc.add_argument('--limit', type=int, default=20)
+    fc.set_defaults(func=_cmd_pratica_flashcard)
+
+    q = subparsers.add_parser('estudos-questao', help='questões: criar, responder, arquivar, listar')
+    q.add_argument('--config', default=None)
+    q.add_argument('q_action', nargs='?', default='list', choices=['list', 'create', 'answer', 'archive'])
+    q.add_argument('--enunciado', default=None)
+    q.add_argument('--alternativa', action='append', default=None, help='repita para cada alternativa')
+    q.add_argument('--gabarito', default=None)
+    q.add_argument('--disciplina', default=None)
+    q.add_argument('--topico', default=None)
+    q.add_argument('--comentario', default=None)
+    q.add_argument('--id', default=None)
+    q.add_argument('--resposta', default=None)
+    q.set_defaults(func=_cmd_pratica_questao)
+
+    sim = subparsers.add_parser('estudos-simulado', help='simulados: criar, responder, finalizar, resultado')
+    sim.add_argument('--config', default=None)
+    sim.add_argument('sim_action', nargs='?', default='list',
+                     choices=['list', 'create', 'answer', 'finish', 'result'])
+    sim.add_argument('--nome', default=None)
+    sim.add_argument('--limit', type=int, default=10)
+    sim.add_argument('--duracao', type=int, default=None, help='duração máxima em segundos')
+    sim.add_argument('--seed', default=None)
+    sim.add_argument('--id', default=None)
+    sim.add_argument('--ordem', type=int, default=None)
+    sim.add_argument('--resposta', default=None)
+    sim.set_defaults(func=_cmd_pratica_simulado)
+
+    perf = subparsers.add_parser('estudos-desempenho', help='desempenho agregado (tentativas e simulados)')
+    perf.add_argument('--config', default=None)
+    perf.set_defaults(func=_cmd_pratica_desempenho)
 
     return parser
 

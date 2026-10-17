@@ -370,7 +370,7 @@ class HealthTest(OpsBase):
         self.assertIsNotNone(h["last_cycle"])
         self.assertIn("queue", h)
         self.assertIn("alerts", h)
-        self.assertEqual(h["database"]["schema_version"], 11)
+        self.assertEqual(h["database"]["schema_version"], 13)
 
     def _touch(self, db_path):
         obs = ensure_observation(db_path, "https://exemplo.test/a/", "X-1")
