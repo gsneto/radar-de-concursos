@@ -2230,10 +2230,699 @@
     });
   }
 
+  // --- Revisão humana e documentos bloqueados (Fase 28) ---
+
+  var reviewState = {limit: 10, offset: 0, total: 0, field: '', state: 'pendente',
+                     conflict: '', minPriority: '', loteId: null, items: [],
+                     selected: null};
+  var pendingImports = {};
+
+  function reviewStatus(message) {
+    var doc = global.document;
+    var node = doc && doc.getElementById('review-status');
+    if (node) node.textContent = message || '';
+  }
+
+  function blockedStatus(message) {
+    var doc = global.document;
+    var node = doc && doc.getElementById('blocked-status');
+    if (node) node.textContent = message || '';
+  }
+
+  function readReviewFilters() {
+    var doc = global.document;
+    var field = doc.getElementById('review-field');
+    var state = doc.getElementById('review-state');
+    var conflict = doc.getElementById('review-conflict');
+    var minimum = doc.getElementById('review-min');
+    reviewState.field = field && field.value ? field.value.trim() : '';
+    reviewState.state = state && state.value ? state.value : 'pendente';
+    reviewState.conflict = conflict ? conflict.value : '';
+    reviewState.minPriority = minimum && minimum.value !== '' ? minimum.value : '';
+    reviewState.offset = 0;
+  }
+
+  function reviewFilters() {
+    var filters = {state: reviewState.state};
+    if (reviewState.field) filters.field_name = reviewState.field;
+    if (reviewState.conflict !== '') filters.conflict = reviewState.conflict === '1';
+    if (reviewState.minPriority !== '') filters.min_priority = Number(reviewState.minPriority);
+    return filters;
+  }
+
+  function reviewQuery() {
+    var parts = ['limit=' + reviewState.limit, 'offset=' + reviewState.offset,
+                 'state=' + encodeURIComponent(reviewState.state)];
+    if (reviewState.field) parts.push('field=' + encodeURIComponent(reviewState.field));
+    if (reviewState.conflict !== '') parts.push('conflict=' + reviewState.conflict);
+    if (reviewState.minPriority !== '') parts.push('min_priority=' + reviewState.minPriority);
+    return '/api/revisao/fila?' + parts.join('&');
+  }
+
+  function reviewReviewer() {
+    var doc = global.document;
+    var input = doc && doc.getElementById('review-reviewer');
+    var value = input && input.value ? input.value.trim() : '';
+    return value || 'operador local (não autenticado)';
+  }
+
+  function renderReviewList(document, payload) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    var page = Math.floor(payload.offset / payload.limit) + 1;
+    wrap.appendChild(el(document, 'p', 'prep__basis',
+      payload.total + ' proposta(s) para os filtros · página ' + page + ' · ' +
+      ((payload.resumo && payload.resumo.com_conflito) || 0) + ' com conflito · ' +
+      ((payload.resumo && payload.resumo.por_estado && payload.resumo.por_estado.pendente) || 0) +
+      ' pendente(s)'));
+    if (!payload.items.length) {
+      wrap.appendChild(el(document, 'p', 'muted', 'Nenhuma proposta para os filtros.'));
+    }
+    payload.items.forEach(function (item) {
+      var card = el(document, 'article', 'study-disc');
+      card.appendChild(el(document, 'h4', 'study-disc__title',
+        item.field_name + ' = ' + String(item.value)));
+      card.appendChild(el(document, 'p', 'prep__basis',
+        'prioridade ' + item.priority + ' · ' + item.state +
+        (item.conflicts && item.conflicts.length
+          ? ' · ' + item.conflicts.length + ' valor(es) conflitante(s)' : '') +
+        (item.competition_id ? ' · ' + item.competition_id : '')));
+      if (item.factors && item.factors.length) {
+        var list = el(document, 'ul', 'study__revisions');
+        item.factors.forEach(function (factor) {
+          var sign = factor.pontos >= 0 ? '+' : '';
+          list.appendChild(el(document, 'li', 'study__revision',
+            factor.motivo + ' (' + sign + factor.pontos + ')'));
+        });
+        card.appendChild(list);
+      }
+      card.appendChild(el(document, 'blockquote', 'prep__basis',
+        item.evidence && item.evidence.quote
+          ? item.evidence.quote
+          : ((item.evidence && item.evidence.limitation) || 'sem trecho literal')));
+      var open = el(document, 'button', 'button button--ghost', 'Abrir');
+      open.type = 'button';
+      open.addEventListener('click', function () { openProposal(item.proposal_id); });
+      card.appendChild(open);
+      wrap.appendChild(card);
+    });
+    var nav = el(document, 'div', 'prefs');
+    var previous = el(document, 'button', 'button button--ghost', 'Anterior');
+    previous.type = 'button';
+    previous.disabled = payload.offset <= 0;
+    previous.addEventListener('click', function () {
+      reviewState.offset = Math.max(0, reviewState.offset - reviewState.limit);
+      fetchReview();
+    });
+    var next = el(document, 'button', 'button button--ghost', 'Próxima');
+    next.type = 'button';
+    next.disabled = !payload.has_more;
+    next.addEventListener('click', function () {
+      reviewState.offset += reviewState.limit;
+      fetchReview();
+    });
+    nav.appendChild(previous);
+    nav.appendChild(next);
+    wrap.appendChild(nav);
+    return wrap;
+  }
+
+  function fetchReview() {
+    var doc = global.document;
+    if (!doc || !doc.getElementById('review-panel')) return Promise.resolve();
+    reviewStatus('Atualizando fila…');
+    return global.fetch(reviewQuery(), {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        reviewState.total = payload.total;
+        reviewState.items = payload.items;
+        var node = doc.getElementById('review-panel');
+        clearContainer(node);
+        node.appendChild(renderReviewList(doc, payload));
+        reviewStatus('');
+      })
+      .catch(function (error) {
+        reviewStatus('Fila indisponível (' + (error && error.message ? error.message : 'erro') + ').');
+      });
+  }
+
+  function openProposal(proposalId) {
+    var doc = global.document;
+    if (!doc) return Promise.resolve();
+    reviewState.selected = proposalId;
+    return global.fetch('/api/revisao/proposta/' + encodeURIComponent(proposalId),
+                        {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        var node = doc.getElementById('review-detail');
+        clearContainer(node);
+        node.hidden = false;
+        node.appendChild(renderReviewDetail(doc, payload));
+        if (typeof node.scrollIntoView === 'function') node.scrollIntoView({block: 'nearest'});
+      })
+      .catch(function (error) { reviewStatus('Detalhe indisponível (' + error.message + ').'); });
+  }
+
+  function renderReviewDetail(document, payload) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    var proposal = payload.proposal;
+    wrap.appendChild(el(document, 'h3', 'study__subtitle',
+      proposal.field_name + ' = ' + String(proposal.value)));
+    wrap.appendChild(el(document, 'p', 'prep__basis',
+      'estado: ' + proposal.state + ' · método: ' + proposal.extraction_method +
+      (proposal.ambiguity_reason ? ' · motivo: ' + proposal.ambiguity_reason : '')));
+
+    wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Evidência'));
+    if (payload.evidence.quote) {
+      wrap.appendChild(el(document, 'blockquote', 'prep__basis', payload.evidence.quote));
+    } else {
+      wrap.appendChild(el(document, 'p', 'muted',
+        payload.evidence.limitation || 'sem trecho literal registrado'));
+    }
+    wrap.appendChild(el(document, 'p', 'prep__basis',
+      'documento: ' + (payload.evidence.document_title || 'sem título') +
+      ' · página: ' + (payload.evidence.page_number === null ? 'não registrada'
+                        : payload.evidence.page_number) +
+      ' · versão: ' + String(payload.evidence.version_id || '').slice(0, 8) +
+      ' · hash: ' + String(payload.evidence.sha256 || '').slice(0, 12)));
+    if (isHttpsUrl(payload.evidence.official_url)) {
+      var link = el(document, 'a', 'prep__basis', 'Abrir documento oficial');
+      link.href = payload.evidence.official_url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      wrap.appendChild(link);
+    }
+
+    if (payload.other_proposals && payload.other_proposals.length) {
+      wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Outras propostas para o mesmo campo'));
+      var conflicts = el(document, 'ul', 'study__revisions');
+      payload.other_proposals.forEach(function (other) {
+        conflicts.appendChild(el(document, 'li', 'study__revision',
+          String(other.value) + ' · ' + other.state + ' · ' +
+          (other.document_title || 'documento') + ' · ' +
+          (other.published_at || 'data não registrada')));
+      });
+      wrap.appendChild(conflicts);
+    }
+
+    wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Valor vigente'));
+    wrap.appendChild(el(document, 'p', 'prep__basis',
+      payload.current_value
+        ? ('proposta ' + String(payload.current_value.proposal_id).slice(0, 8) +
+           ' selecionada por ' + payload.current_value.selected_by + ' em ' +
+           payload.current_value.selected_at)
+        : 'nenhum valor selecionado para este campo'));
+
+    wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Histórico de decisões'));
+    if (payload.reviews && payload.reviews.length) {
+      var history = el(document, 'ul', 'study__revisions');
+      payload.reviews.forEach(function (item) {
+        history.appendChild(el(document, 'li', 'study__revision',
+          item.decision + ' · ' + item.reviewer + ' · ' + item.reviewed_at + ' · ' +
+          item.reason + (item.origin ? ' · origem: ' + item.origin : '')));
+      });
+      wrap.appendChild(history);
+    } else {
+      wrap.appendChild(el(document, 'p', 'muted', 'Nenhuma decisão registrada.'));
+    }
+
+    var form = el(document, 'div', 'prefs');
+    var reviewerLabel = el(document, 'label', 'prefs__field', 'Responsável (local)');
+    var reviewer = el(document, 'input', '');
+    reviewer.id = 'review-reviewer';
+    reviewer.type = 'text';
+    reviewer.value = 'operador local';
+    reviewerLabel.appendChild(reviewer);
+    form.appendChild(reviewerLabel);
+    var reasonLabel = el(document, 'label', 'prefs__field', 'Justificativa');
+    var reason = el(document, 'input', '');
+    reason.id = 'review-reason';
+    reason.type = 'text';
+    reason.placeholder = 'obrigatória';
+    reasonLabel.appendChild(reason);
+    form.appendChild(reasonLabel);
+    var valueLabel = el(document, 'label', 'prefs__field', 'Valor corrigido');
+    var value = el(document, 'input', '');
+    value.id = 'review-value';
+    value.type = 'text';
+    value.placeholder = 'somente para corrigir';
+    valueLabel.appendChild(value);
+    form.appendChild(valueLabel);
+    wrap.appendChild(form);
+
+    var actions = el(document, 'div', 'prefs');
+    [['validado', 'Validar'], ['rejeitado', 'Rejeitar'], ['adiado', 'Adiar'],
+     ['ambiguo', 'Marcar ambíguo'], ['nova_extracao', 'Pedir nova extração'],
+     ['reaberto', 'Reabrir'], ['corrigido', 'Corrigir']].forEach(function (pair) {
+      var button = el(document, 'button', 'button button--ghost', pair[1]);
+      button.type = 'button';
+      button.addEventListener('click', function () { reviewAction(pair[0]); });
+      actions.appendChild(button);
+    });
+    var select = el(document, 'button', 'button', 'Selecionar como vigente');
+    select.type = 'button';
+    select.addEventListener('click', function () { selectCurrent(); });
+    actions.appendChild(select);
+    wrap.appendChild(actions);
+    wrap.appendChild(el(document, 'p', 'muted',
+      'Corrigir mantém a evidência original e cria proposta derivada identificada como ' +
+      'correção humana. Nenhuma ação confirma os outros campos do documento.'));
+    return wrap;
+  }
+
+  function reviewAction(decision) {
+    var doc = global.document;
+    var proposalId = reviewState.selected;
+    if (!proposalId) return;
+    var reasonNode = doc.getElementById('review-reason');
+    var reason = reasonNode && reasonNode.value ? reasonNode.value.trim() : '';
+    if (!reason) {
+      reviewStatus('Justificativa obrigatória para registrar a decisão.');
+      return;
+    }
+    var body = {decision: decision, reviewer: reviewReviewer(), reason: reason,
+                origin: 'interface'};
+    if (decision === 'corrigido') {
+      var valueNode = doc.getElementById('review-value');
+      var raw = valueNode && valueNode.value ? valueNode.value.trim() : '';
+      if (!raw) {
+        reviewStatus('Informe o valor corrigido.');
+        return;
+      }
+      try { body.value = JSON.parse(raw); } catch (error) { body.value = raw; }
+    }
+    reviewStatus('Registrando decisão…');
+    studyPost('/api/revisao/proposta/' + encodeURIComponent(proposalId), body)
+      .then(function (result) {
+        return openProposal(proposalId).then(fetchReview).then(function () {
+          reviewStatus(result.duplicada ? 'Decisão já registrada (idempotente).'
+                                        : 'Decisão registrada.');
+        });
+      })
+      .catch(function (error) { reviewStatus('Falha: ' + error.message); });
+  }
+
+  function selectCurrent() {
+    var doc = global.document;
+    var proposalId = reviewState.selected;
+    if (!proposalId) return;
+    var reasonNode = doc.getElementById('review-reason');
+    var reason = reasonNode && reasonNode.value ? reasonNode.value.trim() : '';
+    if (!reason) {
+      reviewStatus('Justificativa obrigatória para selecionar o valor vigente.');
+      return;
+    }
+    studyPost('/api/revisao/selecionar', {proposal_id: proposalId,
+                                          reviewer: reviewReviewer(), reason: reason,
+                                          origin: 'interface'})
+      .then(function (result) {
+        return openProposal(proposalId).then(fetchReview).then(function () {
+          reviewStatus(result.duplicada ? 'Valor já era o vigente.'
+                                        : 'Valor vigente atualizado.');
+        });
+      })
+      .catch(function (error) { reviewStatus('Falha: ' + error.message); });
+  }
+
+  function renderBatch(document, lote) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    wrap.appendChild(el(document, 'h3', 'study__subtitle', 'Lote de revisão'));
+    wrap.appendChild(el(document, 'p', 'prep__basis',
+      'estado: ' + lote.state + ' · ' + lote.progresso.decididos + ' de ' +
+      lote.progresso.total + ' decidido(s) · posição ' + lote.cursor +
+      ' · o lote não aprova em massa'));
+    if (lote.item_atual) {
+      wrap.appendChild(el(document, 'p', 'prep__basis',
+        'item atual: ' + lote.item_atual.field_name + ' = ' +
+        String(lote.item_atual.value)));
+      var open = el(document, 'button', 'button', 'Abrir item atual');
+      open.type = 'button';
+      open.addEventListener('click', function () { openProposal(lote.item_atual.proposal_id); });
+      wrap.appendChild(open);
+    }
+    var actions = el(document, 'div', 'prefs');
+    [['anterior', 'Anterior'], ['proximo', 'Próximo'], ['pausar', 'Pausar'],
+     ['retomar', 'Retomar'], ['concluir', 'Concluir']].forEach(function (pair) {
+      var button = el(document, 'button', 'button button--ghost', pair[1]);
+      button.type = 'button';
+      button.addEventListener('click', function () { batchStep(pair[0]); });
+      actions.appendChild(button);
+    });
+    var exportButton = el(document, 'button', 'button button--ghost', 'Exportar lote');
+    exportButton.type = 'button';
+    exportButton.addEventListener('click', exportBatch);
+    actions.appendChild(exportButton);
+    wrap.appendChild(actions);
+    return wrap;
+  }
+
+  function saveBatchId(loteId) {
+    try {
+      if (global.localStorage) {
+        if (loteId) global.localStorage.setItem('radar.revisao.lote', loteId);
+        else global.localStorage.removeItem('radar.revisao.lote');
+      }
+    } catch (error) { /* armazenamento indisponível não quebra a revisão */ }
+  }
+
+  function restoreBatch() {
+    var doc = global.document;
+    var loteId = null;
+    try { loteId = global.localStorage && global.localStorage.getItem('radar.revisao.lote'); }
+    catch (error) { loteId = null; }
+    if (!loteId || !doc || !doc.getElementById('review-batch')) return Promise.resolve();
+    return global.fetch('/api/revisao/lotes/' + encodeURIComponent(loteId),
+                        {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (lote) {
+        reviewState.loteId = lote.lote_id;
+        var node = doc.getElementById('review-batch');
+        clearContainer(node);
+        node.hidden = false;
+        node.appendChild(renderBatch(doc, lote));
+      })
+      .catch(function () { saveBatchId(null); });
+  }
+
+  function openReviewBatch() {
+    var doc = global.document;
+    readReviewFilters();
+    studyPost('/api/revisao/lotes', {
+      created_by: reviewReviewer(), size: reviewState.limit, origin: 'interface',
+      filters: reviewFilters()
+    }).then(function (lote) {
+      reviewState.loteId = lote.lote_id;
+      saveBatchId(lote.lote_id);
+      var node = doc.getElementById('review-batch');
+      clearContainer(node);
+      node.hidden = false;
+      node.appendChild(renderBatch(doc, lote));
+      reviewStatus('Lote aberto com ' + lote.progresso.total + ' item(ns).');
+    }).catch(function (error) { reviewStatus('Falha ao abrir lote: ' + error.message); });
+  }
+
+  function batchStep(action) {
+    var doc = global.document;
+    if (!reviewState.loteId) return;
+    studyPost('/api/revisao/lotes/' + encodeURIComponent(reviewState.loteId),
+              {action: action})
+      .then(function (lote) {
+        var node = doc.getElementById('review-batch');
+        clearContainer(node);
+        node.appendChild(renderBatch(doc, lote));
+        reviewStatus('Lote: ' + lote.state + '.');
+      })
+      .catch(function (error) { reviewStatus('Falha no lote: ' + error.message); });
+  }
+
+  function downloadJson(filename, payload) {
+    if (typeof global.Blob !== 'function' || !global.URL
+        || typeof global.URL.createObjectURL !== 'function') return false;
+    var blob = new global.Blob([JSON.stringify(payload, null, 1)],
+                               {type: 'application/json'});
+    var url = global.URL.createObjectURL(blob);
+    var link = global.document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.rel = 'noopener';
+    global.document.body.appendChild(link);
+    link.click();
+    global.document.body.removeChild(link);
+    global.setTimeout(function () { global.URL.revokeObjectURL(url); }, 1000);
+    return true;
+  }
+
+  function exportBatch() {
+    if (!reviewState.loteId) return;
+    global.fetch('/api/revisao/lotes/' + encodeURIComponent(reviewState.loteId) + '/exportar',
+                 {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        if (!downloadJson('revisao-' + reviewState.loteId.slice(0, 8) + '.json', payload)) {
+          reviewStatus('Exportação pronta, mas o download não é suportado neste ambiente.');
+          return;
+        }
+        reviewStatus('Lote exportado com ' + payload.itens.length + ' item(ns).');
+      })
+      .catch(function (error) { reviewStatus('Falha ao exportar: ' + error.message); });
+  }
+
+  function assocStatus(message) {
+    var doc = global.document;
+    var node = doc && doc.getElementById('assoc-status');
+    if (node) node.textContent = message || '';
+  }
+
+  function assocReviewer() {
+    var doc = global.document;
+    var input = doc && doc.getElementById('assoc-reviewer');
+    var value = input && input.value ? input.value.trim() : '';
+    return value || 'operador local (não autenticado)';
+  }
+
+  function assocNote() {
+    var doc = global.document;
+    var input = doc && doc.getElementById('assoc-note');
+    return input && input.value ? input.value.trim() : '';
+  }
+
+  function renderAssociations(document, payload) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    wrap.appendChild(el(document, 'p', 'prep__basis',
+      payload.total + ' documento(s) sem certame identificado · ' +
+      Object.keys(payload.por_estado || {}).map(function (state) {
+        return state + ': ' + payload.por_estado[state];
+      }).join(' · ')));
+    if (!payload.itens || !payload.itens.length) {
+      wrap.appendChild(el(document, 'p', 'muted', 'Nenhuma associação pendente.'));
+    }
+    (payload.itens || []).forEach(function (item) {
+      var card = el(document, 'article', 'study-disc');
+      card.appendChild(el(document, 'h4', 'study-disc__title',
+        (item.documento && item.documento.title) || 'Documento'));
+      card.appendChild(el(document, 'p', 'prep__basis',
+        'estado: ' + (item.estado_label || item.estado) + ' · ' +
+        ((item.documento && item.documento.issuer) || 'órgão não informado') + ' · ' +
+        ((item.documento && item.documento.published_at) || 'data não registrada')));
+      if (item.evidencia) {
+        var evidence = el(document, 'ul', 'study__revisions');
+        Object.keys(item.evidencia).forEach(function (key) {
+          if (item.evidencia[key] === null || item.evidencia[key] === undefined) return;
+          evidence.appendChild(el(document, 'li', 'study__revision',
+            key + ': ' + String(item.evidencia[key])));
+        });
+        card.appendChild(evidence);
+      }
+      var contestLabel = el(document, 'label', 'prefs__field', 'Certame (UUID)');
+      var contest = el(document, 'input', '');
+      contest.type = 'text';
+      contest.id = 'assoc-contest-' + item.document_id;
+      contest.placeholder = 'id do concurso, se houver evidência';
+      contestLabel.appendChild(contest);
+      card.appendChild(contestLabel);
+      var actions = el(document, 'div', 'prefs');
+      var confirm = el(document, 'button', 'button', 'Confirmar vínculo');
+      confirm.type = 'button';
+      confirm.addEventListener('click', function () { associationAction(item, 'confirmada'); });
+      var reject = el(document, 'button', 'button button--ghost', 'Rejeitar vínculo');
+      reject.type = 'button';
+      reject.addEventListener('click', function () { associationAction(item, 'rejeitada'); });
+      var keep = el(document, 'button', 'button button--ghost', 'Manter pendente');
+      keep.type = 'button';
+      keep.addEventListener('click', function () { associationAction(item, 'pendente'); });
+      actions.appendChild(confirm);
+      actions.appendChild(reject);
+      actions.appendChild(keep);
+      card.appendChild(actions);
+      wrap.appendChild(card);
+    });
+    wrap.appendChild(el(document, 'p', 'muted', payload.limitacao || ''));
+    return wrap;
+  }
+
+  function fetchAssociations() {
+    var doc = global.document;
+    if (!doc || !doc.getElementById('assoc-panel')) return Promise.resolve();
+    assocStatus('Atualizando…');
+    return global.fetch('/api/associacoes/fila?limit=50',
+                        {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        var node = doc.getElementById('assoc-panel');
+        clearContainer(node);
+        node.appendChild(renderAssociations(doc, payload));
+        assocStatus('');
+      })
+      .catch(function (error) {
+        assocStatus('Associações indisponíveis (' + error.message + ').');
+      });
+  }
+
+  function associationAction(item, state) {
+    var doc = global.document;
+    var note = assocNote();
+    if (!note) {
+      assocStatus('Justificativa obrigatória para registrar a decisão de associação.');
+      return;
+    }
+    var body = {state: state, decided_by: assocReviewer(), note: note};
+    if (state === 'confirmada') {
+      var field = doc.getElementById('assoc-contest-' + item.document_id);
+      var contestId = field && field.value ? field.value.trim() : '';
+      if (!contestId) {
+        assocStatus('Confirmação exige o id do certame com evidência.');
+        return;
+      }
+      body.contest_id = contestId;
+      body.evidence = {motivo: 'decisão humana de associação', justificativa: note};
+    } else if (state === 'pendente') {
+      body.evidence = {motivo: 'mantido pendente por decisão humana',
+                       justificativa: note};
+    } else {
+      body.evidence = {motivo: 'vínculo rejeitado por decisão humana',
+                       justificativa: note};
+    }
+    studyPost('/api/associacoes/' + encodeURIComponent(item.document_id), body)
+      .then(function (result) {
+        return fetchAssociations().then(function () {
+          assocStatus(result.duplicada ? 'Decisão já registrada (idempotente).'
+                                       : 'Decisão de associação registrada.');
+        });
+      })
+      .catch(function (error) { assocStatus('Falha: ' + error.message); });
+  }
+
+  function renderBlocked(document, payload) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    var summary = el(document, 'ul', 'study__revisions');
+    Object.keys(payload.por_estado).sort().forEach(function (state) {
+      summary.appendChild(el(document, 'li', 'study__revision',
+        state + ': ' + payload.por_estado[state]));
+    });
+    wrap.appendChild(summary);
+    payload.itens.forEach(function (item) {
+      var card = el(document, 'article', 'study-disc');
+      card.appendChild(el(document, 'h4', 'study-disc__title', item.title || 'Documento'));
+      card.appendChild(el(document, 'p', 'prep__basis',
+        item.state_label + ' · ' + (item.issuer || 'órgão não informado') +
+        (item.blocked_reason_label ? ' · ' + item.blocked_reason_label : '')));
+      if (isHttpsUrl(item.official_url)) {
+        var link = el(document, 'a', 'prep__basis', 'Referência oficial');
+        link.href = item.official_url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        card.appendChild(link);
+      }
+      if (item.alternatives && item.alternatives.length) {
+        var alternatives = el(document, 'ul', 'study__revisions');
+        item.alternatives.forEach(function (alternative) {
+          alternatives.appendChild(el(document, 'li', 'study__revision',
+            alternative.tipo + ': ' + alternative.motivo));
+        });
+        card.appendChild(alternatives);
+      }
+      if (item.state === 'bloqueado' || item.state === 'indisponivel') {
+        var file = el(document, 'input', '');
+        file.type = 'file';
+        file.accept = '.pdf,.zip,.html';
+        file.id = 'blocked-file-' + item.document_id;
+        card.appendChild(file);
+        var validate = el(document, 'button', 'button button--ghost', 'Validar arquivo');
+        validate.type = 'button';
+        validate.addEventListener('click', function () { blockedValidate(item.document_id); });
+        card.appendChild(validate);
+        var confirm = el(document, 'button', 'button', 'Confirmar importação');
+        confirm.type = 'button';
+        confirm.id = 'blocked-confirm-' + item.document_id;
+        confirm.disabled = true;
+        confirm.addEventListener('click', function () { blockedConfirm(item.document_id); });
+        card.appendChild(confirm);
+      }
+      wrap.appendChild(card);
+    });
+    wrap.appendChild(el(document, 'p', 'muted', payload.limitacao));
+    return wrap;
+  }
+
+  function fetchBlocked() {
+    var doc = global.document;
+    if (!doc || !doc.getElementById('blocked-panel')) return Promise.resolve();
+    return global.fetch('/api/documentos/bloqueados?state=bloqueado,indisponivel&limit=200',
+                        {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        var node = doc.getElementById('blocked-panel');
+        clearContainer(node);
+        node.appendChild(renderBlocked(doc, payload));
+        blockedStatus('');
+      })
+      .catch(function (error) {
+        blockedStatus('Documentos indisponíveis (' + error.message + ').');
+      });
+  }
+
+  function blockedValidate(documentId) {
+    var doc = global.document;
+    var input = doc.getElementById('blocked-file-' + documentId);
+    var file = input && input.files && input.files[0];
+    if (!file) { blockedStatus('Selecione um arquivo.'); return; }
+    blockedStatus('Validando arquivo…');
+    readFileAsBase64(file).then(function (content) {
+      return studyPost('/api/documentos/importar', {
+        document_id: documentId, content_base64: content,
+        declared_origin: 'arquivo fornecido manualmente pelo usuário',
+        channel: 'upload_local', declared_by: reviewReviewer(), dry_run: true
+      });
+    }).then(function (result) {
+      pendingImports[documentId] = file;
+      var confirm = doc.getElementById('blocked-confirm-' + documentId);
+      if (confirm) confirm.disabled = false;
+      blockedStatus('Arquivo válido (' + result.content_type + ', sha256 ' +
+                    String(result.sha256).slice(0, 12) + '). Confirme para persistir.');
+    }).catch(function (error) { blockedStatus('Arquivo recusado: ' + error.message); });
+  }
+
+  function blockedConfirm(documentId) {
+    var doc = global.document;
+    var file = pendingImports[documentId];
+    if (!file) { blockedStatus('Valide o arquivo antes de confirmar.'); return; }
+    readFileAsBase64(file).then(function (content) {
+      return studyPost('/api/documentos/importar', {
+        document_id: documentId, content_base64: content,
+        declared_origin: 'arquivo fornecido manualmente pelo usuário',
+        channel: 'upload_local', declared_by: reviewReviewer(), dry_run: false
+      });
+    }).then(function (result) {
+      delete pendingImports[documentId];
+      return fetchBlocked().then(function () {
+        blockedStatus(result.duplicada
+          ? 'Arquivo já estava registrado (idempotente).'
+          : 'Arquivo persistido com procedência e hash; revisão continua pendente.');
+      });
+    }).catch(function (error) { blockedStatus('Falha na importação: ' + error.message); });
+  }
+
   function init() {
     var doc = global.document;
     if (!doc) return;
-    var reload = function () { fetchData(); fetchMonitoring(); fetchAlerts(); fetchTriage(); fetchPriorities(); fetchStudy(); };
+    var reload = function () { fetchData(); fetchMonitoring(); fetchAlerts(); fetchTriage(); fetchPriorities(); fetchStudy(); fetchReview(); fetchBlocked(); };
     var retry = doc.getElementById('retry-button');
     if (retry) retry.addEventListener('click', reload);
     var prefsForm = doc.getElementById('preferences-form');
@@ -2376,6 +3065,18 @@
       }
     });
     if (pacForm) pacForm.addEventListener('submit', function (event) { event.preventDefault(); });
+    var reviewForm = doc.getElementById('review-filters');
+    if (reviewForm) reviewForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      readReviewFilters();
+      fetchReview();
+    });
+    var reviewBatchOpen = doc.getElementById('review-batch-open');
+    if (reviewBatchOpen) reviewBatchOpen.addEventListener('click', openReviewBatch);
+    var blockedRefresh = doc.getElementById('blocked-refresh');
+    if (blockedRefresh) blockedRefresh.addEventListener('click', fetchBlocked);
+    var assocRefresh = doc.getElementById('assoc-refresh');
+    if (assocRefresh) assocRefresh.addEventListener('click', fetchAssociations);
     var coverageRefresh = doc.getElementById('coverage-refresh');
     if (coverageRefresh) coverageRefresh.addEventListener('click', function () { fetchCoverage(); });
     fetchData().then(focusContestFromHash).catch(function () {});
@@ -2388,6 +3089,10 @@
     fetchPractice();
     fetchPackages();
     fetchCoverage();
+    fetchReview();
+    fetchBlocked();
+    fetchAssociations();
+    restoreBatch();
     startAutoRefresh();
     if (global.addEventListener) {
       global.addEventListener('hashchange', function () { focusContestFromHash(); });
@@ -2419,6 +3124,13 @@
     renderPackagePreview: renderPackagePreview,
     renderCoverage: renderCoverage,
     renderGaps: renderGaps,
+    renderReviewList: renderReviewList,
+    renderReviewDetail: renderReviewDetail,
+    renderBlocked: renderBlocked,
+    fetchReview: fetchReview,
+    fetchBlocked: fetchBlocked,
+    renderAssociations: renderAssociations,
+    fetchAssociations: fetchAssociations,
     fetchCoverage: fetchCoverage,
     readFileAsBase64: readFileAsBase64,
     formatClock: formatClock,

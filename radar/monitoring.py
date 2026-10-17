@@ -213,7 +213,20 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
         # Candidato cujo host não é autorizado para download (ex.: CDN com robots.txt
         # restritivo) é registrado com metadados e URL, mas o byte não é buscado.
         if candidate.get("fetch_allowed") is False:
-            skip_download[document_id] = candidate.get("fetch_blocked_reason") or "host_nao_autorizado"
+            reason = candidate.get("fetch_blocked_reason") or "host_nao_autorizado"
+            skip_download[document_id] = reason
+            # Bloqueio é política da fonte, não falha: fica registrado por documento para que
+            # a ausência do byte seja explícita e rastreável (nunca "documento inexistente").
+            from radar.document_ingest import record_blocked_document
+            try:
+                record_blocked_document(
+                    db_path, document_id, reason,
+                    official_url=candidate.get("official_url"),
+                    evidence={"fonte": source.get("id"),
+                              "politica": "fetch_allowed=false"},
+                    detected_at=checked_at)
+            except ValueError:
+                pass
         # Fontes cuja API já entrega o texto oficial gravam a versão sem rebaixar a página.
         body = candidate.get("inline_content")
         if body:

@@ -591,6 +591,90 @@ def _cmd_ibfc_piloto(args: argparse.Namespace) -> None:
     print(json.dumps(result, ensure_ascii=False, default=str))
 
 
+def _cmd_revisao_fila(args: argparse.Namespace) -> None:
+    from radar import review
+    conflict = None if args.conflict is None else bool(args.conflict)
+    print(json.dumps(review.review_queue(
+        args.db, contest_id=args.contest_id, field_name=args.field,
+        state=args.state, conflict=conflict, limit=args.limit, offset=args.offset),
+        ensure_ascii=False, default=str))
+
+
+def _cmd_revisao_decidir(args: argparse.Namespace) -> None:
+    from radar import review
+    value = args.value
+    if value is not None:
+        try:
+            value = json.loads(value)
+        except ValueError:
+            pass
+    print(json.dumps(review.decide_proposal(
+        args.db, args.proposal_id, args.decision, reviewer=args.reviewer,
+        reason=args.reason, origin=args.origin, value=value,
+        expected_evidence_sha256=args.evidence_sha256),
+        ensure_ascii=False, default=str))
+
+
+def _cmd_revisao_selecionar(args: argparse.Namespace) -> None:
+    from radar import review
+    print(json.dumps(review.select_current_value(
+        args.db, args.proposal_id, args.reviewer, args.reason, origin=args.origin),
+        ensure_ascii=False, default=str))
+
+
+def _cmd_revisao_lote(args: argparse.Namespace) -> None:
+    from radar import review
+    if args.lote_id:
+        print(json.dumps(review.batch_step(args.db, args.lote_id, args.action),
+                         ensure_ascii=False, default=str))
+        return
+    filters = {}
+    if args.field:
+        filters["field_name"] = args.field
+    if args.contest_id:
+        filters["contest_id"] = args.contest_id
+    print(json.dumps(review.open_batch(
+        args.db, created_by=args.created_by, filters=filters, size=args.size,
+        origin=args.origin, note=args.note), ensure_ascii=False, default=str))
+
+
+def _cmd_revisao_exportar(args: argparse.Namespace) -> None:
+    from radar import review
+    payload = review.export_batch(args.db, args.lote_id)
+    text = json.dumps(payload, ensure_ascii=False, indent=1, default=str)
+    if args.out:
+        Path(args.out).write_text(text, encoding="utf-8")
+        print(json.dumps({"lote_id": args.lote_id, "itens": len(payload["itens"]),
+                          "arquivo": args.out}, ensure_ascii=False))
+    else:
+        print(text)
+
+
+def _cmd_revisao_importar(args: argparse.Namespace) -> None:
+    from radar import review
+    payload = json.loads(Path(args.file).read_text(encoding="utf-8"))
+    print(json.dumps(review.import_decisions(
+        args.db, payload, reviewer=args.reviewer, reason=args.reason,
+        dry_run=not args.apply), ensure_ascii=False, default=str))
+
+
+def _cmd_documentos_bloqueados(args: argparse.Namespace) -> None:
+    from radar import document_ingest
+    print(json.dumps(document_ingest.blocked_report(
+        args.db, contest_id=args.contest_id, states=args.state, limit=args.limit),
+        ensure_ascii=False, default=str))
+
+
+def _cmd_documentos_importar(args: argparse.Namespace) -> None:
+    from radar import document_ingest
+    body = Path(args.file).read_bytes()
+    print(json.dumps(document_ingest.ingest_manual_document(
+        args.db, args.document_id, body, declared_origin=args.declared_origin,
+        channel=args.channel, declared_by=args.declared_by,
+        original_url=args.original_url, note=args.note, dry_run=not args.apply),
+        ensure_ascii=False, default=str))
+
+
 def build_parser() -> argparse.ArgumentParser:
     from radar.preferences import PRIORITIES
     parser = argparse.ArgumentParser(prog="python -m radar")
@@ -1019,6 +1103,87 @@ def build_parser() -> argparse.ArgumentParser:
     arev.add_argument('--revisor', required=True)
     arev.add_argument('--motivo', required=True)
     arev.set_defaults(func=_cmd_associacao_revisar)
+
+    rev_fila = subparsers.add_parser('revisao-fila', help='fila priorizada de propostas')
+    rev_fila.add_argument('--db', required=True)
+    rev_fila.add_argument('--contest-id')
+    rev_fila.add_argument('--field')
+    rev_fila.add_argument('--state', default='pendente',
+                          choices=('pendente', 'aberto', 'decidido', 'adiado',
+                                   'selecionado', 'todos'))
+    rev_fila.add_argument('--conflict', type=int, choices=(0, 1))
+    rev_fila.add_argument('--limit', type=int, default=25)
+    rev_fila.add_argument('--offset', type=int, default=0)
+    rev_fila.set_defaults(func=_cmd_revisao_fila)
+
+    rev_dec = subparsers.add_parser('revisao-decidir', help='decide uma proposta')
+    rev_dec.add_argument('--db', required=True)
+    rev_dec.add_argument('--proposal-id', required=True)
+    rev_dec.add_argument('--decision', required=True, choices=(
+        'validado', 'rejeitado', 'adiado', 'ambiguo', 'nova_extracao', 'reaberto',
+        'corrigido'))
+    rev_dec.add_argument('--reviewer', required=True)
+    rev_dec.add_argument('--reason', required=True)
+    rev_dec.add_argument('--origin', default='cli', choices=('interface', 'cli', 'importacao'))
+    rev_dec.add_argument('--value')
+    rev_dec.add_argument('--evidence-sha256')
+    rev_dec.set_defaults(func=_cmd_revisao_decidir)
+
+    rev_sel = subparsers.add_parser('revisao-selecionar', help='seleciona o valor vigente')
+    rev_sel.add_argument('--db', required=True)
+    rev_sel.add_argument('--proposal-id', required=True)
+    rev_sel.add_argument('--reviewer', required=True)
+    rev_sel.add_argument('--reason', required=True)
+    rev_sel.add_argument('--origin', default='cli', choices=('interface', 'cli', 'importacao'))
+    rev_sel.set_defaults(func=_cmd_revisao_selecionar)
+
+    rev_lote = subparsers.add_parser('revisao-lote', help='abre ou navega um lote de revisão')
+    rev_lote.add_argument('--db', required=True)
+    rev_lote.add_argument('--lote-id')
+    rev_lote.add_argument('--action', choices=('proximo', 'anterior', 'pausar', 'retomar',
+                                               'concluir'))
+    rev_lote.add_argument('--size', type=int, default=20)
+    rev_lote.add_argument('--created-by', default='cli')
+    rev_lote.add_argument('--origin', default='cli', choices=('interface', 'cli', 'importacao'))
+    rev_lote.add_argument('--field')
+    rev_lote.add_argument('--contest-id')
+    rev_lote.add_argument('--note')
+    rev_lote.set_defaults(func=_cmd_revisao_lote)
+
+    rev_exp = subparsers.add_parser('revisao-exportar', help='exporta lote de revisão')
+    rev_exp.add_argument('--db', required=True)
+    rev_exp.add_argument('--lote-id', required=True)
+    rev_exp.add_argument('--out')
+    rev_exp.set_defaults(func=_cmd_revisao_exportar)
+
+    rev_imp = subparsers.add_parser('revisao-importar', help='importa decisões com validação')
+    rev_imp.add_argument('--db', required=True)
+    rev_imp.add_argument('--file', required=True)
+    rev_imp.add_argument('--reviewer', required=True)
+    rev_imp.add_argument('--reason', required=True)
+    rev_imp.add_argument('--apply', action='store_true')
+    rev_imp.set_defaults(func=_cmd_revisao_importar)
+
+    doc_bloq = subparsers.add_parser('documentos-bloqueados',
+                                     help='estado de aquisição e alternativas por documento')
+    doc_bloq.add_argument('--db', required=True)
+    doc_bloq.add_argument('--contest-id')
+    doc_bloq.add_argument('--state', help='estados separados por vírgula (ex.: bloqueado)')
+    doc_bloq.add_argument('--limit', type=int, default=200)
+    doc_bloq.set_defaults(func=_cmd_documentos_bloqueados)
+
+    doc_imp = subparsers.add_parser('documentos-importar',
+                                    help='ingestão manual com procedência e hash')
+    doc_imp.add_argument('--db', required=True)
+    doc_imp.add_argument('--document-id', required=True)
+    doc_imp.add_argument('--file', required=True)
+    doc_imp.add_argument('--declared-origin', required=True)
+    doc_imp.add_argument('--declared-by', required=True)
+    doc_imp.add_argument('--channel', default='upload_local')
+    doc_imp.add_argument('--original-url')
+    doc_imp.add_argument('--note')
+    doc_imp.add_argument('--apply', action='store_true')
+    doc_imp.set_defaults(func=_cmd_documentos_importar)
 
     ibfc = subparsers.add_parser('ibfc-piloto', help='piloto da fonte oficial IBFC')
     ibfc.add_argument('--config', default=None)

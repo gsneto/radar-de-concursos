@@ -275,6 +275,46 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
         self._send(HTTPStatus.OK, "application/json; charset=utf-8", body)
 
+    def _review_queue(self, parts):
+        """Fila de revisão com filtros explícitos; parâmetro desconhecido é recusado."""
+        from radar import review
+        query = parse_qs(parts.query)
+        allowed = {"limit", "offset", "state", "contest_id", "role_id", "field",
+                   "document_id", "source", "conflict", "min_priority", "since", "until",
+                   "reviewed_since", "reviewed_until"}
+        if set(query) - allowed:
+            self._bad_request("parâmetros inválidos")
+            return
+        try:
+            limit = int(query.get("limit", ["25"])[0])
+            offset = int(query.get("offset", ["0"])[0])
+            min_priority = (int(query["min_priority"][0])
+                            if "min_priority" in query else None)
+        except ValueError:
+            self._bad_request("parâmetros inválidos")
+            return
+        conflict = query.get("conflict", [None])[0]
+        if conflict is not None:
+            if conflict in ("1", "true", "yes"):
+                conflict = True
+            elif conflict in ("0", "false", "no"):
+                conflict = False
+            else:
+                self._bad_request("conflict inválido")
+                return
+        self._serve_study(
+            review.review_queue, limit=limit, offset=offset,
+            state=query.get("state", ["pendente"])[0],
+            contest_id=query.get("contest_id", [None])[0],
+            role_id=query.get("role_id", [None])[0],
+            field_name=query.get("field", [None])[0],
+            document_id=query.get("document_id", [None])[0],
+            source=query.get("source", [None])[0],
+            conflict=conflict, min_priority=min_priority,
+            since=query.get("since", [None])[0], until=query.get("until", [None])[0],
+            reviewed_since=query.get("reviewed_since", [None])[0],
+            reviewed_until=query.get("reviewed_until", [None])[0])
+
     def _serve_media(self, media_id):
         """Serve a imagem do flashcard com `Content-Type` fixo (nunca inferido do cliente)."""
         from radar import media, practice_store
@@ -501,6 +541,45 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             else:
                 from radar import association
                 self._serve_study(association.suspect_associations)
+        elif path == "/api/revisao/fila":
+            self._review_queue(parts)
+        elif path.startswith("/api/revisao/proposta/"):
+            proposal_id = path[len("/api/revisao/proposta/"):]
+            if not proposal_id or "/" in proposal_id or parts.query:
+                self._bad_request("proposta inválida")
+                return
+            from radar import review
+            self._serve_study(review.proposal_detail, proposal_id)
+        elif path.startswith("/api/revisao/lotes/"):
+            remainder = path[len("/api/revisao/lotes/"):]
+            if remainder.endswith("/exportar"):
+                lote_id = remainder[:-len("/exportar")]
+                if not lote_id or "/" in lote_id or parts.query:
+                    self._bad_request("lote inválido")
+                    return
+                from radar import review
+                self._serve_study(review.export_batch, lote_id)
+            else:
+                if not remainder or "/" in remainder or parts.query:
+                    self._bad_request("lote inválido")
+                    return
+                from radar import review
+                self._serve_study(review.batch_status, remainder)
+        elif path == "/api/documentos/bloqueados":
+            query = parse_qs(parts.query)
+            if set(query) - {"contest_id", "limit", "state"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["200"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            states = query.get("state", [None])[0]
+            from radar import document_ingest
+            self._serve_study(document_ingest.blocked_report,
+                              contest_id=query.get("contest_id", [None])[0],
+                              states=states, limit=limit)
         elif path == "/api/cobertura":
             if parts.query:
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
@@ -761,6 +840,94 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 return
             self._serve_study(identity.apply_repair,
                               decided_by=body.get("decided_by"),
+                              note=body.get("note"),
+                              dry_run=bool(body.get("dry_run", True)))
+            return
+        if path.startswith("/api/revisao/proposta/") and not parts.query:
+            proposal_id = path[len("/api/revisao/proposta/"):]
+            if not proposal_id or "/" in proposal_id:
+                self._bad_request("proposta inválida")
+                return
+            from radar import review
+            body = self._read_json()
+            if body is None:
+                return
+            self._serve_study(review.decide_proposal, proposal_id, body.get("decision"),
+                              reviewer=body.get("reviewer"), reason=body.get("reason"),
+                              origin="interface",
+                              value=body.get("value"),
+                              expected_evidence_sha256=body.get("evidence_sha256"),
+                              lote_id=body.get("lote_id"))
+            return
+        if path == "/api/revisao/selecionar":
+            if parts.query:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import review
+            body = self._read_json()
+            if body is None:
+                return
+            self._serve_study(review.select_current_value, body.get("proposal_id"),
+                              body.get("reviewer"), body.get("reason"),
+                              origin="interface")
+            return
+        if path == "/api/revisao/lotes":
+            if parts.query:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import review
+            body = self._read_json()
+            if body is None:
+                return
+            self._serve_study(review.open_batch, created_by=body.get("created_by"),
+                              filters=body.get("filters"), size=body.get("size", 20),
+                              origin=body.get("origin") or "interface",
+                              note=body.get("note"))
+            return
+        if path.startswith("/api/revisao/lotes/") and not parts.query:
+            lote_id = path[len("/api/revisao/lotes/"):]
+            if not lote_id or "/" in lote_id:
+                self._bad_request("lote inválido")
+                return
+            from radar import review
+            body = self._read_json()
+            if body is None:
+                return
+            self._serve_study(review.batch_step, lote_id, body.get("action"))
+            return
+        if path == "/api/revisao/importar":
+            if parts.query:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import review
+            body = self._read_json(max_len=4 * 1024 * 1024)
+            if body is None:
+                return
+            self._serve_study(review.import_decisions, body.get("payload"),
+                              reviewer=body.get("reviewer"), reason=body.get("reason"),
+                              origin="importacao",
+                              dry_run=bool(body.get("dry_run", True)))
+            return
+        if path == "/api/documentos/importar":
+            if parts.query:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import document_ingest
+            body = self._read_json(max_len=32 * 1024 * 1024)
+            if body is None:
+                return
+            import base64
+            try:
+                content = base64.b64decode(body.get("content_base64") or "", validate=True)
+            except (ValueError, TypeError):
+                self._bad_request("conteúdo base64 inválido")
+                return
+            self._serve_study(document_ingest.ingest_manual_document,
+                              body.get("document_id"), content,
+                              declared_origin=body.get("declared_origin"),
+                              channel=body.get("channel") or "upload_local",
+                              declared_by=body.get("declared_by"),
+                              original_url=body.get("original_url"),
                               note=body.get("note"),
                               dry_run=bool(body.get("dry_run", True)))
             return

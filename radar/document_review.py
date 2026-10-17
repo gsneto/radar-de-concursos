@@ -22,60 +22,22 @@ def _reviewer(reviewer, reason):
 
 
 def review_proposal(db_path, proposal_id: str, decision: str, reviewer: str, reason: str) -> str:
+    """Revisão de proposta (CLI legado). Delega à central de revisão: uma só semântica."""
+    from radar.review import decide_proposal
     _reviewer(reviewer, reason)
     if decision not in ('validado', 'rejeitado'):
         raise ValueError('decisão inválida')
-    with closing(connect_documents(db_path)) as conn, conn:
-        conn.execute('BEGIN IMMEDIATE')
-        row = conn.execute('''SELECT d.id FROM propostas_campo p
-            JOIN evidencias e ON e.id=p.evidence_id JOIN versoes_documento v ON v.id=e.version_id
-            JOIN documentos d ON d.id=v.document_id WHERE p.id=? AND d.contest_id=p.contest_id''',
-            (proposal_id,)).fetchone()
-        if not row:
-            raise ValueError('proposta sem evidência válida')
-        review_id, at = str(uuid4()), _now()
-        conn.execute('INSERT INTO revisoes_campo VALUES (?,?,?,?,?,?)',
-                     (review_id, proposal_id, decision, at, reviewer.strip(), reason.strip()))
-        conn.execute('''INSERT INTO eventos_documentais
-            (id,document_id,version_id,event_type,occurred_at,note)
-            SELECT ?,d.id,v.id,'revisao',?,? FROM propostas_campo p
-            JOIN evidencias e ON e.id=p.evidence_id JOIN versoes_documento v ON v.id=e.version_id
-            JOIN documentos d ON d.id=v.document_id WHERE p.id=?''',
-            (str(uuid4()), at, decision, proposal_id))
-        return review_id
+    result = decide_proposal(db_path, proposal_id, decision, reviewer=reviewer.strip(),
+                             reason=reason.strip(), origin='cli')
+    return result['review_id']
 
 
 def select_current_value(db_path, proposal_id: str, reviewer: str, reason: str) -> str:
+    """Seleção do valor vigente (CLI legado). Delega à central de revisão (idempotente)."""
+    from radar.review import select_current_value as _select
     _reviewer(reviewer, reason)
-    with closing(connect_documents(db_path)) as conn, conn:
-        conn.execute('BEGIN IMMEDIATE')
-        row = conn.execute('''SELECT p.contest_id,p.role_id,p.field_name,p.ambiguity_reason FROM propostas_campo p
-            JOIN evidencias e ON e.id=p.evidence_id JOIN versoes_documento v ON v.id=e.version_id
-            JOIN documentos d ON d.id=v.document_id WHERE p.id=? AND d.contest_id=p.contest_id''',
-            (proposal_id,)).fetchone()
-        if not row:
-            raise ValueError('proposta sem evidência válida')
-        last = conn.execute('SELECT decision FROM revisoes_campo WHERE proposal_id=? ORDER BY reviewed_at DESC,id DESC LIMIT 1',
-                            (proposal_id,)).fetchone()
-        if not last or last[0] != 'validado':
-            raise ValueError('proposta exige revisão validada mais recente')
-        contest_id, role_id, field_name, ambiguity_reason = row
-        if role_id is None:
-            label = label_from_ambiguity(ambiguity_reason)
-            if label:
-                reconciled = conn.execute('''SELECT role_id FROM reconciliacoes_cargo
-                    WHERE contest_id=? AND label=? ORDER BY reconciled_at DESC,id DESC LIMIT 1''',
-                    (contest_id, label)).fetchone()
-                if reconciled:
-                    role_id = reconciled[0]
-        prior = conn.execute('''SELECT id FROM valores_atuais WHERE contest_id=? AND role_id IS ?
-            AND field_name=? ORDER BY selected_at DESC,id DESC LIMIT 1''',
-            (contest_id, role_id, field_name)).fetchone()
-        selection_id = str(uuid4())
-        conn.execute('INSERT INTO valores_atuais VALUES (?,?,?,?,?,?,?,?,?)',
-                     (selection_id, contest_id, role_id, field_name, proposal_id, _now(), reviewer.strip(),
-                      prior[0] if prior else None, reason.strip()))
-        return selection_id
+    result = _select(db_path, proposal_id, reviewer.strip(), reason.strip(), origin='cli')
+    return result['selection_id']
 
 
 def reconcile_role_label(db_path, contest_id: str, label: str, role_id: str,

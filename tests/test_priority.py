@@ -56,7 +56,8 @@ class PriorityBase(unittest.TestCase):
             with closing(connect_documents(self.db)) as conn, conn:
                 pid = conn.execute("SELECT id FROM propostas_campo WHERE contest_id=? AND field_name=?",
                                    (contest_id, field)).fetchone()[0]
-                conn.execute("INSERT INTO revisoes_campo VALUES(?,?,?,?,?,?)",
+                conn.execute("INSERT INTO revisoes_campo (id,proposal_id,decision,"
+                             "reviewed_at,reviewer,reason) VALUES(?,?,?,?,?,?)",
                              (f"rev-{pid}", pid, "validado", _now(), "revisor", "ok"))
                 conn.commit()
         return contest_id

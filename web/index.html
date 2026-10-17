@@ -119,6 +119,87 @@
       </div>
     </section>
 
+    <section class="review" aria-labelledby="review-title">
+      <h2 id="review-title" class="results__title">Revisão humana</h2>
+      <p class="prep__basis">
+        Proposta extraída não é fato confirmado. Cada decisão é registrada com autor, justificativa,
+        estado anterior e impressão da evidência revisada. Aprovar um documento ou um valor não
+        confirma automaticamente os demais campos.
+      </p>
+      <form id="review-filters" class="prefs">
+        <label class="prefs__field">Campo
+          <input id="review-field" type="text" placeholder="ex.: immediate_vacancies">
+        </label>
+        <label class="prefs__field">Estado
+          <select id="review-state">
+            <option value="pendente" selected>Pendente</option>
+            <option value="aberto">Pendente, adiado, ambíguo ou nova extração</option>
+            <option value="decidido">Decidido</option>
+            <option value="adiado">Adiado</option>
+            <option value="selecionado">Valor vigente</option>
+            <option value="todos">Todos</option>
+          </select>
+        </label>
+        <label class="prefs__field">Conflito
+          <select id="review-conflict">
+            <option value="">Todos</option>
+            <option value="1">Somente com conflito</option>
+            <option value="0">Sem conflito</option>
+          </select>
+        </label>
+        <label class="prefs__field">Prioridade mínima
+          <input id="review-min" type="number" min="0" step="1" placeholder="0">
+        </label>
+        <button type="submit" class="button">Aplicar filtros</button>
+        <button id="review-batch-open" type="button" class="button button--ghost">Abrir lote</button>
+        <span id="review-status" class="prefs__status" role="status" aria-live="polite"></span>
+      </form>
+      <div id="review-panel" class="coverage__panel" role="status" aria-live="polite">
+        <p class="muted">Carregando fila de revisão.</p>
+      </div>
+      <div id="review-detail" class="coverage__panel" role="region" aria-live="polite" hidden></div>
+      <div id="review-batch" class="coverage__panel" role="region" aria-live="polite" hidden></div>
+    </section>
+
+    <section class="assoc" aria-labelledby="assoc-title">
+      <h2 id="assoc-title" class="results__title">Associações pendentes</h2>
+      <p class="prep__basis">
+        Documento oficial sem certame identificado. Confirmar o vínculo exige a evidência exibida e
+        uma justificativa; não use órgão, data ou semelhança de título como critério único. A
+        associação confirmada não valida os campos extraídos do documento.
+      </p>
+      <div class="prefs">
+        <label class="prefs__field">Responsável (local)
+          <input id="assoc-reviewer" type="text" value="operador local">
+        </label>
+        <label class="prefs__field">Justificativa
+          <input id="assoc-note" type="text" placeholder="obrigatória">
+        </label>
+        <button id="assoc-refresh" type="button" class="button button--ghost">Atualizar</button>
+        <span id="assoc-status" class="prefs__status" role="status" aria-live="polite"></span>
+      </div>
+      <div id="assoc-panel" class="coverage__panel" role="status" aria-live="polite">
+        <p class="muted">Carregando associações.</p>
+      </div>
+    </section>
+
+    <section class="blocked" aria-labelledby="blocked-title">
+      <h2 id="blocked-title" class="results__title">Documentos bloqueados e ingestão manual</h2>
+      <p class="prep__basis">
+        Documento bloqueado não é documento inexistente: a referência oficial é preservada e o
+        motivo fica registrado. O coletor não contorna <code>robots.txt</code>; a obtenção
+        legítima depende de página oficial alternativa ou de arquivo fornecido manualmente, que
+        guarda procedência declarada e hash local e continua sujeito a revisão.
+      </p>
+      <div class="prefs">
+        <button id="blocked-refresh" type="button" class="button button--ghost">Atualizar</button>
+        <span id="blocked-status" class="prefs__status" role="status" aria-live="polite"></span>
+      </div>
+      <div id="blocked-panel" class="coverage__panel" role="status" aria-live="polite">
+        <p class="muted">Carregando documentos.</p>
+      </div>
+    </section>
+
     <section class="study" aria-labelledby="study-title">
       <h2 id="study-title" class="results__title">Estudos</h2>
       <div class="study__timer" role="group" aria-label="Cronômetro de estudo">

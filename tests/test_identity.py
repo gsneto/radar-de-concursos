@@ -330,6 +330,43 @@ class HumanDecisionTest(IdentityBase):
                                         dry_run=False)
 
 
+class AssociationDoesNotConfirmFieldsTest(IdentityBase):
+    """Confirmar o vínculo documento-concurso não valida os campos extraídos dele."""
+
+    def test_confirmar_associacao_nao_valida_propostas(self):
+        from radar.document_store import record_analysis, record_version
+        certame = ensure_observation(
+            self.db, "https://conhecimento.fgv.br/concursos/x", "tjap26")
+        with closing(connect_documents(self.db)) as conn:
+            certame_id = conn.execute(
+                "SELECT contest_id FROM observacoes_concurso WHERE id=?",
+                (certame,)).fetchone()[0]
+        container = ensure_observation(
+            self.db, "https://www.in.gov.br/leiturajornal?secao=do3", "DOU-S3")
+        document = self.document(container, "https://www.in.gov.br/web/dou/-/a",
+                                 issuer="Orgao A")
+        version = record_version(self.db, document, b"%PDF-1.4 x", dict(
+            fetched_at=NOW, fetched_url="https://www.in.gov.br/web/dou/-/a",
+            content_type="application/pdf"))
+        # Proposta do documento (container) apontando para o certame: vínculo só por associação.
+        with closing(connect_documents(self.db)) as conn, conn:
+            conn.execute("INSERT INTO blocos_documento (id,version_id,page_number,locator,"
+                         "start_offset,end_offset,text) VALUES "
+                         "('b-assoc',?,1,'p.1',0,8,'10 vagas')", (version,))
+            conn.execute("INSERT INTO evidencias (id,version_id,block_id,quote,page_number,"
+                         "locator,start_offset,end_offset,captured_at) VALUES "
+                         "('ev-assoc',?,'b-assoc','10 vagas',1,'p.1',0,8,?)", (version, NOW))
+            conn.execute("INSERT INTO propostas_campo VALUES ('p-assoc',?,NULL,"
+                         "'immediate_vacancies','10','integer','ev-assoc','manual',NULL,?)",
+                         (certame_id, NOW))
+        identity.record_association(self.db, document, certame_id, "confirmada",
+                                    {"motivo": "edital confere"}, decided_by="revisor",
+                                    note="conferido", dry_run=False)
+        with closing(connect_documents(self.db)) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM revisoes_campo").fetchone()[0], 0)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM valores_atuais").fetchone()[0], 0)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM propostas_campo").fetchone()[0], 1)
+
 class ContainerExclusionTest(IdentityBase):
     """Containers não entram em métricas de certame (cobertura, prioridade, saúde)."""
 

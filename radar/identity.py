@@ -169,7 +169,9 @@ def record_association(db_path, document_id: str, contest_id, state: str, eviden
     """
     if state not in ASSOCIATION_STATES:
         raise ValueError("estado de associação inválido")
-    if state != "pendente" and not contest_id:
+    # Rejeitar não exige destino: "este documento não pertence a certame identificado" é uma
+    # decisão válida. Confirmar/candidatar/ambiguanar exigem o concurso pretendido.
+    if state in ("confirmada", "candidata", "ambigua") and not contest_id:
         raise ValueError("associação não pendente exige concurso")
     if state == "pendente" and contest_id:
         raise ValueError("associação pendente não aponta para concurso")

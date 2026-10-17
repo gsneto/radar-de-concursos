@@ -104,6 +104,77 @@ class MigrationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'incompleto'):
             migrate_document_schema(self.db)
 
+    def test_v15_upgrades_to_v16_preserving_reviews_and_events(self):
+        # Base v15 real: revisões só aceitam validado/rejeitado e eventos têm CHECK antigo.
+        migrate_document_schema(self.db)
+        with closing(sqlite3.connect(self.db)) as conn:
+            conn.execute("DROP TABLE revisoes_campo")
+            conn.execute("""CREATE TABLE revisoes_campo (
+                id TEXT PRIMARY KEY,
+                proposal_id TEXT NOT NULL REFERENCES propostas_campo(id),
+                decision TEXT NOT NULL CHECK(decision IN ('validado','rejeitado')),
+                reviewed_at TEXT NOT NULL, reviewer TEXT NOT NULL, reason TEXT NOT NULL)""")
+            conn.execute("DROP TABLE eventos_documentais")
+            conn.execute("""CREATE TABLE eventos_documentais (
+                id TEXT PRIMARY KEY, document_id TEXT NOT NULL REFERENCES documentos(id),
+                version_id TEXT REFERENCES versoes_documento(id),
+                event_type TEXT NOT NULL CHECK(event_type IN
+                    ('descoberta','download','analise','falha','retificacao','revisao')),
+                occurred_at TEXT NOT NULL,
+                related_document_id TEXT REFERENCES documentos(id), note TEXT)""")
+            conn.execute("INSERT INTO concursos_identidade (id,created_at) "
+                         "VALUES ('c','2026-10-10T00:00:00+00:00')")
+            conn.execute("INSERT INTO observacoes_concurso (id,contest_id,source_url,"
+                         "competition_id,observed_at) VALUES ('o','c','https://x.gov.br/a/',"
+                         "'1/2026','2026-10-10T00:00:00+00:00')")
+            conn.execute("INSERT INTO documentos (id,contest_id,observation_id,kind,"
+                         "official_url,title,discovered_at,discovery_url,discovery_method) "
+                         "VALUES ('d','c','o','edital','https://x.gov.br/e.pdf','E',"
+                         "'2026-10-10T00:00:00+00:00','https://x.gov.br/a/','manual')")
+            conn.execute("INSERT INTO versoes_documento (id,document_id,sha256,fetched_at,"
+                         "fetched_url,content_type,byte_size,local_path) VALUES "
+                         "('v','d','h','2026-10-10T00:00:00+00:00','https://x.gov.br/e.pdf',"
+                         "'application/pdf',1,'x')")
+            conn.execute("INSERT INTO evidencias (id,version_id,block_id,quote,page_number,"
+                         "locator,start_offset,end_offset,captured_at) VALUES "
+                         "('e','v','b','q',1,'p.1',0,1,'2026-10-10T00:00:00+00:00')")
+            conn.execute("INSERT INTO propostas_campo VALUES ('p','c',NULL,'education',"
+                         "'\"x\"','string','e','manual',NULL,'2026-10-10T00:00:00+00:00')")
+            conn.execute("CREATE INDEX idx_revisoes_proposta ON revisoes_campo(proposal_id,reviewed_at)")
+            conn.execute("CREATE INDEX idx_eventos_documento ON eventos_documentais(document_id,occurred_at)")
+            conn.execute("INSERT INTO revisoes_campo VALUES ('r','p','validado',"
+                         "'2026-10-10T01:00:00+00:00','Ana','conferido')")
+            conn.execute("INSERT INTO eventos_documentais (id,document_id,event_type,"
+                         "occurred_at) VALUES ('ev','d','descoberta','2026-10-10T00:00:00+00:00')")
+            conn.execute("PRAGMA user_version=15")
+            conn.commit()
+        migrate_document_schema(self.db)
+        with closing(sqlite3.connect(self.db)) as conn:
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION)
+            row = conn.execute("SELECT decision,reviewer,previous_decision,origin "
+                               "FROM revisoes_campo WHERE id='r'").fetchone()
+            self.assertEqual(row[0], "validado")
+            self.assertEqual(row[1], "Ana")
+            self.assertIsNone(row[2])
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM eventos_documentais WHERE id='ev'").fetchone()[0], 1)
+            # CHECK estendido: a revisão assistida precisa destes estados.
+            conn.execute("INSERT INTO revisoes_campo (id,proposal_id,decision,reviewed_at,"
+                         "reviewer,reason) VALUES ('r2','p','adiado','2026-10-10T02:00:00+00:00',"
+                         "'Ana','aguardando')")
+            conn.execute("INSERT INTO eventos_documentais (id,document_id,event_type,"
+                         "occurred_at) VALUES ('ev2','d','download_bloqueado',"
+                         "'2026-10-10T02:00:00+00:00')")
+            conn.commit()
+
+    def test_migration_refuses_v16_missing_review_tables(self):
+        migrate_document_schema(self.db)
+        with closing(sqlite3.connect(self.db)) as conn:
+            conn.execute("DROP TABLE lotes_revisao")
+            conn.commit()
+        with self.assertRaisesRegex(ValueError, 'incompleto'):
+            migrate_document_schema(self.db)
+
     def test_migration_refuses_v15_missing_identity_table(self):
         # Caminho rápido (base já em v15) também valida o esquema, não só as versões antigas.
         migrate_document_schema(self.db)

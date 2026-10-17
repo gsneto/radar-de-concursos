@@ -154,6 +154,20 @@ python -m radar confirmacao-oportunidades --db .\data\radar.sqlite3 --contest-id
 
 Estados vão de `pendente` a `documento_processado`/`revisao_pendente`/`nao_localizado`/`inconclusivo`. A API expõe `GET /api/confirmacao`; `confirmacao-metricas` separa candidatos selecionados, páginas localizadas, documentos recuperados, editais, anexos, retificações e propostas (uma página e um PDF não são duas oportunidades; propostas não são valores validados). Nada é promovido a valor validado sem revisão humana; `nao_localizado` não significa que o concurso seja falso. Ver [`docs/superpowers/specs/2026-10-16-official-confirmation-queue-design.md`](docs/superpowers/specs/2026-10-16-official-confirmation-queue-design.md).
 
+## Revisão humana e confirmação
+
+A seção **Revisão humana** (`#review-panel`) transforma as propostas extraídas em uma fila de trabalho priorizada, paginada e auditável. Cada item mostra valor proposto, valor vigente, evidência literal (documento, versão, página, trecho e link), conflitos com outras propostas e os **fatores que elevaram ou reduziram a prioridade** — a pontuação é determinística e explicada, nunca opaca. Filtros: campo, estado, conflito, prioridade mínima, documento, fonte, período do documento e data da última revisão.
+
+As ações humanas são **append-only**: validar, rejeitar, adiar, marcar como ambíguo, pedir nova extração, reabrir e corrigir. Cada decisão grava estado anterior, estado novo, instante, autor, justificativa, canal (`interface`, `cli` ou `importacao`) e a impressão (`sha256`) da evidência revisada. Corrigir mantém a evidência original e cria uma proposta derivada identificada como correção humana. Reenviar a mesma decisão ou selecionar o mesmo valor é **idempotente**. Aprovar um documento ou um valor **não** confirma os demais campos.
+
+**Lotes** (`#review-batch`) são ferramentas de navegação: abrem de 10 a 25 itens, permitem próximo/anterior/pausar/retomar e sobrevivem a recarregar a página. O lote **não** aprova em massa — não existe ação de aprovação coletiva. A exportação leva `proposal_id` estável e `evidence_sha256`; a importação rejeita item cuja evidência mudou ou que já foi decidido, e grava tudo em uma transação.
+
+A seção **Associações pendentes** (`#assoc-panel`) mostra documento, órgão, data e a evidência do vínculo, com confirmar (exige o id do certame e justificativa), rejeitar e manter pendente. Confirmar a associação **não** valida os campos extraídos. Não há associação por semelhança de título, órgão ou data.
+
+API `/api/revisao/fila`, `/api/revisao/proposta/<id>`, `/api/revisao/selecionar`, `/api/revisao/lotes*`, `/api/revisao/importar`, `/api/documentos/bloqueados`, `POST /api/documentos/importar`; CLI `revisao-fila`, `revisao-decidir`, `revisao-selecionar`, `revisao-lote`, `revisao-exportar`, `revisao-importar`, `documentos-bloqueados`, `documentos-importar`. Ver [`docs/superpowers/specs/2026-10-17-revisao-humana-confirmacao-design.md`](docs/superpowers/specs/2026-10-17-revisao-humana-confirmacao-design.md).
+
+**Documentos bloqueados:** a seção **Documentos bloqueados e ingestão manual** (`#blocked-panel`) classifica cada documento em `obtido`, `importado_manualmente`, `bloqueado`, `indisponivel` ou `pendente_download`, com o motivo e a evidência do `robots.txt`. Documento bloqueado **não** é documento inexistente: a referência oficial é preservada. Alternativas são sugeridas apenas por **igualdade exata de caminho em host autorizado**, página de origem acessível e pesquisa humana (portal do órgão/DOU). O arquivo fornecido manualmente é validado por assinatura (PDF/ZIP/HTML), limitado a 20 MiB, gravado com SHA-256 local, origem declarada, canal e responsável — e continua **pendente de revisão**, nunca oficial por declaração.
+
 ## Testes
 
 ```powershell
@@ -178,6 +192,8 @@ python -m unittest discover -s tests -q
 
 - **Anexos com `robots.txt` restritivo não são baixados.** O CDN `anexos.cdn.selecao.net.br` responde `Disallow: /`; esses documentos aparecem com URL e metadados (o usuário chega ao original), mas **sem versão local** e sem extração de texto. O resumo do ciclo mostra `downloads_bloqueados` para que a lacuna seja visível.
 - O **container de fonte** existe para impedir que uma seção de diário seja tratada como concurso; ele não cria certames nem associa documentos automaticamente. No banco real há **1 container** (DOU Seção 3) com 10 documentos pendentes de revisão.
+- **Revisão humana não é aprovação automática.** A base real pode continuar com 0 valores confirmados mesmo com milhares de propostas: a fila existe para que a decisão seja humana, rastreável e idempotente. Prioridade é heurística determinística, não probabilidade de aprovação.
+- **Documento bloqueado por `robots.txt` não é baixado.** O CDN `anexos.cdn.selecao.net.br` responde `Disallow: /`; os 48 anexos do piloto IBFC aparecem com URL, metadados e motivo, mas sem versão local. A obtenção legítima depende do portal do órgão ou de arquivo fornecido manualmente, sempre com procedência e hash.
 - A gestão de estudos cobre disciplinas, tópicos, sessões, progresso, revisão espaçada, **flashcards com imagem, questões, simulados com mapa/marcação/retomada, prática adaptativa e pacotes portáveis**, com **exportação/importação (formato v2) e backup** dos dados pessoais. O cronômetro não bloqueia a aba nem alerta o fim do Pomodoro. A prática adaptativa é heurística determinística (não é TRI/IRT nem estima probabilidade de aprovação).
 - **Nenhum banco de questões de terceiros** foi importado: a licença do software não autoriza redistribuir conteúdo editorial (ex.: `examsim`). Questões são criadas pelo próprio usuário.
 

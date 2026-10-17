@@ -488,6 +488,145 @@ _V15_COLUMNS = {
                               "score", "decided_by", "decided_at", "note", "supersedes_id"},
 }
 
+
+# v16: revisão assistida. Tudo aditivo e sem reescrever histórico.
+#
+# - ``revisoes_campo`` ganha ``previous_decision`` (estado anterior), ``origin`` (canal da
+#   decisão: interface, CLI ou importação), ``value_json`` (valor corrigido por humano) e
+#   ``evidence_sha256`` (impressão da evidência revisada, para detectar decisão importada
+#   sobre versão desatualizada).
+# - ``lotes_revisao``/``lote_revisao_itens``: lote de trabalho persistido, para pausar,
+#   retomar e voltar a um item sem perder o progresso. O lote NÃO autoriza aprovação em
+#   massa: cada item continua exigindo decisão própria.
+# - ``ingestoes_documentais``: procedência de documento fornecido manualmente. O arquivo
+#   nunca vira "oficial" só porque foi declarado; guarda origem declarada, URL original,
+#   canal, data, hash local e resultado da validação.
+_V16_ADD_COLUMNS = (
+    "ALTER TABLE revisoes_campo ADD COLUMN previous_decision TEXT",
+    "ALTER TABLE revisoes_campo ADD COLUMN origin TEXT",
+    "ALTER TABLE revisoes_campo ADD COLUMN value_json TEXT",
+    "ALTER TABLE revisoes_campo ADD COLUMN evidence_sha256 TEXT",
+)
+_V16_TABLES = (
+    """CREATE TABLE lotes_revisao (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        origin TEXT NOT NULL,
+        filters_json TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        state TEXT NOT NULL,
+        cursor INTEGER NOT NULL DEFAULT 0,
+        note TEXT)""",
+    """CREATE TABLE lote_revisao_itens (
+        lote_id TEXT NOT NULL REFERENCES lotes_revisao(id),
+        position INTEGER NOT NULL,
+        proposal_id TEXT NOT NULL REFERENCES propostas_campo(id),
+        state TEXT NOT NULL,
+        decided_at TEXT,
+        PRIMARY KEY (lote_id, position))""",
+    """CREATE TABLE ingestoes_documentais (
+        id TEXT PRIMARY KEY,
+        document_id TEXT NOT NULL REFERENCES documentos(id),
+        version_id TEXT REFERENCES versoes_documento(id),
+        declared_origin TEXT NOT NULL,
+        original_url TEXT,
+        channel TEXT NOT NULL,
+        ingested_at TEXT NOT NULL,
+        sha256 TEXT NOT NULL,
+        byte_size INTEGER NOT NULL,
+        content_type TEXT NOT NULL,
+        validation_json TEXT NOT NULL,
+        review_state TEXT NOT NULL,
+        note TEXT)""",
+)
+_V16_INDEXES = (
+    "CREATE INDEX IF NOT EXISTS idx_lote_item_prop ON lote_revisao_itens(proposal_id)",
+    "CREATE INDEX IF NOT EXISTS idx_lote_state ON lotes_revisao(state)",
+    "CREATE INDEX IF NOT EXISTS idx_ingest_doc ON ingestoes_documentais(document_id, ingested_at)",
+)
+_V16_DDL = _V16_ADD_COLUMNS + _V16_TABLES
+_V16_COLUMNS = {
+    "revisoes_campo": {"previous_decision", "origin", "value_json", "evidence_sha256"},
+    "lotes_revisao": {"id", "created_at", "created_by", "origin", "filters_json", "size",
+                      "state", "cursor", "note"},
+    "lote_revisao_itens": {"lote_id", "position", "proposal_id", "state", "decided_at"},
+    "ingestoes_documentais": {"id", "document_id", "version_id", "declared_origin",
+                              "original_url", "channel", "ingested_at", "sha256", "byte_size",
+                              "content_type", "validation_json", "review_state", "note"},
+}
+
+
+# ``revisoes_campo`` nasceu com CHECK limitado a validado/rejeitado. A revisão assistida
+# precisa de mais decisões (adiado, ambíguo, nova extração, reaberto, corrigido). SQLite não
+# altera CHECK: a tabela é reconstruída preservando todas as linhas, dentro da transação.
+_V16_REVIEW_DECISIONS = ("validado", "rejeitado", "adiado", "ambiguo", "nova_extracao",
+                         "reaberto", "corrigido")
+
+
+def _apply_v16(conn) -> None:
+    """Revisão assistida e ingestão manual (v16), tolerando banco parcialmente atualizado."""
+    plan = [("revisoes_campo", statement) for statement in _V16_ADD_COLUMNS]
+    for table, statement in plan:
+        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        column = statement.rsplit("ADD COLUMN ", 1)[1].split()[0]
+        if column not in columns:
+            conn.execute(statement)
+    sql = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' "
+                       "AND name='revisoes_campo'").fetchone()
+    if sql is None or "'adiado'" not in (sql[0] or ""):
+        allowed = ",".join(f"'{value}'" for value in _V16_REVIEW_DECISIONS)
+        conn.execute(f"""CREATE TABLE revisoes_campo_v16 (
+            id TEXT PRIMARY KEY,
+            proposal_id TEXT NOT NULL REFERENCES propostas_campo(id),
+            decision TEXT NOT NULL CHECK(decision IN ({allowed})),
+            reviewed_at TEXT NOT NULL,
+            reviewer TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            previous_decision TEXT,
+            origin TEXT,
+            value_json TEXT,
+            evidence_sha256 TEXT)""")
+        conn.execute("""INSERT INTO revisoes_campo_v16
+            (id,proposal_id,decision,reviewed_at,reviewer,reason,previous_decision,origin,
+             value_json,evidence_sha256)
+            SELECT id,proposal_id,decision,reviewed_at,reviewer,reason,previous_decision,origin,
+                   value_json,evidence_sha256 FROM revisoes_campo""")
+        conn.execute("DROP TABLE revisoes_campo")
+        conn.execute("ALTER TABLE revisoes_campo_v16 RENAME TO revisoes_campo")
+        # DROP TABLE remove os índices junto: recriar é obrigatório para o esquema completo.
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_revisoes_proposta "
+                     "ON revisoes_campo(proposal_id,reviewed_at)")
+    events_sql = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' "
+                              "AND name='eventos_documentais'").fetchone()
+    if events_sql is None or "'ingestao_manual'" not in (events_sql[0] or ""):
+        conn.execute("""CREATE TABLE eventos_documentais_v16 (
+            id TEXT PRIMARY KEY,
+            document_id TEXT NOT NULL REFERENCES documentos(id),
+            version_id TEXT REFERENCES versoes_documento(id),
+            event_type TEXT NOT NULL CHECK(event_type IN
+                ('descoberta','download','analise','falha','retificacao','revisao',
+                 'download_bloqueado','ingestao_manual')),
+            occurred_at TEXT NOT NULL,
+            related_document_id TEXT REFERENCES documentos(id),
+            note TEXT)""")
+        conn.execute("""INSERT INTO eventos_documentais_v16
+            (id,document_id,version_id,event_type,occurred_at,related_document_id,note)
+            SELECT id,document_id,version_id,event_type,occurred_at,related_document_id,note
+            FROM eventos_documentais""")
+        conn.execute("DROP TABLE eventos_documentais")
+        conn.execute("ALTER TABLE eventos_documentais_v16 RENAME TO eventos_documentais")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_eventos_documento "
+                     "ON eventos_documentais(document_id,occurred_at)")
+    present = {row[0] for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type IN ('table','index')")}
+    for statement in _V16_TABLES:
+        name = re.match(r"CREATE TABLE (\w+)", statement).group(1)
+        if name not in present:
+            conn.execute(statement)
+    for statement in _V16_INDEXES:
+        conn.execute(statement)
+
 _V2_COLUMNS = {
     "concursos_identidade": {"id", "created_at"},
     "observacoes_concurso": {"id", "contest_id", "source_url", "competition_id", "observed_at"},
@@ -507,7 +646,7 @@ _V2_COLUMNS = {
 }
 
 # Versão corrente do esquema documental (v2 base + reconciliação/hash + monitoramento + fila).
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 # Versões que as rotas de leitura aceitam sem migrar (v2..v13 + atual).
 _READABLE_VERSIONS = (2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, SCHEMA_VERSION)
@@ -756,7 +895,7 @@ def migrate_document_schema(db_path) -> None:
     try:
         conn.execute("BEGIN IMMEDIATE")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, SCHEMA_VERSION):
+        if version not in (0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, SCHEMA_VERSION):
             raise ValueError(f"versão de esquema não suportada: {version}")
         _v3_extra = dict(
             versoes_documento=_V2_COLUMNS["versoes_documento"] | {"comparison_sha256"},
@@ -773,13 +912,21 @@ def migrate_document_schema(db_path) -> None:
         _v12_extra = dict(_v11_extra, **_V12_COLUMNS)
         _v13_extra = dict(_v12_extra, **_V13_COLUMNS)
         _v14_extra = dict(_v13_extra, **_V14_COLUMNS)
+        _base_columns = dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS,
+                             **_v14_extra)
+        _v15_extra = dict(
+            _base_columns,
+            concursos_identidade=_base_columns["concursos_identidade"] | {"estado_identidade"},
+            observacoes_concurso=_base_columns["observacoes_concurso"] | {"tipo_identidade"},
+            associacoes_documento=_V15_COLUMNS["associacoes_documento"])
         if version == SCHEMA_VERSION:
-            _v15_columns = dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v14_extra)
-            _v15_columns["concursos_identidade"] = _v15_columns["concursos_identidade"] | {"estado_identidade"}
-            _v15_columns["observacoes_concurso"] = _v15_columns["observacoes_concurso"] | {"tipo_identidade"}
-            _v15_columns["associacoes_documento"] = _V15_COLUMNS["associacoes_documento"]
-            _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL + _V12_DDL + _V14_DDL + _V15_DDL,
-                             _v15_columns, f"v{SCHEMA_VERSION}")
+            _v16_columns = dict(_v15_extra)
+            _v16_columns["revisoes_campo"] = (_v16_columns["revisoes_campo"]
+                                             | _V16_COLUMNS["revisoes_campo"])
+            for _table in ("lotes_revisao", "lote_revisao_itens", "ingestoes_documentais"):
+                _v16_columns[_table] = _V16_COLUMNS[_table]
+            _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL + _V12_DDL + _V14_DDL + _V15_DDL + _V16_DDL,
+                             _v16_columns, f"v{SCHEMA_VERSION}")
             _seed_alert_watermarks(conn)
             _apply_v10(conn)  # garante índices v10 (ex.: sessão aberta única) em base já migrada
             _apply_v11(conn)
@@ -787,6 +934,7 @@ def migrate_document_schema(db_path) -> None:
             _apply_v13(conn)
             _apply_v14(conn)
             _apply_v15(conn)
+            _apply_v16(conn)
         else:
             if version == 2:
                 _validate_schema(conn, _DDL, _V2_COLUMNS, "v2")
@@ -825,6 +973,9 @@ def migrate_document_schema(db_path) -> None:
             elif version == 14:
                 _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL + _V12_DDL + _V14_DDL,
                                  dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v14_extra), "v14")
+            elif version == 15:
+                _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL + _V12_DDL + _V14_DDL + _V15_DDL,
+                                 _v15_extra, "v15")
             else:
                 for statement in _DDL:
                     conn.execute(statement)
@@ -841,6 +992,7 @@ def migrate_document_schema(db_path) -> None:
             _apply_v13(conn)
             _apply_v14(conn)
             _apply_v15(conn)
+            _apply_v16(conn)
             _seed_alert_watermarks(conn)
             conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         _ensure_alert_indexes(conn)

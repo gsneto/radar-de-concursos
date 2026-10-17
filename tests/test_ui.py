@@ -236,6 +236,37 @@ class TestAppStatic(unittest.TestCase):
         for token in (".prep__panel", ".prep__stats", ".prep__basis"):
             self.assertIn(token, css, "styles.css deve apresentar %r" % token)
 
+    def test_renders_review_center_and_blocked_documents(self):
+        js = read(APP_PATH)
+        for token in ("renderReviewList", "renderReviewDetail", "fetchReview",
+                      "/api/revisao/fila", "/api/revisao/proposta/", "/api/revisao/lotes",
+                      "/api/revisao/selecionar", "reviewAction", "selectCurrent",
+                      "openReviewBatch", "batchStep", "exportBatch", "review-panel",
+                      "review-detail", "review-batch", "Justificativa obrigatória",
+                      "operador local", "idempotente"):
+            self.assertIn(token, js, "app.js deve apresentar %r" % token)
+        for token in ("renderBlocked", "fetchBlocked", "/api/documentos/bloqueados",
+                      "/api/documentos/importar", "blockedValidate", "blockedConfirm",
+                      "blocked-panel", "procedência", "hash"):
+            self.assertIn(token, js, "app.js deve apresentar %r" % token)
+        html = read(os.path.join(WEB, "index.html"))
+        for token in ('id="review-panel"', 'id="review-filters"', 'id="review-detail"',
+                      'id="review-batch"', 'id="blocked-panel"', 'id="review-field"',
+                      'id="review-state"', 'id="review-conflict"'):
+            self.assertIn(token, html)
+        self.assertIn("robots.txt", html)
+
+    def test_renders_pending_associations(self):
+        js = read(APP_PATH)
+        for token in ("renderAssociations", "fetchAssociations", "/api/associacoes/fila",
+                      "associationAction", "Confirmar vínculo", "Rejeitar vínculo",
+                      "Manter pendente", "assoc-panel", "assoc-reviewer", "assoc-note"):
+            self.assertIn(token, js, "app.js deve apresentar %r" % token)
+        html = read(os.path.join(WEB, "index.html"))
+        for token in ('id="assoc-panel"', 'id="assoc-reviewer"', 'id="assoc-note"',
+                      'id="assoc-refresh"'):
+            self.assertIn(token, html)
+
     def test_renders_coverage_panel(self):
         js = read(APP_PATH)
         for token in ("renderCoverage", "renderGaps", "fetchCoverage",
