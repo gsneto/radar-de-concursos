@@ -699,7 +699,8 @@ def health(config, *, check_server: bool = True, now=None) -> dict:
         conn = connect_documents(db_path)
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         out["database"]["schema_version"] = version
-        records = conn.execute("SELECT count(*) FROM concursos_identidade").fetchone()[0]
+        records = conn.execute("SELECT count(*) FROM concursos_identidade "
+                              "WHERE estado_identidade != 'container_fonte'").fetchone()[0]
         out["database"]["readable"] = True
         out["database"]["contests"] = records
         out["alerts"] = alert_counts(db_path)

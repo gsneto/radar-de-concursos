@@ -205,8 +205,14 @@ class _Snapshot:
         with closing(connect_documents(db_path)) as conn:
             if not is_readable_schema(conn):
                 raise ValueError("migração documental pendente")
+            # Só certames entram nas métricas. Containers de fonte são áreas de retenção:
+            # contá-los inflaria/contaminaria a cobertura.
             self.contests = [row[0] for row in conn.execute(
-                "SELECT id FROM concursos_identidade ORDER BY created_at, id")]
+                "SELECT id FROM concursos_identidade WHERE estado_identidade != 'container_fonte' "
+                "ORDER BY created_at, id")]
+            self.containers = [row[0] for row in conn.execute(
+                "SELECT id FROM concursos_identidade WHERE estado_identidade = 'container_fonte' "
+                "ORDER BY created_at, id")]
             self.documents = {}
             for contest_id, doc_id, kind, tipo, url in conn.execute(
                     "SELECT contest_id, id, kind, tipo_documental, official_url FROM documentos"):
@@ -239,6 +245,12 @@ class _Snapshot:
                     "SELECT o.contest_id, f.state FROM fila_confirmacao f "
                     "JOIN observacoes_concurso o ON o.id=f.observation_id"):
                 self.queue[contest_id] = state
+            self.documents_in_container = 0
+            if self.containers:
+                marks = ",".join("?" for _ in self.containers)
+                self.documents_in_container = conn.execute(
+                    f"SELECT COUNT(*) FROM documentos WHERE contest_id IN ({marks})",
+                    tuple(self.containers)).fetchone()[0]
             self.proposals = {}
             for item in proposal_rows(conn):
                 self.proposals.setdefault(item["contest_id"], []).append(item)
@@ -445,6 +457,9 @@ def audit(db_path, *, now=None) -> dict:
         "Ausência de retificação não é defeito: retificação é opcional por natureza.",
         "A causa é a melhor explicação com os dados atuais; sem prova suficiente fica "
         "'inconclusivo'.",
+        "Concursos marcados como container de fonte (ex.: seção de diário oficial) não são "
+        "certames e ficam fora dos denominadores; seus documentos aparecem como pendentes "
+        "de associação.",
     ]
 
     return {
@@ -452,6 +467,8 @@ def audit(db_path, *, now=None) -> dict:
         "generated_at": now_dt.isoformat(),
         "escopo": {
             "concursos": len(contests),
+            "containers_fonte": len(snapshot.containers),
+            "documentos_em_container": snapshot.documents_in_container,
             "com_documento": len(com_documento),
             "com_edital_oficial": len(com_edital),
             "com_edital_analisado": len(com_edital_analisado),

@@ -27,9 +27,9 @@ class ReconcileRoleTest(unittest.TestCase):
         self.db = str(Path(tmp.name) / "db.sqlite3")
         migrate_document_schema(self.db)
         with closing(sqlite3.connect(self.db)) as conn:
-            conn.execute("INSERT INTO concursos_identidade VALUES ('c','2026-10-10T00:00:00+00:00')")
-            conn.execute("INSERT INTO concursos_identidade VALUES ('other','2026-10-10T00:00:00+00:00')")
-            conn.execute("INSERT INTO observacoes_concurso VALUES ('o','c','https://guajaramirim.ro.gov.br/a/','1/2026','2026-10-10T00:00:00+00:00')")
+            conn.execute("INSERT INTO concursos_identidade (id,created_at) VALUES ('c','2026-10-10T00:00:00+00:00')")
+            conn.execute("INSERT INTO concursos_identidade (id,created_at) VALUES ('other','2026-10-10T00:00:00+00:00')")
+            conn.execute("INSERT INTO observacoes_concurso (id,contest_id,source_url,competition_id,observed_at) VALUES ('o','c','https://guajaramirim.ro.gov.br/a/','1/2026','2026-10-10T00:00:00+00:00')")
             conn.execute("INSERT INTO cargos_identidade (id,contest_id,name,specialty,created_at) VALUES ('r1','c','Professor de Educação Infantil',NULL,'2026-10-10T00:00:00+00:00')")
             conn.execute("INSERT INTO cargos_identidade (id,contest_id,name,specialty,created_at) VALUES ('r2','c','Professor Anos Iniciais',NULL,'2026-10-10T00:00:00+00:00')")
             conn.execute("INSERT INTO cargos_identidade (id,contest_id,name,specialty,created_at) VALUES ('foreign','other','Outro',NULL,'2026-10-10T00:00:00+00:00')")

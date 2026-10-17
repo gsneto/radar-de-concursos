@@ -53,19 +53,24 @@ def suspect_associations(db_path) -> dict:
     with closing(connect_documents(db_path)) as conn:
         if not is_readable_schema(conn):
             raise ValueError("migração documental pendente")
+        # Containers de fonte não são certames: não entram no diagnóstico de associação.
         contests = [row[0] for row in conn.execute(
-            "SELECT id FROM concursos_identidade ORDER BY created_at, id")]
+            "SELECT id FROM concursos_identidade WHERE estado_identidade != 'container_fonte' "
+            "ORDER BY created_at, id")]
+        containers = [row[0] for row in conn.execute(
+            "SELECT id FROM concursos_identidade WHERE estado_identidade = 'container_fonte' "
+            "ORDER BY created_at, id")]
         observations = {}
         for contest_id, competition_id in conn.execute(
                 "SELECT contest_id, competition_id FROM observacoes_concurso"):
             observations.setdefault(contest_id, []).append(competition_id or "")
         documents = {}
-        for contest_id, doc_id, kind, tipo, title, url, obs in conn.execute(
+        for contest_id, doc_id, kind, tipo, title, url, obs, issuer in conn.execute(
                 "SELECT contest_id, id, kind, tipo_documental, title, official_url, "
-                "observation_id FROM documentos"):
+                "observation_id, issuer FROM documentos"):
             documents.setdefault(contest_id, []).append(
                 {"id": doc_id, "kind": kind, "tipo": tipo, "title": title,
-                 "url": url, "observation_id": obs})
+                 "url": url, "observation_id": obs, "issuer": issuer})
         proposals = {row[0]: row[1] for row in conn.execute(
             "SELECT contest_id, COUNT(*) FROM propostas_campo GROUP BY contest_id")}
 
@@ -83,7 +88,10 @@ def suspect_associations(db_path) -> dict:
             })
         editais = [d for d in docs if d["kind"] == "edital"
                    or (d["tipo"] or "").startswith("edital")]
-        if len(editais) >= 3 and not proposals.get(contest_id):
+        # O sinal de mistura é **órgãos diferentes** num mesmo concurso: uma banca pode
+        # publicar legitimamente muitos editais de abertura do mesmo certame.
+        issuers = {d["issuer"] for d in editais if d["issuer"]}
+        if len(editais) >= 3 and len(issuers) >= 2 and not proposals.get(contest_id):
             findings.append({
                 "contest_id": contest_id, "severity": "alta",
                 "reason": "muitos_atos_sem_propostas",
@@ -93,7 +101,9 @@ def suspect_associations(db_path) -> dict:
                 "acao": "revisar_associacao",
             })
         aberturas = [d for d in editais if (d["tipo"] or "") in ("edital_abertura", "")]
-        if len(aberturas) >= 2 and _titles_distinct([d["title"] for d in aberturas]):
+        aberturas_issuers = {d["issuer"] for d in aberturas if d["issuer"]}
+        if (len(aberturas) >= 2 and len(aberturas_issuers) >= 2
+                and _titles_distinct([d["title"] for d in aberturas])):
             findings.append({
                 "contest_id": contest_id, "severity": "media",
                 "reason": "titulos_divergentes",
@@ -136,6 +146,7 @@ def suspect_associations(db_path) -> dict:
         "total": len(findings),
         "distribuicao": distribution,
         "concursos_afetados": len({f["contest_id"] for f in findings}),
+        "containers_fonte": len(containers),
         "itens": findings,
         "limitacao": ("Diagnóstico apenas: nenhuma associação é alterada automaticamente. "
                       "Correção exige decisão humana registrada."),

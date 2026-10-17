@@ -524,6 +524,73 @@ def _cmd_documentos_reprocessar(args: argparse.Namespace) -> None:
                      ensure_ascii=False, default=str))
 
 
+
+def _cmd_identidade(args: argparse.Namespace) -> None:
+    from radar import identity
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    out = {"auditoria": identity.identity_audit(cfg["db_path"]),
+           "plano_reparacao": identity.repair_plan(cfg["db_path"])}
+    print(json.dumps(out, ensure_ascii=False, default=str))
+
+
+def _cmd_identidade_reparar(args: argparse.Namespace) -> None:
+    from radar import identity
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    if args.apply and (not args.revisor or not args.motivo):
+        raise SystemExit("--apply exige --revisor e --motivo")
+    out = identity.apply_repair(cfg["db_path"], decided_by=args.revisor or "sistema",
+                                note=args.motivo or "dry-run", dry_run=not args.apply)
+    print(json.dumps(out, ensure_ascii=False, default=str))
+
+
+def _cmd_associacoes_fila(args: argparse.Namespace) -> None:
+    from radar import identity
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    out = identity.association_queue(cfg["db_path"], limit=args.limit, state=args.state)
+    print(json.dumps(out, ensure_ascii=False, default=str))
+
+
+def _cmd_associacao_revisar(args: argparse.Namespace) -> None:
+    from radar import identity
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    contest_id = None if args.decisao == "pendente" else args.concurso
+    if args.decisao != "pendente" and not contest_id:
+        raise SystemExit("decisão de associação exige --concurso")
+    out = identity.record_association(
+        cfg["db_path"], args.documento, contest_id, args.decisao,
+        {"motivo": args.evidencia or "decisão humana de associação"},
+        decided_by=args.revisor, note=args.motivo)
+    print(json.dumps(out, ensure_ascii=False, default=str))
+
+
+def _cmd_ibfc_piloto(args: argparse.Namespace) -> None:
+    from radar import ibfc_source
+    from radar.document_store import migrate_document_schema
+    from radar.monitoring import run_cycle
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    migrate_document_schema(cfg["db_path"])
+    if not args.apply:
+        # Piloto somente leitura: descobre no catálogo e relata, sem gravar.
+        entries = []
+        for status in ibfc_source.IBFC_CATALOG_STATUSES:
+            try:
+                entries.extend(ibfc_source.parse_catalog(ibfc_source.fetch_catalog(status)))
+            except Exception as error:
+                entries.append({"erro": type(error).__name__, "status": status})
+        print(json.dumps({"modo": "somente_leitura", "entradas": entries},
+                         ensure_ascii=False, default=str))
+        return
+    result = run_cycle(cfg["db_path"],
+                       sources=[{**ibfc_source.ibfc_source(), "download_new_only": True}],
+                       analyze=args.analyze)
+    print(json.dumps(result, ensure_ascii=False, default=str))
+
+
 def build_parser() -> argparse.ArgumentParser:
     from radar.preferences import PRIORITIES
     parser = argparse.ArgumentParser(prog="python -m radar")
@@ -921,6 +988,43 @@ def build_parser() -> argparse.ArgumentParser:
     drepr.add_argument('--apply', action='store_true')
     drepr.add_argument('--limit', type=int, default=None)
     drepr.set_defaults(func=_cmd_documentos_reprocessar)
+
+
+    ident = subparsers.add_parser('identidade', help='auditoria de identidade e plano de reparação')
+    ident.add_argument('--config', default=None)
+    ident.set_defaults(func=_cmd_identidade)
+
+    identr = subparsers.add_parser('identidade-reparar',
+                                   help='separa identidade de fonte de identidade de certame')
+    identr.add_argument('--config', default=None)
+    identr.add_argument('--apply', action='store_true')
+    identr.add_argument('--revisor', default=None)
+    identr.add_argument('--motivo', default=None)
+    identr.set_defaults(func=_cmd_identidade_reparar)
+
+    afila = subparsers.add_parser('associacoes-fila', help='fila de revisão de associações')
+    afila.add_argument('--config', default=None)
+    afila.add_argument('--limit', type=int, default=50)
+    afila.add_argument('--state', default=None,
+                       choices=['confirmada', 'candidata', 'ambigua', 'rejeitada', 'pendente'])
+    afila.set_defaults(func=_cmd_associacoes_fila)
+
+    arev = subparsers.add_parser('associacao-revisar', help='decide a associação de um documento')
+    arev.add_argument('--config', default=None)
+    arev.add_argument('--documento', required=True)
+    arev.add_argument('--concurso', default=None)
+    arev.add_argument('--decisao', required=True,
+                      choices=['confirmada', 'candidata', 'ambigua', 'rejeitada', 'pendente'])
+    arev.add_argument('--evidencia', default=None)
+    arev.add_argument('--revisor', required=True)
+    arev.add_argument('--motivo', required=True)
+    arev.set_defaults(func=_cmd_associacao_revisar)
+
+    ibfc = subparsers.add_parser('ibfc-piloto', help='piloto da fonte oficial IBFC')
+    ibfc.add_argument('--config', default=None)
+    ibfc.add_argument('--apply', action='store_true', help='grava o ciclo (sem isto só lê)')
+    ibfc.add_argument('--analyze', action='store_true')
+    ibfc.set_defaults(func=_cmd_ibfc_piloto)
 
     return parser
 

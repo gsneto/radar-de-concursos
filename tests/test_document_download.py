@@ -15,8 +15,8 @@ class DownloadTest(unittest.TestCase):
         self.db = str(Path(self.tmp.name) / 'db.sqlite3')
         migrate_document_schema(self.db)
         with closing(sqlite3.connect(self.db)) as conn:
-            conn.execute("INSERT INTO concursos_identidade VALUES ('contest','2026-10-10T00:00:00+00:00')")
-            conn.execute("INSERT INTO observacoes_concurso VALUES ('obs','contest','https://guajaramirim.ro.gov.br/a/','1/2026','2026-10-10T00:00:00+00:00')")
+            conn.execute("INSERT INTO concursos_identidade (id,created_at) VALUES ('contest','2026-10-10T00:00:00+00:00')")
+            conn.execute("INSERT INTO observacoes_concurso (id,contest_id,source_url,competition_id,observed_at) VALUES ('obs','contest','https://guajaramirim.ro.gov.br/a/','1/2026','2026-10-10T00:00:00+00:00')")
             conn.commit()
         self.url = 'https://guajaramirim.ro.gov.br/e.pdf'
         self.doc = register_document(self.db, dict(observation_id='obs', kind='edital', official_url=self.url,

@@ -71,23 +71,25 @@ class AssociationBase(unittest.TestCase):
         return obs
 
     def document(self, contest_id, obs, *, kind="edital", tipo=None, title="Edital",
-                 url=None):
+                 url=None, issuer=None):
         doc = str(uuid4())
         with closing(connect_documents(self.db)) as conn, conn:
             conn.execute(
                 "INSERT INTO documentos (id,contest_id,observation_id,kind,official_url,title,"
-                "discovered_at,discovery_url,discovery_method,tipo_documental) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "discovered_at,discovery_url,discovery_method,tipo_documental,issuer) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (doc, contest_id, obs, kind, url or f"https://oficial.test/{doc}",
-                 title, NOW, "https://oficial.test/", "manual", tipo))
+                 title, NOW, "https://oficial.test/", "manual", tipo, issuer))
         return doc
 
 
 class AssociationTest(AssociationBase):
     def test_identidade_de_secao_do_dou_e_suspeita(self):
         obs = self.contest("c1", "DOU-S3")
+        # O caso real: atos de órgãos diferentes empilhados na mesma seção do diário.
         for index in range(3):
-            self.document("c1", obs, title=f"EDITAL DE {index} DE OUTUBRO DE 2026")
+            self.document("c1", obs, title=f"EDITAL DE {index} DE OUTUBRO DE 2026",
+                          issuer=f"Órgão {index}")
         report = association.suspect_associations(self.db)
         reasons = {item["reason"] for item in report["itens"]}
         self.assertIn("identidade_de_secao", reasons)
@@ -101,10 +103,21 @@ class AssociationTest(AssociationBase):
 
     def test_titulos_divergentes(self):
         obs = self.contest("c1", "quadrix-1")
-        self.document("c1", obs, title="Edital nº 1 (abertura)", tipo="edital_abertura")
-        self.document("c1", obs, title="Edital nº 7 (abertura)", tipo="edital_abertura")
+        self.document("c1", obs, title="Edital nº 1 (abertura)", tipo="edital_abertura",
+                      issuer="Órgão A")
+        self.document("c1", obs, title="Edital nº 7 (abertura)", tipo="edital_abertura",
+                      issuer="Órgão B")
         reasons = {i["reason"] for i in association.suspect_associations(self.db)["itens"]}
         self.assertIn("titulos_divergentes", reasons)
+
+    def test_um_unico_orgao_com_varios_editais_nao_e_acusado(self):
+        # Banca/órgão único pode publicar muitos atos do mesmo certame legitimamente.
+        obs = self.contest("c1", "quadrix-1")
+        for numero in (1, 7, 9):
+            self.document("c1", obs, title=f"Edital nº {numero} (abertura)",
+                          tipo="edital_abertura", issuer="Mesmo Órgão")
+        report = association.suspect_associations(self.db)
+        self.assertEqual(report["itens"], [])
 
     def test_documento_compartilhado_entre_concursos(self):
         first = self.contest("c1", "banca-1")

@@ -286,6 +286,10 @@ def dou_source(day: str | None = None, article_fetcher=None) -> dict:
         "id": DOU_SOURCE_ID,
         "source_url": DOU_SOURCE_URL,
         "competition_id": DOU_COMPETITION_ID,
+        # A Seção 3 identifica uma PUBLICAÇÃO, não um certame: cada ato do dia é de um
+        # órgão diferente. A fonte declara isso explicitamente para que o concurso criado
+        # seja um container de retenção, nunca um "concurso" artificial.
+        "tipo_identidade": "secao_publicacao",
         "name": DOU_SOURCE_NAME,
         "agency": DOU_AGENCY,
         "inline": True,

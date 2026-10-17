@@ -30,9 +30,10 @@ def _now() -> str:
 
 
 def default_sources() -> list[dict]:
-    """Fontes oficiais autorizadas: Guajará-Mirim (artigo), DOU (Seção 3), FGV e Quadrix."""
+    """Fontes oficiais autorizadas: Guajará-Mirim (artigo), DOU (Seção 3), FGV, Quadrix e IBFC."""
     from radar.dou_source import dou_source, fetch_article
     from radar.fgv_source import fgv_source
+    from radar.ibfc_source import ibfc_source
     from radar.pci_source import pci_source
     from radar.quadrix_source import quadrix_source
     return [
@@ -47,6 +48,9 @@ def default_sources() -> list[dict]:
         fgv_source(),
         # Quadrix: banca com páginas server-rendered e documentos públicos (multi-concurso).
         quadrix_source(),
+        # IBFC (Fase 27): banca com catálogo server-rendered; identidade por certame.
+        # ``download_new_only`` evita rebaixar todo o histórico a cada ciclo.
+        {**ibfc_source(), "download_new_only": True},
         # PCI: canal complementar de descoberta (agregador não oficial), via MCP.
         pci_source(),
     ]
@@ -180,6 +184,7 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
         involved_contests.add(contest_id)
     documents_new = 0
     new_ids = []
+    skip_download = {}
     errors = []
     inline_content = {}
     for candidate in candidates:
@@ -205,6 +210,10 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
             known_by_obs[obs_id].add(document_id)
             documents_new += 1
             new_ids.append(document_id)
+        # Candidato cujo host não é autorizado para download (ex.: CDN com robots.txt
+        # restritivo) é registrado com metadados e URL, mas o byte não é buscado.
+        if candidate.get("fetch_allowed") is False:
+            skip_download[document_id] = candidate.get("fetch_blocked_reason") or "host_nao_autorizado"
         # Fontes cuja API já entrega o texto oficial gravam a versão sem rebaixar a página.
         body = candidate.get("inline_content")
         if body:
@@ -229,6 +238,10 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
             targets = [row[0] for row in conn.execute(
                 "SELECT id FROM documentos WHERE contest_id=? ORDER BY discovered_at,id", (contest_id,))]
     for document_id in targets:
+        if document_id in skip_download:
+            # Política de acesso, não falha: o documento fica com URL e metadados, sem byte.
+            # O motivo entra no resumo da fonte (``summary_json``), não como erro.
+            continue
         with closing(connect_documents(db_path)) as conn:
             before = conn.execute("SELECT count(*) FROM versoes_documento WHERE document_id=?",
                                   (document_id,)).fetchone()[0]
@@ -269,8 +282,12 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
         state = "parcial"
     else:
         state = "concluido"
+    bloqueados = {}
+    for motivo in skip_download.values():
+        bloqueados[motivo] = bloqueados.get(motivo, 0) + 1
     summary = {"documents_found": len(candidates), "documents_new": documents_new,
-               "versions_new": versions_new, "changes": changes, "errors": errors}
+               "versions_new": versions_new, "changes": changes, "errors": errors,
+               "downloads_bloqueados": bloqueados}
     for key, value in extra_summary.items():
         if key != "errors":
             summary[key] = value
@@ -281,7 +298,8 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
                   len(candidates), documents_new, versions_new, pending, coverage, summary)
     return {"source_url": source_url, "state": state, "documents_found": len(candidates),
             "documents_new": documents_new, "versions_new": versions_new, "changes": changes,
-            "changes_pending": pending, "coverage_state": coverage, "errors": errors}
+            "changes_pending": pending, "coverage_state": coverage, "errors": errors,
+            "downloads_bloqueados": bloqueados}
 
 
 def _insert_fonte(db_path, fonte_id, cycle_id, source_url, state, checked_at, last_success_at,
@@ -312,7 +330,8 @@ def run_cycle(db_path, *, sources=None, transport=None, analyze=False, now=None)
     for source in sources:
         competition_id = source.get("competition_id")
         if competition_id:
-            ensure_observation(db_path, source["source_url"], competition_id)
+            ensure_observation(db_path, source["source_url"], competition_id,
+                               tipo_identidade=source.get("tipo_identidade"))
 
     started = now()
     cycle_id = str(uuid4())

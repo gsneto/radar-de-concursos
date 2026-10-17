@@ -475,6 +475,26 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
             else:
                 self._serve_priorities(limit)
+        elif path == "/api/identidade":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                from radar import identity
+                self._serve_study(identity.identity_audit)
+        elif path == "/api/associacoes/fila":
+            query = parse_qs(parts.query)
+            try:
+                limit = int(query.get("limit", ["50"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            state = query.get("state", [None])[0]
+            from radar import identity
+            if (limit < 1 or set(query) - {"limit", "state"}
+                    or (state is not None and state not in identity.ASSOCIATION_STATES)):
+                self._bad_request("parâmetros inválidos")
+                return
+            self._serve_study(identity.association_queue, limit=limit, state=state)
         elif path == "/api/associacoes":
             if parts.query:
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
@@ -712,6 +732,38 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             if alert_id and "/" not in alert_id:
                 self._alert_action(alert_id)
                 return
+        if path.startswith("/api/associacoes/") and not parts.query:
+            document_id = path[len("/api/associacoes/"):]
+            if not document_id or "/" in document_id:
+                self._send_no_content(HTTPStatus.NOT_FOUND)
+                return
+            from radar import identity
+            body = self._read_json()
+            if body is None:
+                return
+            state = body.get("state")
+            contest_id = body.get("contest_id")
+            evidence = body.get("evidence")
+            if evidence is None:
+                evidence = {"motivo": "decisão humana de associação"}
+            self._serve_study(identity.record_association, document_id, contest_id, state,
+                              evidence, decided_by=body.get("decided_by"),
+                              note=body.get("note"),
+                              dry_run=bool(body.get("dry_run", False)))
+            return
+        if path == "/api/identidade/reparar":
+            if parts.query:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import identity
+            body = self._read_json()
+            if body is None:
+                return
+            self._serve_study(identity.apply_repair,
+                              decided_by=body.get("decided_by"),
+                              note=body.get("note"),
+                              dry_run=bool(body.get("dry_run", True)))
+            return
         if path == "/api/documentos/tipos":
             if parts.query:
                 self._bad_request("parâmetros inválidos")

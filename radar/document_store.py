@@ -442,6 +442,52 @@ _V14_COLUMNS = {
                         "counts_json", "importado_em"},
 }
 
+
+# v15: identidade canônica do concurso separada da identidade da fonte, e histórico de
+# associação documento-concurso. Tudo aditivo: nenhuma linha histórica é reescrita.
+#
+# - ``concursos_identidade.estado_identidade``: ``certame`` (oportunidade real) ou
+#   ``container_fonte`` (área de retenção de uma fonte cujo identificador NÃO é de certame,
+#   ex.: a Seção 3 do DOU). Containers não entram em métricas de certame.
+# - ``observacoes_concurso.tipo_identidade``: natureza do identificador externo
+#   (``certame``, ``secao_publicacao``, ``catalogo``, ``desconhecida``).
+# - ``associacoes_documento``: log append-only das decisões de associação de um documento a
+#   um certame, com evidência, autor e justificativa. ``state='pendente'`` = documento
+#   oficial ainda sem certame identificado (nunca inventado).
+_V15_ADD_COLUMNS = (
+    "ALTER TABLE concursos_identidade ADD COLUMN estado_identidade TEXT NOT NULL "
+    "DEFAULT 'certame'",
+    "ALTER TABLE observacoes_concurso ADD COLUMN tipo_identidade TEXT NOT NULL "
+    "DEFAULT 'certame'",
+)
+_V15_TABLES = (
+    """CREATE TABLE associacoes_documento (
+        id TEXT PRIMARY KEY,
+        document_id TEXT NOT NULL REFERENCES documentos(id),
+        contest_id TEXT REFERENCES concursos_identidade(id),
+        state TEXT NOT NULL,
+        evidence_json TEXT NOT NULL,
+        score REAL,
+        decided_by TEXT NOT NULL,
+        decided_at TEXT NOT NULL,
+        note TEXT,
+        supersedes_id TEXT REFERENCES associacoes_documento(id))""",
+)
+_V15_INDEXES = (
+    "CREATE INDEX IF NOT EXISTS idx_assoc_doc ON associacoes_documento(document_id, decided_at)",
+    "CREATE INDEX IF NOT EXISTS idx_assoc_state ON associacoes_documento(state)",
+    "CREATE INDEX IF NOT EXISTS idx_assoc_contest ON associacoes_documento(contest_id)",
+    "CREATE INDEX IF NOT EXISTS idx_obs_tipo ON observacoes_concurso(tipo_identidade)",
+    "CREATE INDEX IF NOT EXISTS idx_conc_estado ON concursos_identidade(estado_identidade)",
+)
+_V15_DDL = _V15_ADD_COLUMNS + _V15_TABLES
+_V15_COLUMNS = {
+    "concursos_identidade": {"estado_identidade"},
+    "observacoes_concurso": {"tipo_identidade"},
+    "associacoes_documento": {"id", "document_id", "contest_id", "state", "evidence_json",
+                              "score", "decided_by", "decided_at", "note", "supersedes_id"},
+}
+
 _V2_COLUMNS = {
     "concursos_identidade": {"id", "created_at"},
     "observacoes_concurso": {"id", "contest_id", "source_url", "competition_id", "observed_at"},
@@ -461,10 +507,10 @@ _V2_COLUMNS = {
 }
 
 # Versão corrente do esquema documental (v2 base + reconciliação/hash + monitoramento + fila).
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 # Versões que as rotas de leitura aceitam sem migrar (v2..v13 + atual).
-_READABLE_VERSIONS = (2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, SCHEMA_VERSION)
+_READABLE_VERSIONS = (2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, SCHEMA_VERSION)
 
 
 def _validate_schema(conn, statements, columns_by_table, version_label):
@@ -578,6 +624,28 @@ def _apply_v14(conn) -> None:
         conn.execute(statement)
 
 
+
+def _apply_v15(conn) -> None:
+    """Identidade canônica e associações (v15), tolerando banco parcialmente atualizado."""
+    plan = (
+        ("concursos_identidade", _V15_ADD_COLUMNS[0]),
+        ("observacoes_concurso", _V15_ADD_COLUMNS[1]),
+    )
+    for table, statement in plan:
+        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        column = statement.rsplit("ADD COLUMN ", 1)[1].split()[0]
+        if column not in columns:
+            conn.execute(statement)
+    present = {row[0] for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type IN ('table','index')")}
+    for statement in _V15_TABLES:
+        name = re.match(r"CREATE TABLE (\w+)", statement).group(1)
+        if name not in present:
+            conn.execute(statement)
+    for statement in _V15_INDEXES:
+        conn.execute(statement)
+
+
 def _apply_v13(conn) -> None:
     """Adiciona a flag de idempotência, o snapshot de escopo e o tipo de questão (v13)."""
     plan = (
@@ -688,7 +756,7 @@ def migrate_document_schema(db_path) -> None:
     try:
         conn.execute("BEGIN IMMEDIATE")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, SCHEMA_VERSION):
+        if version not in (0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, SCHEMA_VERSION):
             raise ValueError(f"versão de esquema não suportada: {version}")
         _v3_extra = dict(
             versoes_documento=_V2_COLUMNS["versoes_documento"] | {"comparison_sha256"},
@@ -706,15 +774,19 @@ def migrate_document_schema(db_path) -> None:
         _v13_extra = dict(_v12_extra, **_V13_COLUMNS)
         _v14_extra = dict(_v13_extra, **_V14_COLUMNS)
         if version == SCHEMA_VERSION:
-            _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL + _V12_DDL + _V14_DDL,
-                             dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v14_extra),
-                             f"v{SCHEMA_VERSION}")
+            _v15_columns = dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v14_extra)
+            _v15_columns["concursos_identidade"] = _v15_columns["concursos_identidade"] | {"estado_identidade"}
+            _v15_columns["observacoes_concurso"] = _v15_columns["observacoes_concurso"] | {"tipo_identidade"}
+            _v15_columns["associacoes_documento"] = _V15_COLUMNS["associacoes_documento"]
+            _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL + _V12_DDL + _V14_DDL + _V15_DDL,
+                             _v15_columns, f"v{SCHEMA_VERSION}")
             _seed_alert_watermarks(conn)
             _apply_v10(conn)  # garante índices v10 (ex.: sessão aberta única) em base já migrada
             _apply_v11(conn)
             _apply_v12(conn)
             _apply_v13(conn)
             _apply_v14(conn)
+            _apply_v15(conn)
         else:
             if version == 2:
                 _validate_schema(conn, _DDL, _V2_COLUMNS, "v2")
@@ -750,6 +822,9 @@ def migrate_document_schema(db_path) -> None:
             elif version == 13:
                 _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL + _V12_DDL,
                                  dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v13_extra), "v13")
+            elif version == 14:
+                _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL + _V12_DDL + _V14_DDL,
+                                 dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v14_extra), "v14")
             else:
                 for statement in _DDL:
                     conn.execute(statement)
@@ -765,6 +840,7 @@ def migrate_document_schema(db_path) -> None:
             _apply_v12(conn)
             _apply_v13(conn)
             _apply_v14(conn)
+            _apply_v15(conn)
             _seed_alert_watermarks(conn)
             conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         _ensure_alert_indexes(conn)
@@ -826,11 +902,14 @@ def register_document(db_path, candidate: dict) -> str:
     try:
         conn.execute("BEGIN IMMEDIATE")
         observation = conn.execute(
-            "SELECT contest_id FROM observacoes_concurso WHERE id=?", (candidate["observation_id"],)
-        ).fetchone()
+            """SELECT o.contest_id, o.competition_id, o.source_url,
+                      (SELECT c.estado_identidade FROM concursos_identidade c
+                       WHERE c.id=o.contest_id)
+               FROM observacoes_concurso o WHERE o.id=?""",
+            (candidate["observation_id"],)).fetchone()
         if observation is None:
             raise ValueError("observação inexistente")
-        contest_id = observation[0]
+        contest_id, competition_id, source_url, estado_identidade = observation
         role_id = candidate.get("role_id")
         if role_id and not conn.execute(
             """SELECT 1 FROM cargos_identidade r JOIN observacoes_cargo o ON o.role_id=r.id
@@ -869,6 +948,10 @@ def register_document(db_path, candidate: dict) -> str:
             "INSERT INTO eventos_documentais (id,document_id,event_type,occurred_at) VALUES (?,?,'descoberta',?)",
             (str(uuid4()), document_id, candidate["discovered_at"]),
         )
+        if estado_identidade == "container_fonte":
+            # Documento de fonte cujo identificador não é de certame nasce explicitamente
+            # PENDENTE: sem associação inventada e com evidência para revisão humana.
+            _pending_association(conn, document_id, candidate, competition_id, source_url)
         conn.commit()
         return document_id
     except BaseException:
@@ -982,7 +1065,8 @@ def link_amendment(db_path, amendment_document_id: str, original_document_id: st
 
 _FIELDS = {"education", "accepted_courses", "si_compatibility", "immediate_vacancies",
             "reserve_vacancies", "indigenous_vacancies", "indigenous_reserve_vacancies",
-            "registration_start", "registration_end", "exam_date", "exam_location", "work_location",
+            "registration_start", "registration_end", "exam_date", "exam_location",
+            "exam_municipio", "exam_uf", "work_location", "work_municipio", "work_uf",
             "exemption_start", "exemption_end", "exemption_result_preliminary",
             "exemption_appeal", "exemption_result_final",
             # Conteúdo programático (Fase 22): níveis hierárquicos da seção de programa.
@@ -1106,9 +1190,11 @@ def sync_v1_identifiers(db_path) -> None:
             ).fetchone()
             if observation is None:
                 contest_id, observation_id = str(uuid4()), str(uuid4())
-                conn.execute("INSERT INTO concursos_identidade VALUES (?,?)", (contest_id, _now()))
+                conn.execute("INSERT INTO concursos_identidade (id,created_at) VALUES (?,?)",
+                         (contest_id, _now()))
                 conn.execute(
-                    "INSERT INTO observacoes_concurso VALUES (?,?,?,?,?)",
+                    "INSERT INTO observacoes_concurso (id,contest_id,source_url,competition_id,"
+            "observed_at) VALUES (?,?,?,?,?)",
                     (observation_id, contest_id, source_url, competition_id, _now()),
                 )
             else:
@@ -1135,16 +1221,56 @@ def sync_v1_identifiers(db_path) -> None:
         conn.close()
 
 
-def ensure_observation(db_path, source_url: str, competition_id: str) -> str:
+
+
+def _pending_association(conn, document_id: str, candidate: dict, competition_id: str,
+                         source_url: str) -> None:
+    """Registra associação ``pendente`` para documento em container de fonte (idempotente)."""
+    if conn.execute("SELECT 1 FROM associacoes_documento WHERE document_id=? AND state='pendente'",
+                    (document_id,)).fetchone():
+        return
+    issuer = candidate.get("issuer")
+    grupo = None
+    if isinstance(issuer, str) and issuer.strip():
+        grupo = " ".join(re.sub(r"[^a-z0-9 ]", " ", issuer.lower()).split()) or None
+    evidence = {
+        "motivo": "identificador externo de fonte não identifica certame",
+        "identificador_fonte": competition_id,
+        "fonte": source_url,
+        "orgao": issuer,
+        "ato": candidate.get("title"),
+        "publicado_em": candidate.get("published_at"),
+        "tipo_documental": candidate.get("document_type") or candidate.get("kind"),
+        "grupo_candidato": grupo,
+    }
+    conn.execute(
+        "INSERT INTO associacoes_documento (id,document_id,contest_id,state,evidence_json,"
+        "score,decided_by,decided_at,note,supersedes_id) VALUES (?,?,NULL,'pendente',?,NULL,"
+        "'sistema',?,?,NULL)",
+        (str(uuid4()), document_id, json.dumps(evidence, ensure_ascii=False, sort_keys=True),
+         _now(), "documento oficial em container de fonte; certame ainda não identificado"))
+
+def ensure_observation(db_path, source_url: str, competition_id: str, *,
+                       tipo_identidade: str | None = None) -> str:
     """Garante identidade de concurso + observação para uma fonte, de forma idempotente.
 
     Aditivo e genérico: usado por fontes que não derivam de ``concursos`` v1
     (por exemplo, uma segunda fonte oficial). Não altera dados v1 nem mescla
     identidades existentes; devolve o ``observation_id`` estável.
+
+    ``tipo_identidade`` separa o identificador **da fonte** da identidade do certame: quando
+    não é ``certame`` (ex.: seção de diário oficial), o concurso nasce como
+    ``container_fonte`` e não entra em métricas de cobertura.
     """
+    from radar.identity import OBSERVATION_TYPES, classify_external_id
+
     source_url = _canonical_url(source_url)
     if not isinstance(competition_id, str) or not competition_id.strip():
         raise ValueError("competition_id obrigatório")
+    tipo = tipo_identidade or classify_external_id(competition_id)
+    if tipo not in OBSERVATION_TYPES:
+        raise ValueError("tipo de identidade inválido")
+    estado = "certame" if tipo == "certame" else "container_fonte"
     conn = connect_documents(db_path)
     try:
         conn.execute("BEGIN IMMEDIATE")
@@ -1158,10 +1284,13 @@ def ensure_observation(db_path, source_url: str, competition_id: str) -> str:
             conn.commit()
             return existing[0]
         contest_id, observation_id = str(uuid4()), str(uuid4())
-        conn.execute("INSERT INTO concursos_identidade VALUES (?,?)", (contest_id, _now()))
         conn.execute(
-            "INSERT INTO observacoes_concurso VALUES (?,?,?,?,?)",
-            (observation_id, contest_id, source_url, competition_id, _now()),
+            "INSERT INTO concursos_identidade (id,created_at,estado_identidade) "
+            "VALUES (?,?,?)", (contest_id, _now(), estado))
+        conn.execute(
+            "INSERT INTO observacoes_concurso (id,contest_id,source_url,competition_id,"
+            "observed_at,tipo_identidade) VALUES (?,?,?,?,?,?)",
+            (observation_id, contest_id, source_url, competition_id, _now(), tipo),
         )
         conn.commit()
         return observation_id
@@ -1267,15 +1396,16 @@ def ensure_role(db_path, contest_id: str, observation_id: str, name: str,
         conn.close()
 
 
-def list_competition_identities(db_path) -> list[dict]:
+def list_competition_identities(db_path, *, include_containers: bool = False) -> list[dict]:
     if not Path(db_path).exists():
         raise ValueError("migração documental pendente")
     conn = connect_documents(db_path)
     try:
         if conn.execute("PRAGMA user_version").fetchone()[0] not in _READABLE_VERSIONS:
             raise ValueError("migração documental pendente")
+        where = "" if include_containers else "WHERE estado_identidade != 'container_fonte' "
         rows = conn.execute(
-            "SELECT id FROM concursos_identidade ORDER BY created_at,id"
+            f"SELECT id FROM concursos_identidade {where}ORDER BY created_at,id"
         ).fetchall()
         return [
             {"id": contest_id, "observations": [

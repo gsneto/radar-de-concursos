@@ -150,7 +150,8 @@ def prioritize(db_path, preferences, *, now=None, limit=200, provider=None) -> d
         if not is_readable_schema(conn):
             raise ValueError("migração documental pendente")
         contests = [row[0] for row in conn.execute(
-            "SELECT id FROM concursos_identidade ORDER BY created_at, id").fetchall()]
+            "SELECT id FROM concursos_identidade WHERE estado_identidade != 'container_fonte' "
+            "ORDER BY created_at, id").fetchall()]
         proposals = _proposal_rows(conn)
         current = _current_values(conn)
         analyzed_ids = _has_analysis(conn)

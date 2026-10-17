@@ -34,9 +34,9 @@ class AmendmentTest(unittest.TestCase):
         self.db = str(Path(tmp.name) / "db.sqlite3")
         migrate_document_schema(self.db)
         with closing(sqlite3.connect(self.db)) as conn:
-            conn.execute("INSERT INTO concursos_identidade VALUES ('c','2026-10-10T00:00:00+00:00')")
-            conn.execute("INSERT INTO concursos_identidade VALUES ('other','2026-10-10T00:00:00+00:00')")
-            conn.execute("INSERT INTO observacoes_concurso VALUES ('o','c','https://guajaramirim.ro.gov.br/a/','1/2026','2026-10-10T00:00:00+00:00')")
+            conn.execute("INSERT INTO concursos_identidade (id,created_at) VALUES ('c','2026-10-10T00:00:00+00:00')")
+            conn.execute("INSERT INTO concursos_identidade (id,created_at) VALUES ('other','2026-10-10T00:00:00+00:00')")
+            conn.execute("INSERT INTO observacoes_concurso (id,contest_id,source_url,competition_id,observed_at) VALUES ('o','c','https://guajaramirim.ro.gov.br/a/','1/2026','2026-10-10T00:00:00+00:00')")
             conn.commit()
         self.original = self._ingest(
             ORIGINAL.read_bytes(), "https://guajaramirim.ro.gov.br/edital.html",
@@ -160,7 +160,7 @@ class AmendmentTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "retifica"):
             link_amendment(self.db, self.original["doc"], self.amendment["doc"], "Ana", "original como retificação")
         with closing(sqlite3.connect(self.db)) as conn:
-            conn.execute("INSERT INTO observacoes_concurso VALUES ('o2','other','https://x.gov.br/a/','2/2026','2026-10-10T00:00:00+00:00')")
+            conn.execute("INSERT INTO observacoes_concurso (id,contest_id,source_url,competition_id,observed_at) VALUES ('o2','other','https://x.gov.br/a/','2/2026','2026-10-10T00:00:00+00:00')")
             conn.commit()
         foreign = register_document(self.db, dict(observation_id="o2", kind="retificacao",
             official_url="https://guajaramirim.ro.gov.br/outro.html", title="outro",

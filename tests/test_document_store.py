@@ -104,11 +104,20 @@ class MigrationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'incompleto'):
             migrate_document_schema(self.db)
 
+    def test_migration_refuses_v15_missing_identity_table(self):
+        # Caminho rápido (base já em v15) também valida o esquema, não só as versões antigas.
+        migrate_document_schema(self.db)
+        with closing(sqlite3.connect(self.db)) as conn:
+            conn.execute('DROP TABLE associacoes_documento')
+            conn.commit()
+        with self.assertRaisesRegex(ValueError, 'incompleto'):
+            migrate_document_schema(self.db)
+
     def test_existing_artifact_must_match_hash_before_recording_version(self):
         migrate_document_schema(self.db)
         with closing(sqlite3.connect(self.db)) as conn:
-            conn.execute("INSERT INTO concursos_identidade VALUES ('c','2026-10-10T00:00:00+00:00')")
-            conn.execute("INSERT INTO observacoes_concurso VALUES ('o','c','https://guajaramirim.ro.gov.br/a/','1/2026','2026-10-10T00:00:00+00:00')")
+            conn.execute("INSERT INTO concursos_identidade (id,created_at) VALUES ('c','2026-10-10T00:00:00+00:00')")
+            conn.execute("INSERT INTO observacoes_concurso (id,contest_id,source_url,competition_id,observed_at) VALUES ('o','c','https://guajaramirim.ro.gov.br/a/','1/2026','2026-10-10T00:00:00+00:00')")
             conn.commit()
         url = 'https://guajaramirim.ro.gov.br/e.pdf'
         doc = register_document(self.db, dict(observation_id='o', kind='edital', official_url=url,
@@ -194,8 +203,8 @@ class MigrationTest(unittest.TestCase):
     def test_valid_proposal_is_readable_but_not_current_without_review(self):
         migrate_document_schema(self.db)
         with closing(sqlite3.connect(self.db)) as conn:
-            conn.execute("INSERT INTO concursos_identidade VALUES (?,?)", ("contest", "2026-10-10T00:00:00+00:00"))
-            conn.execute("INSERT INTO observacoes_concurso VALUES (?,?,?,?,?)", ("obs", "contest", "https://guajaramirim.ro.gov.br/a/", "1/2026", "2026-10-10T00:00:00+00:00"))
+            conn.execute("INSERT INTO concursos_identidade (id,created_at) VALUES (?,?)", ("contest", "2026-10-10T00:00:00+00:00"))
+            conn.execute("INSERT INTO observacoes_concurso (id,contest_id,source_url,competition_id,observed_at) VALUES (?,?,?,?,?)", ("obs", "contest", "https://guajaramirim.ro.gov.br/a/", "1/2026", "2026-10-10T00:00:00+00:00"))
             conn.commit()
         candidate = dict(observation_id="obs", kind="edital", official_url="https://guajaramirim.ro.gov.br/e.pdf", title="Edital", discovery_url="https://guajaramirim.ro.gov.br/a/", discovery_method="manual", discovered_at="2026-10-10T00:00:00+00:00")
         doc = register_document(self.db, candidate)
@@ -210,9 +219,9 @@ class MigrationTest(unittest.TestCase):
     def test_role_scope_must_belong_to_documents_observation(self):
         migrate_document_schema(self.db)
         with closing(sqlite3.connect(self.db)) as conn:
-            conn.execute("INSERT INTO concursos_identidade VALUES ('c','2026-10-10T00:00:00+00:00')")
+            conn.execute("INSERT INTO concursos_identidade (id,created_at) VALUES ('c','2026-10-10T00:00:00+00:00')")
             for obs in ('a', 'b'):
-                conn.execute('INSERT INTO observacoes_concurso VALUES (?,?,?,?,?)',
+                conn.execute('INSERT INTO observacoes_concurso (id,contest_id,source_url,competition_id,observed_at) VALUES (?,?,?,?,?)',
                     (obs, 'c', 'https://guajaramirim.ro.gov.br/' + obs,
                      '1/2026', '2026-10-10T00:00:00+00:00'))
             conn.execute("INSERT INTO cargos_identidade (id,contest_id,name,specialty,created_at) VALUES ('r','c','Professor',NULL,'2026-10-10T00:00:00+00:00')")

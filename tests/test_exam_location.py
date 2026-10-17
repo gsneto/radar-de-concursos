@@ -2,6 +2,7 @@
 
 import json
 import unittest
+from contextlib import closing
 
 from radar import exam_location
 
@@ -159,6 +160,64 @@ class RegressionTest(unittest.TestCase):
     def test_passado_nao_e_pendencia(self):
         text = "Os locais de prova foram divulgados no site oficial."
         self.assertEqual(self.values(text), [])
+
+
+class PersistenceTest(unittest.TestCase):
+    """Regressão: campos de município/UF precisam ser aceitos por ``record_analysis``.
+
+    Sem isso, qualquer edital novo que informe local de prova era recusado inteiro
+    (``ValueError: escopo ou campo inválido``) e ficava sem blocos nem propostas.
+    """
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+
+        from radar.document_store import migrate_document_schema
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.db = str(Path(self.tmp.name) / "l.sqlite3")
+        migrate_document_schema(self.db)
+
+    def _version(self):
+        from radar.document_store import ensure_observation, register_document, record_version
+        observation = ensure_observation(
+            self.db, "https://conhecimento.fgv.br/concursos/x", "tjap26")
+        document_id = register_document(self.db, {
+            "observation_id": observation, "kind": "edital",
+            "official_url": "https://conhecimento.fgv.br/x.pdf", "title": "Edital",
+            "discovery_url": "https://conhecimento.fgv.br/x",
+            "discovery_method": "automatico", "discovered_at": "2026-10-17T00:00:00+00:00"})
+        version_id = record_version(
+            self.db, document_id, b"%PDF-1.4\nconteudo",
+            dict(fetched_at="2026-10-17T00:00:00+00:00",
+                 fetched_url="https://conhecimento.fgv.br/x.pdf",
+                 content_type="application/pdf"))
+        from radar.document_store import connect_documents
+        with closing(connect_documents(self.db)) as conn:
+            contest_id = conn.execute(
+                "SELECT contest_id FROM observacoes_concurso WHERE id=?",
+                (observation,)).fetchone()[0]
+        return contest_id, version_id
+
+    def test_record_analysis_aceita_municipio_e_uf(self):
+        from radar.document_store import record_analysis
+        contest_id, version_id = self._version()
+        text = ("6.1 A prova será realizada na cidade de Palmas, no Estado do Tocantins (TO). "
+                "6.2 Outras regras.")
+        blocks = [{"page_number": 1, "locator": "página 1", "start_offset": 0,
+                   "end_offset": len(text), "text": text}]
+        proposals = exam_location.extract_exam_location(blocks, contest_id, label_prefix="")
+        self.assertTrue(any(p["field_name"] == "exam_municipio" for p in proposals))
+        self.assertTrue(any(p["field_name"] == "exam_uf" for p in proposals))
+        # Não pode levantar: os campos fazem parte do vocabulário aceito.
+        record_analysis(self.db, version_id, blocks, proposals)
+        from radar.document_store import connect_documents
+        with closing(connect_documents(self.db)) as conn:
+            stored = {row[0] for row in conn.execute("SELECT field_name FROM propostas_campo")}
+        self.assertIn("exam_municipio", stored)
+        self.assertIn("exam_uf", stored)
+        self.assertIn("exam_location", stored)
 
 
 if __name__ == "__main__":
