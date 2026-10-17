@@ -475,6 +475,12 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
             else:
                 self._serve_priorities(limit)
+        elif path == "/api/associacoes":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                from radar import association
+                self._serve_study(association.suspect_associations)
         elif path == "/api/cobertura":
             if parts.query:
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
@@ -706,6 +712,29 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             if alert_id and "/" not in alert_id:
                 self._alert_action(alert_id)
                 return
+        if path == "/api/documentos/tipos":
+            if parts.query:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import enrichment
+            body = self._read_json()
+            if body is None:
+                return
+            self._serve_study(enrichment.backfill_document_types,
+                              dry_run=bool(body.get("dry_run", True)))
+            return
+        if path == "/api/documentos/reprocessar":
+            if parts.query:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import reprocess
+            body = self._read_json()
+            if body is None:
+                return
+            self._serve_study(reprocess.reprocess_editais,
+                              dry_run=bool(body.get("dry_run", True)),
+                              limit=body.get("limit"))
+            return
         if path == "/api/cobertura/papeis":
             if parts.query:
                 self._bad_request("parâmetros inválidos")

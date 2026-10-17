@@ -173,3 +173,46 @@ def unresolved_role_summary(db_path) -> dict:
             "com_decisao_humana": com_decisao,
             "sem_identidade": total - com_identidade,
             "sem_decisao_humana": total - com_decisao}
+
+def backfill_document_types(db_path, *, dry_run=True) -> dict:
+    """Preenche ``tipo_documental`` nulo usando título + fonte (conservador).
+
+    Só toca documentos cujo tipo é NULL — nunca sobrescreve classificação existente, nunca
+    altera ``kind`` (que afeta associação e ranking) e nunca promove agregador a edital.
+    Idempotente: reexecutar não muda nada.
+    """
+    from radar.document_types import classify_document
+
+    with closing(connect_documents(db_path)) as conn:
+        if not is_readable_schema(conn):
+            raise ValueError("migração documental pendente")
+        rows = conn.execute(
+            "SELECT id, title, official_url FROM documentos WHERE tipo_documental IS NULL"
+        ).fetchall()
+    planned, skipped = [], 0
+    for doc_id, title, url in rows:
+        tipo = classify_document(title, url)
+        if tipo == "outro":
+            skipped += 1
+            continue
+        planned.append({"document_id": doc_id, "title": title, "tipo": tipo})
+    report = {"version": ENRICHMENT_VERSION, "dry_run": bool(dry_run),
+              "sem_tipo": len(rows), "classificados": len(planned),
+              "permanecem_outro": skipped, "tipos": {}, "amostra": planned[:10]}
+    for item in planned:
+        report["tipos"][item["tipo"]] = report["tipos"].get(item["tipo"], 0) + 1
+    if dry_run or not planned:
+        return report
+    with closing(connect_documents(db_path)) as conn:
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            for item in planned:
+                conn.execute(
+                    "UPDATE documentos SET tipo_documental=? "
+                    "WHERE id=? AND tipo_documental IS NULL",
+                    (item["tipo"], item["document_id"]))
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
+    return report

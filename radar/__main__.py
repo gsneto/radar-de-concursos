@@ -498,6 +498,32 @@ def _cmd_cobertura_papeis(args: argparse.Namespace) -> None:
     print(json.dumps(out, ensure_ascii=False, default=str))
 
 
+
+def _cmd_associacoes(args: argparse.Namespace) -> None:
+    from radar import association
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    print(json.dumps(association.suspect_associations(cfg["db_path"]),
+                     ensure_ascii=False, default=str))
+
+
+def _cmd_documentos_tipos(args: argparse.Namespace) -> None:
+    from radar import enrichment
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    print(json.dumps(enrichment.backfill_document_types(cfg["db_path"], dry_run=not args.apply),
+                     ensure_ascii=False, default=str))
+
+
+def _cmd_documentos_reprocessar(args: argparse.Namespace) -> None:
+    from radar import reprocess
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    print(json.dumps(reprocess.reprocess_editais(cfg["db_path"], dry_run=not args.apply,
+                                                 limit=args.limit),
+                     ensure_ascii=False, default=str))
+
+
 def build_parser() -> argparse.ArgumentParser:
     from radar.preferences import PRIORITIES
     parser = argparse.ArgumentParser(prog="python -m radar")
@@ -877,6 +903,24 @@ def build_parser() -> argparse.ArgumentParser:
     cobp.add_argument('--apply', action='store_true',
                       help='grava as identidades (sem isto, apenas simula)')
     cobp.set_defaults(func=_cmd_cobertura_papeis)
+
+
+    assoc = subparsers.add_parser('associacoes', help='associações documento-concurso suspeitas')
+    assoc.add_argument('--config', default=None)
+    assoc.set_defaults(func=_cmd_associacoes)
+
+    dtipos = subparsers.add_parser('documentos-tipos',
+                                   help='classifica tipo documental ausente (título + fonte)')
+    dtipos.add_argument('--config', default=None)
+    dtipos.add_argument('--apply', action='store_true')
+    dtipos.set_defaults(func=_cmd_documentos_tipos)
+
+    drepr = subparsers.add_parser('documentos-reprocessar',
+                                  help='reprocessa editais já analisados (idempotente)')
+    drepr.add_argument('--config', default=None)
+    drepr.add_argument('--apply', action='store_true')
+    drepr.add_argument('--limit', type=int, default=None)
+    drepr.set_defaults(func=_cmd_documentos_reprocessar)
 
     return parser
 

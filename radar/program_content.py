@@ -63,6 +63,23 @@ _NON_DISCIPLINA = {"total", "cargo", "cargos", "observacao", "observacoes", "leg
 
 _MAX_SECTION_LINES = 400  # limite de segurança para não engolir o documento inteiro
 
+# --- Segmentação de texto "inline" (PDF sem quebras de linha) -------------------
+# `document_extract` normaliza o texto do PDF com ``" ".join(...split())``, o que remove
+# TODAS as quebras de linha. Sem re-segmentar, uma página inteira vira uma única "linha" e
+# nenhum título/item é reconhecido — foi a causa comprovada de ``conteudo_programatico``
+# ficar em 0% mesmo em editais que têm o anexo completo.
+_HEADING_PHRASE = re.compile(
+    r"^(?:anexo\s+[ivxlcdm0-9]+\s*[-–—:]\s*)?"
+    r"conte[uú]do\s+program[aá]tic[oa]s?"
+    r"(?:\s+(?:das?\s+provas?(?:\s+objetivas?)?|por\s+cargo|do\s+cargo))?",
+    re.I)
+_BLOCO_PHRASE = re.compile(r"^bloco\s+[ivxlcdm0-9]+\b", re.I)
+# Início de item numerado: "1. Texto", "12. Texto". O contexto anterior é validado para não
+# cortar "art. 5. O candidato" nem "nº 3. Anexo".
+_ITEM_BOUNDARY = re.compile(r"(?<!\d)(?=\d{1,3}\.\s+[A-ZÀ-ÞÁÉÍÓÚÂÊÔÃÕÇ])")
+_NOT_ITEM_BEFORE = ("art", "art.", "nº", "n°", "no", "item", "inciso", "parágrafo",
+                    "paragrafo", "lei", "decreto", "portaria", "resolução", "resolucao")
+
 
 def _norm(text) -> str:
     if not isinstance(text, str):
@@ -133,6 +150,90 @@ def discipline_tail(line: str):
     return None
 
 
+def _previous_word(text: str, position: int) -> str:
+    """Última palavra antes de ``position`` (para validar fronteira de item numerado)."""
+    window = text[max(0, position - 14):position].strip().lower()
+    return window.rsplit(" ", 1)[-1] if window else ""
+
+
+def _split_inline(text: str) -> list[str]:
+    """Re-segmenta um parágrafo longo em linhas lógicas, sem inventar conteúdo.
+
+    Corta antes de títulos de conteúdo, de "BLOCO N" e de itens numerados cujo número não
+    seja continuação de "art. 5" / "nº 3" etc. Cada pedaço é o texto original, apenas
+    separado — nenhum caractere é criado, então a evidência continua literal.
+    """
+    pieces: list[str] = []
+    for chunk in re.split(r"(?=\b(?:anexo\s+[ivxlcdm0-9]+\s*[-–—:]\s*)?conte[uú]do\s+program)",
+                          text, flags=re.I):
+        if not chunk.strip():
+            continue
+        for part in re.split(r"(?=\b(?:bloco\s+[ivxlcdm0-9]+|cargo\s*:))", chunk, flags=re.I):
+            if not part.strip():
+                continue
+            start = 0
+            for match in _ITEM_BOUNDARY.finditer(part):
+                before = _previous_word(part, match.start())
+                if before in _NOT_ITEM_BEFORE or before.isdigit():
+                    continue
+                if match.start() > start:
+                    pieces.append(part[start:match.start()])
+                start = match.start()
+            pieces.append(part[start:])
+    # Recompõe "ANEXO I –" + "CONTEÚDO PROGRAMÁTICO": o corte duplo separaria o rótulo do
+    # anexo do título de conteúdo, e nenhum dos dois seria reconhecido isoladamente.
+    merged: list[str] = []
+    for piece in pieces:
+        text_piece = piece.strip()
+        if not text_piece:
+            continue
+        if merged and re.search(r"[-–—:]\s*$", merged[-1]) and re.match(
+                r"(?i)^conte[uú]do\s+program", text_piece):
+            merged[-1] = merged[-1] + " " + text_piece
+            continue
+        merged.append(text_piece)
+    return merged
+
+
+def logical_lines(text: str) -> list[tuple[int, str]]:
+    """Linhas lógicas de um bloco, com o offset de cada uma no texto original.
+
+    Blocos HTML já vêm com quebras de linha reais e são usados como estão. Blocos de PDF
+    vêm como um único parágrafo: aí a segmentação inline reconstrói os limites.
+    """
+    if not isinstance(text, str) or not text:
+        return []
+    if "\n" in text:
+        out, offset = [], 0
+        for raw in text.split("\n"):
+            lead = len(raw) - len(raw.lstrip())
+            out.append((offset + lead, raw.strip()))
+            offset += len(raw) + 1
+        return out
+    # Os offsets vêm da varredura do texto original, não de ``find`` sobre pedaços já
+    # unidos (que poderia não existir literalmente e deslocaria a evidência).
+    out, cursor = [], 0
+    for piece in _split_inline(text):
+        index = text.find(piece, cursor)
+        if index < 0:
+            # Peça recomposta (título unido): ancora no cursor atual e segue — nunca
+            # inventa offset que não corresponda ao texto.
+            index = cursor
+        out.append((index, piece))
+        cursor = max(index + len(piece), cursor + 1)
+    return out
+
+
+def _heading_and_remainder(line: str) -> tuple[str, str] | None:
+    """Separa "TÍTULO DE CONTEÚDO <resto>" quando o título abre e o resto continua na linha."""
+    match = _HEADING_PHRASE.match(line)
+    if not match:
+        return None
+    heading = line[:match.end()].strip()
+    remainder = line[match.end():].strip()
+    return heading, remainder
+
+
 def extract_program_content(blocks: list[dict], contest_id: str, *, label_prefix: str,
                             method: str = "conteudo-programatico") -> list[dict]:
     """Extrai itens de conteúdo programático como propostas com evidência.
@@ -149,14 +250,24 @@ def extract_program_content(blocks: list[dict], contest_id: str, *, label_prefix
         if block.get("page_number") is None:
             continue  # só páginas entram no documento lógico de conteúdo
         text = block.get("text") or ""
-        offset = 0
-        for raw_line in text.split("\n"):
-            lead = len(raw_line) - len(raw_line.lstrip())
-            line_start = offset + lead
-            offset += len(raw_line) + 1
-            line = raw_line.strip()
+        for line_start, line in logical_lines(text):
             if not line:
                 continue
+            split = _heading_and_remainder(line)
+            if split and split[1]:
+                # Título com o conteúdo na mesma linha: abre a seção e processa o resto.
+                heading, remainder = split
+                section = _clean(re.sub(r"^anexo\s+[ivxlcdm0-9]+\s*[-–—:]?\s*", "",
+                                        heading, flags=re.I))
+                section_lines = 0
+                proposals.append(_proposal(contest_id, index, block, heading, line_start,
+                                           "conteudo_secao", section, label_prefix, method))
+                # O offset do resto é o início original + título + separador. Não se usa
+                # ``min(...)`` com o comprimento do resto: isso deslocava a citação e
+                # fazia ``record_analysis`` recusar o documento inteiro.
+                remainder_start = line_start + len(heading) + 1
+                line = remainder
+                line_start = remainder_start
             if is_content_heading(line):
                 section = _clean(re.sub(r"^anexo\s+[ivxlcdm0-9]+\s*[-–—:]?\s*", "", line, flags=re.I))
                 section_lines = 0
@@ -177,7 +288,20 @@ def extract_program_content(blocks: list[dict], contest_id: str, *, label_prefix
                                            label_prefix, method, section=section))
                 section = None
                 continue
-            classified = classify_line(line)
+            bloco = _BLOCO_PHRASE.match(line)
+            if bloco:
+                # "BLOCO I DIREITO CIVIL" — o bloco é agrupamento, não matéria; o nome da
+                # disciplina vem depois. O resto precisa parecer título de disciplina:
+                # prosa, fórmula ou item numerado não viram matéria.
+                rest = _clean(line[bloco.end():])
+                if (rest and _is_uppercase_title(rest) and len(rest) <= 80
+                        and not rest.endswith(".")
+                        and _norm(rest) not in _NON_DISCIPLINA):
+                    classified = ("conteudo_disciplina", rest)
+                else:
+                    classified = None
+            else:
+                classified = classify_line(line)
             if classified is None:
                 continue
             field_name, value = classified

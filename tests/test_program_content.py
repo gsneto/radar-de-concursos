@@ -238,5 +238,76 @@ class ProgramStoreTest(unittest.TestCase):
         self.assertTrue(topic["version_sha256"])
 
 
+class InlinePdfTest(unittest.TestCase):
+    """Texto de PDF chega como um único parágrafo (sem quebras de linha)."""
+
+    def _blocks(self, text):
+        return [{"page_number": 51, "text": text}]
+
+    def test_logical_lines_reconstroi_titulo_e_itens(self):
+        text = ("TRIBUNAL X 51 ANEXO I – CONTEÚDO PROGRAMÁTICO CARGO: JUIZ "
+                "BLOCO I DIREITO CIVIL 1. Lei de Introdução. 2. Das pessoas naturais. "
+                "3. Dos bens.")
+        lines = [line for _, line in program_content.logical_lines(text)]
+        self.assertTrue(any(program_content.is_content_heading(line) for line in lines))
+        self.assertTrue(any(line.startswith("1. Lei de Introdução") for line in lines))
+
+    def test_extrai_disciplina_e_topicos_de_pagina_inline(self):
+        text = ("ANEXO I – CONTEÚDO PROGRAMÁTICO CARGO: ANALISTA "
+                "BLOCO I CONHECIMENTOS GERAIS 1. Língua Portuguesa. 2. Matemática.")
+        proposals = program_content.extract_program_content(
+            self._blocks(text), "c1", label_prefix="")
+        fields = {p["field_name"] for p in proposals}
+        self.assertIn("conteudo_secao", fields)
+        self.assertIn("conteudo_disciplina", fields)
+        self.assertIn("conteudo_topico", fields)
+
+    def test_nao_corta_artigo_numerado(self):
+        text = ("ANEXO I – CONTEÚDO PROGRAMÁTICO 1. Direito Civil. "
+                "Conforme o art. 5. O candidato deve observar a lei.")
+        lines = [line for _, line in program_content.logical_lines(text)]
+        self.assertFalse(any(line.startswith("5. O candidato") for line in lines))
+
+    def test_nao_quebra_texto_com_quebras_reais(self):
+        blocks = [{"page_number": 1, "text": "CONTEÚDO PROGRAMÁTICO\n1. DIREITO CIVIL\n"
+                                             "1.1 Dos bens"}]
+        proposals = program_content.extract_program_content(blocks, "c1", label_prefix="")
+        self.assertTrue(proposals)
+
+    def test_evidencia_literal_no_texto_original(self):
+        text = "ANEXO I – CONTEÚDO PROGRAMÁTICO BLOCO I DIREITO CIVIL 1. Dos bens."
+        proposals = program_content.extract_program_content(
+            self._blocks(text), "c1", label_prefix="")
+        for proposal in proposals:
+            evidence = proposal["evidence"]
+            self.assertEqual(text[evidence["start_offset"]:evidence["end_offset"]],
+                             evidence["quote"])
+
+    def test_pagina_sem_anexo_nao_gera_conteudo(self):
+        text = "EDITAL DE ABERTURA 1.1 As inscrições ficam abertas por 20 dias."
+        self.assertEqual(program_content.extract_program_content(
+            self._blocks(text), "c1", label_prefix=""), [])
+
+    def test_titulo_com_resto_curto_mantem_offsets(self):
+        # Regressão: o clamp antigo deslocava a citação quando o resto era curto.
+        text = "ANEXO I – CONTEÚDO PROGRAMÁTICO LÍNGUA PORTUGUESA"
+        proposals = program_content.extract_program_content(
+            self._blocks(text), "c1", label_prefix="")
+        self.assertTrue(proposals)
+        for proposal in proposals:
+            evidence = proposal["evidence"]
+            self.assertEqual(text[evidence["start_offset"]:evidence["end_offset"]],
+                             evidence["quote"])
+
+    def test_bloco_com_prosa_nao_vira_disciplina(self):
+        text = ("ANEXO I – CONTEÚDO PROGRAMÁTICO BLOCO I, 9 (nove) acertos no total. "
+                "1. Direito Civil.")
+        proposals = program_content.extract_program_content(
+            self._blocks(text), "c1", label_prefix="")
+        values = [json.loads(p["value_json"]) for p in proposals
+                  if p["field_name"] == "conteudo_disciplina"]
+        self.assertFalse(any("acertos" in v.lower() for v in values))
+
+
 if __name__ == "__main__":
     unittest.main()

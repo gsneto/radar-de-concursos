@@ -242,4 +242,9 @@ def extract_field_proposals(blocks: list[dict], version_id: str, contest_id: str
         from radar import program_content
         proposals.extend(program_content.extract_program_content(
             blocks, contest_id, label_prefix=LABEL_PREFIX))
+        # Local de prova (Fase 26): nunca inferido de lotação/sede; "a divulgar" é
+        # registrado como declaração, não como ausência.
+        from radar import exam_location
+        proposals.extend(exam_location.extract_exam_location(
+            blocks, contest_id, label_prefix=LABEL_PREFIX))
     return proposals

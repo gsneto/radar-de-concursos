@@ -212,5 +212,45 @@ class SummaryTest(EnrichmentBase):
         self.assertEqual(after["sem_decisao_humana"], 2)
 
 
+class BackfillTypesTest(EnrichmentBase):
+    def test_dry_run_nao_altera_tipo(self):
+        self.proposal("c1", LABEL + "Cargo A")
+        report = enrichment.backfill_document_types(self.db, dry_run=True)
+        self.assertTrue(report["dry_run"])
+        with closing(connect_documents(self.db)) as conn:
+            self.assertIsNone(conn.execute(
+                "SELECT tipo_documental FROM documentos WHERE id=?",
+                (self.document_id,)).fetchone()[0])
+
+    def test_classifica_pagina_de_agregador(self):
+        with closing(connect_documents(self.db)) as conn, conn:
+            conn.execute("UPDATE documentos SET official_url=?, title=? WHERE id=?",
+                         ("https://www.pciconcursos.com.br/noticias/x", "Concurso",
+                          self.document_id))
+        report = enrichment.backfill_document_types(self.db, dry_run=False)
+        self.assertEqual(report["classificados"], 1)
+        with closing(connect_documents(self.db)) as conn:
+            self.assertEqual(conn.execute(
+                "SELECT tipo_documental FROM documentos WHERE id=?",
+                (self.document_id,)).fetchone()[0], "pagina_agregador")
+
+    def test_nao_sobrescreve_tipo_existente(self):
+        with closing(connect_documents(self.db)) as conn, conn:
+            conn.execute("UPDATE documentos SET tipo_documental='edital_abertura' WHERE id=?",
+                         (self.document_id,))
+        report = enrichment.backfill_document_types(self.db, dry_run=False)
+        self.assertEqual(report["sem_tipo"], 0)
+
+    def test_nao_altera_kind(self):
+        with closing(connect_documents(self.db)) as conn, conn:
+            conn.execute("UPDATE documentos SET official_url=? WHERE id=?",
+                         ("https://www.pciconcursos.com.br/noticias/x", self.document_id))
+        enrichment.backfill_document_types(self.db, dry_run=False)
+        with closing(connect_documents(self.db)) as conn:
+            self.assertEqual(conn.execute(
+                "SELECT kind FROM documentos WHERE id=?", (self.document_id,)).fetchone()[0],
+                "edital")
+
+
 if __name__ == "__main__":
     unittest.main()

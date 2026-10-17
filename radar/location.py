@@ -142,6 +142,12 @@ def parse_location(text) -> dict | None:
     if not isinstance(text, str) or not text.strip():
         return None
     raw = text.strip()
+    if raw.lower() in ("a_divulgar", "a divulgar"):
+        # Declaração explícita do edital: o local existe, mas será publicado depois.
+        # Não é ausência de informação nem município.
+        return {"municipio": None, "uf": None, "scope": "a_divulgar",
+                "confidence": "alta",
+                "reason": "o documento declara que o local será divulgado posteriormente"}
     if _NACIONAL.search(raw):
         return {"municipio": None, "uf": None, "scope": "nacional",
                 "confidence": "alta", "reason": "abrangência nacional declarada"}
