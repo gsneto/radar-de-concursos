@@ -503,10 +503,10 @@ class CliTest(ReviewBase):
             title="Bloqueado", discovery_url="https://anexos-r2.selecao.net.br/uploads/1/",
             discovery_method="automatico", discovered_at=NOW,
             tipo_documental="edital_abertura"))
-        document_ingest.record_blocked_document(
+        document_ingest.record_policy_block(
             self.db, blocked, "robots_disallow_anexos_cdn", detected_at=NOW)
         payload = self._run(["documentos-bloqueados", "--db", self.db])
-        self.assertEqual(payload["por_estado"].get("bloqueado"), 1)
+        self.assertEqual(payload["por_estado"].get("politica_robots"), 1)
 
 
 if __name__ == "__main__":

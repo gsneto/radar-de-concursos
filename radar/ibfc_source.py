@@ -22,7 +22,7 @@ from __future__ import annotations
 import html as _html
 import re
 from datetime import datetime, timezone
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 from radar import quadrix_source
 from radar.document_types import classify_document, kind_for
@@ -233,15 +233,26 @@ def _page_candidate(entry: dict, detail: dict, observation_id: str,
 
 
 def to_candidate(document: dict, entry: dict, observation_id: str,
-                 discovered_at: str) -> dict:
-    """Documento publicado (edital/retificação/comunicado) como candidato documental."""
+                 discovered_at: str, *, attempt_blocked_hosts=()) -> dict:
+    """Documento publicado (edital/retificação/comunicado) como candidato documental.
+
+    ``attempt_blocked_hosts`` é a configuração **explícita** deste conector: hosts cujo
+    ``robots.txt`` restringe a coleta, mas cuja URL pública foi descoberta e para os quais o
+    operador autorizou tentativa de download normal. Sem ela, o comportamento é o anterior
+    (registra metadados, não baixa). Nada aqui contorna autenticação, CAPTCHA ou bloqueio.
+    """
     slug = document["url"].rsplit("/", 1)[-1]
-    fetch_allowed = IBFC_ANEXOS_HOST in document["url"]
+    host = urlsplit(document["url"]).hostname or ""
+    extra = tuple(attempt_blocked_hosts)
+    on_extra = host in extra
+    fetch_allowed = IBFC_ANEXOS_HOST in document["url"] or on_extra
     return {
         "observation_id": observation_id,
         "kind": document["kind"],
         "fetch_allowed": fetch_allowed,
         "fetch_blocked_reason": None if fetch_allowed else "robots_disallow_anexos_cdn",
+        "download_allowed_hosts": list(extra) if on_extra else None,
+        "robots_policy": None if fetch_allowed else "robots_disallow_anexos_cdn",
         "official_url": document["url"],
         "title": document["title"],
         "discovery_url": entry["url"],
@@ -257,7 +268,7 @@ def to_candidate(document: dict, entry: dict, observation_id: str,
 def discover(db_path, catalog_html: str, *, catalog_fetcher=fetch_catalog,
              detail_fetcher=fetch_detail, statuses=IBFC_CATALOG_STATUSES,
              max_new_details: int = 5, max_refresh_details: int = 2,
-             discovered_at: str | None = None) -> dict:
+             discovered_at: str | None = None, attempt_blocked_hosts=()) -> dict:
     """Descobre concursos e documentos do IBFC com identidade **por certame**.
 
     - certames novos: consulta a página de detalhe (até ``max_new_details``) e emite a página
@@ -317,7 +328,8 @@ def discover(db_path, catalog_html: str, *, catalog_fetcher=fetch_catalog,
         observation_id = ensure_observation(db_path, entry["url"], cid)
         candidates.append(_page_candidate(entry, detail, observation_id, discovered_at))
         for document in detail["documents"]:
-            candidates.append(to_candidate(document, entry, observation_id, discovered_at))
+            candidates.append(to_candidate(document, entry, observation_id, discovered_at,
+                                           attempt_blocked_hosts=attempt_blocked_hosts))
 
     pending_refresh.sort(key=lambda item: (item[0], item[1]["id"]))
     for _, entry, state in pending_refresh:
@@ -352,8 +364,15 @@ def discover(db_path, catalog_html: str, *, catalog_fetcher=fetch_catalog,
     }
 
 
-def ibfc_source(*, catalog_fetcher=fetch_catalog, detail_fetcher=fetch_detail) -> dict:
-    """Fonte de monitoramento do IBFC (multi-concurso: identidade por certame)."""
+def ibfc_source(*, catalog_fetcher=fetch_catalog, detail_fetcher=fetch_detail,
+                attempt_blocked_hosts=()) -> dict:
+    """Fonte de monitoramento do IBFC (multi-concurso: identidade por certame).
+
+    ``attempt_blocked_hosts`` (ex.: ``("anexos.cdn.selecao.net.br",)``) é opt-in e vale
+    somente para esta fonte: permite tentar o download normal de anexos públicos cujo host
+    tem ``robots.txt`` restritivo. Falha de acesso é registrada, nunca contornada.
+    """
+    hosts = tuple(host for host in attempt_blocked_hosts if host)
     def fetch():
         # O ciclo recebe o catálogo "em andamento"; os demais estados são consultados no
         # discover, que sabe lidar com falha parcial de uma listagem.
@@ -366,7 +385,8 @@ def ibfc_source(*, catalog_fetcher=fetch_catalog, detail_fetcher=fetch_detail) -
         "agency": IBFC_AGENCY,
         "multi_contest": True,
         "fetch": fetch,
+        "download_allowed_hosts": list(hosts),
         "discover": lambda db_path, html: discover(
             db_path, html, catalog_fetcher=catalog_fetcher,
-            detail_fetcher=detail_fetcher),
+            detail_fetcher=detail_fetcher, attempt_blocked_hosts=hosts),
     }

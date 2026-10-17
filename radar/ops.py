@@ -40,6 +40,7 @@ _CONFIG_TO_SOURCE_ID = {
     "fgv": "fgv-conhecimento",
     "quadrix": "quadrix",
     "pci": "pci",
+    "ibfc": "ibfc",
 }
 
 SEVERITY = ("info", "atencao", "critico")
@@ -568,9 +569,19 @@ def _select_sources(cfg):
         key = id_to_key.get(sid) if sid else "guajara"
         if key is None:
             continue  # descritor desconhecido: não liga por engano
-        opts = enabled.get(key)
-        if opts and opts.get("enabled"):
-            picked.append(source)
+        opts = enabled.get(key) or {}
+        if not opts.get("enabled"):
+            continue
+        if key == "ibfc":
+            # Configuração **exclusiva** do conector IBFC: hosts cujo robots.txt restringe a
+            # coleta, mas cujo download o operador autorizou explicitamente. Ausente = não
+            # tenta (comportamento anterior).
+            hosts = tuple(opts.get("download_robots_disallowed_hosts") or ())
+            from radar.ibfc_source import ibfc_source
+            picked.append({**ibfc_source(attempt_blocked_hosts=hosts),
+                           "download_new_only": True})
+            continue
+        picked.append(source)
     return picked
 
 

@@ -169,12 +169,12 @@ class ReviewApiTest(unittest.TestCase):
 
     def test_documentos_bloqueados(self):
         from radar import document_ingest
-        document_ingest.record_blocked_document(
+        document_ingest.record_policy_block(
             self.db, self.blocked, "robots_disallow_anexos_cdn", detected_at=NOW)
         status, body = self.request("/api/documentos/bloqueados")
         self.assertEqual(status, 200)
         payload = json.loads(body)
-        self.assertEqual(payload["por_estado"]["bloqueado"], 1)
+        self.assertEqual(payload["por_estado"]["politica_robots"], 1)
         item = next(i for i in payload["itens"] if i["document_id"] == self.blocked)
         self.assertIn("alternatives", item)
 

@@ -8,7 +8,7 @@ Nunca promove propostas, nunca faz loop interno e nunca migra o banco sozinho.
 from __future__ import annotations
 
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -131,6 +131,33 @@ def _last_success(db_path, source_url: str):
     return row[0] if row else None
 
 
+DENIAL_WINDOW_HOURS = 24
+
+
+def _recently_denied(db_path, document_ids) -> set:
+    """Documentos com 401/403/429 recente: não repetir a tentativa a cada ciclo."""
+    if not document_ids:
+        return set()
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=DENIAL_WINDOW_HOURS)).isoformat()
+    marks = ",".join("?" for _ in document_ids)
+    with closing(connect_documents(db_path)) as conn:
+        rows = conn.execute(
+            f"SELECT DISTINCT document_id FROM tentativas_download "
+            f"WHERE attempted_at >= ? AND document_id IN ({marks}) "
+            f"AND error_code IN ('acesso_negado','limite_acesso')",
+            (cutoff, *document_ids)).fetchall()
+    return {row[0] for row in rows}
+
+
+def _check_identity_after_download(db_path, document_id: str, version_id: str) -> None:
+    """Divergência de identidade vai para revisão humana; nunca é resolvida por suposição."""
+    from radar.document_ingest import check_download_identity
+    try:
+        check_download_identity(db_path, document_id, version_id)
+    except ValueError:
+        pass
+
+
 def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
     source_url = source["source_url"]
     fonte_id = str(uuid4())
@@ -185,6 +212,7 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
     documents_new = 0
     new_ids = []
     skip_download = {}
+    allowed_hosts = {}
     errors = []
     inline_content = {}
     for candidate in candidates:
@@ -215,11 +243,11 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
         if candidate.get("fetch_allowed") is False:
             reason = candidate.get("fetch_blocked_reason") or "host_nao_autorizado"
             skip_download[document_id] = reason
-            # Bloqueio é política da fonte, não falha: fica registrado por documento para que
-            # a ausência do byte seja explícita e rastreável (nunca "documento inexistente").
-            from radar.document_ingest import record_blocked_document
+            # Política da fonte (robots.txt), NÃO negativa HTTP: fica registrada por documento
+            # como política, para não ser confundida com "servidor negou acesso".
+            from radar.document_ingest import record_policy_block
             try:
-                record_blocked_document(
+                record_policy_block(
                     db_path, document_id, reason,
                     official_url=candidate.get("official_url"),
                     evidence={"fonte": source.get("id"),
@@ -227,6 +255,8 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
                     detected_at=checked_at)
             except ValueError:
                 pass
+        elif candidate.get("download_allowed_hosts"):
+            allowed_hosts[document_id] = tuple(candidate["download_allowed_hosts"])
         # Fontes cuja API já entrega o texto oficial gravam a versão sem rebaixar a página.
         body = candidate.get("inline_content")
         if body:
@@ -235,6 +265,7 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
 
     versions_new = 0
     changes = 0
+    denied_recent = _recently_denied(db_path, list(skip_download))
     if source.get("inline"):
         # Fonte cujo conteúdo é entregue pela API: versiona apenas as matérias desta
         # consulta. Documentos de edições anteriores não são rebaixados pela página,
@@ -255,6 +286,10 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
             # Política de acesso, não falha: o documento fica com URL e metadados, sem byte.
             # O motivo entra no resumo da fonte (``summary_json``), não como erro.
             continue
+        if document_id in denied_recent:
+            # A fonte já negou (401/403) ou limitou (429) há pouco: não repetir a tentativa.
+            skip_download[document_id] = "acesso_negado_recente"
+            continue
         with closing(connect_documents(db_path)) as conn:
             before = conn.execute("SELECT count(*) FROM versoes_documento WHERE document_id=?",
                                   (document_id,)).fetchone()[0]
@@ -264,9 +299,14 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
                 version_id = record_version(db_path, document_id, body, dict(
                     fetched_at=checked_at, fetched_url=url, content_type=ctype))
             else:
-                version_id = download_document(db_path, document_id, transport=transport)
+                version_id = download_document(
+                    db_path, document_id, transport=transport,
+                    allowed_hosts=allowed_hosts.get(document_id))
+                _check_identity_after_download(db_path, document_id, version_id)
         except Exception as error:
-            errors.append({"document_id": document_id, "error_code": type(error).__name__})
+            errors.append({"document_id": document_id,
+                           "error_code": getattr(error, "code", type(error).__name__),
+                           "http_status": getattr(error, "http_status", None)})
             continue
         with closing(connect_documents(db_path)) as conn:
             after = conn.execute("SELECT count(*) FROM versoes_documento WHERE document_id=?",

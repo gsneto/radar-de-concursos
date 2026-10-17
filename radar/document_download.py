@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+import json
 import http.client
 import socket
 import time
@@ -16,6 +17,21 @@ from radar.document_store import connect_documents, record_version
 
 
 MAX_BYTES = 20 * 1024 * 1024
+
+# Classificação de falha: distingue política de acesso, limite, erro temporário e arquivo
+# inválido. Nenhuma dessas categorias autoriza tentativa de evasão (proxy, UA falso etc.).
+DENIED_STATUSES = (401, 403)
+RATE_LIMIT_STATUSES = (429,)
+TRANSIENT_STATUSES = (500, 502, 503, 504)
+
+
+class DownloadError(ValueError):
+    """Falha de download com código estável e status HTTP quando existir."""
+
+    def __init__(self, code: str, message: str, http_status=None):
+        super().__init__(message)
+        self.code = code
+        self.http_status = http_status
 
 
 class _PinnedHTTPSConnection(http.client.HTTPSConnection):
@@ -32,12 +48,12 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
             raise
 
 
-def fetch_document(url: str, timeout: int, limit: int) -> dict:
+def fetch_document(url: str, timeout: int, limit: int, *, extra_hosts=None) -> dict:
     """Conecta somente ao IP público resolvido, com TLS para o host permitido."""
     deadline = time.monotonic() + timeout
     visited = set()
     for _ in range(4):
-        if not allowed_document_url(url) or url in visited:
+        if not allowed_document_url(url, extra_hosts=extra_hosts) or url in visited:
             raise ValueError("URL ou redirecionamento não autorizado")
         visited.add(url)
         parts = urlsplit(url)
@@ -66,7 +82,17 @@ def fetch_document(url: str, timeout: int, limit: int) -> dict:
                 continue
             content_type = response.getheader("Content-Type", "")
             if response.status != 200:
-                raise ValueError("resposta HTTP não íntegra")
+                if response.status in DENIED_STATUSES:
+                    raise DownloadError("acesso_negado", "acesso negado pela fonte",
+                                        response.status)
+                if response.status in RATE_LIMIT_STATUSES:
+                    raise DownloadError("limite_acesso", "fonte sinalizou limite de acesso",
+                                        response.status)
+                if response.status in TRANSIENT_STATUSES:
+                    raise DownloadError("falha_temporaria", "erro temporário da fonte",
+                                        response.status)
+                raise DownloadError("http_invalido", "resposta HTTP não íntegra",
+                                    response.status)
             if response.getheader("Content-Length") and int(response.getheader("Content-Length")) > limit:
                 raise ValueError("conteúdo excede limite")
             body = bytearray()
@@ -88,7 +114,26 @@ def fetch_document(url: str, timeout: int, limit: int) -> dict:
     raise ValueError("limite de redirecionamentos excedido")
 
 
-def download_document(db_path, document_id: str, transport=None) -> str:
+def _is_transient(error: Exception) -> bool:
+    if isinstance(error, DownloadError):
+        return error.code == "falha_temporaria"
+    return isinstance(error, (TimeoutError, ConnectionError, OSError))
+
+
+def download_document(db_path, document_id: str, transport=None, *, allowed_hosts=None,
+                      attempts: int = 2, backoff_seconds: float = 1.0,
+                      sleep=time.sleep) -> str:
+    """Baixa e valida um documento.
+
+    ``allowed_hosts`` é um conjunto **explicitamente** autorizado pelo conector que chamou
+    (ex.: CDN de anexos do IBFC). Sem ele, vale somente a lista global — o comportamento dos
+    outros conectores não muda.
+
+    Erros transitórios (5xx, timeout, conexão) são tentados no máximo ``attempts`` vezes com
+    backoff. Acesso negado (401/403) e limite (429) **não** são repetidos: a resposta real é
+    registrada e a tentativa para.
+    """
+    extra = tuple(allowed_hosts or ())
     with closing(connect_documents(db_path)) as conn:
         found = conn.execute("SELECT official_url FROM documentos WHERE id=?", (document_id,)).fetchone()
     if not found:
@@ -96,41 +141,88 @@ def download_document(db_path, document_id: str, transport=None) -> str:
     url = found[0]
     attempt_id = str(uuid4())
     now = datetime.now(timezone.utc).isoformat()
-    try:
-        if not allowed_document_url(url):
-            raise ValueError("URL não autorizada")
-        if transport is None:
+    if transport is None:
+        if extra:
+            transport = lambda target, timeout, limit: fetch_document(
+                target, timeout, limit, extra_hosts=extra)
+        else:
             transport = fetch_document
-        response = transport(url, timeout=15, limit=MAX_BYTES)
-        if response["status"] != 200:
-            raise ValueError("resposta HTTP não íntegra")
-        if not allowed_document_url(response["final_url"]):
-            raise ValueError("redirecionamento não validado")
+    if not allowed_document_url(url, extra_hosts=extra):
+        raise DownloadError("url_nao_autorizada", "URL não autorizada")
+
+    attempts = max(1, int(attempts))
+    response = None
+    last_error = None
+    for index in range(attempts):
+        try:
+            response = transport(url, timeout=15, limit=MAX_BYTES)
+            if response["status"] != 200:
+                status = response["status"]
+                if status in DENIED_STATUSES:
+                    raise DownloadError("acesso_negado", "acesso negado pela fonte", status)
+                if status in RATE_LIMIT_STATUSES:
+                    raise DownloadError("limite_acesso", "fonte sinalizou limite de acesso", status)
+                if status in TRANSIENT_STATUSES:
+                    raise DownloadError("falha_temporaria", "erro temporário da fonte", status)
+                raise DownloadError("http_invalido", "resposta HTTP não íntegra", status)
+            last_error = None
+            break
+        except DownloadError as error:
+            last_error = error
+            if not _is_transient(error) or index == attempts - 1:
+                break
+        except Exception as error:  # timeout/conexão: transitório, com backoff
+            last_error = error
+            if index == attempts - 1:
+                break
+        if backoff_seconds:
+            sleep(backoff_seconds * (index + 1))
+    if last_error is not None:
+        code = getattr(last_error, "code", "falha_temporaria")
+        status = getattr(last_error, "http_status", None)
+        with closing(connect_documents(db_path)) as conn, conn:
+            conn.execute("INSERT INTO tentativas_download VALUES (?,?,?,?,?,?,?)",
+                         (attempt_id, document_id, now, "falhou", status, code, None))
+            conn.execute(
+                "INSERT INTO eventos_documentais (id,document_id,event_type,occurred_at,note) "
+                "VALUES (?,?,'falha',?,?)",
+                (str(uuid4()), document_id, now, json.dumps(
+                    {"code": code, "http_status": status,
+                     "error": type(last_error).__name__}, ensure_ascii=False)))
+        raise last_error if isinstance(last_error, DownloadError) else DownloadError(
+            code, str(last_error))
+
+    try:
+        if not allowed_document_url(response["final_url"], extra_hosts=extra):
+            raise DownloadError("url_nao_autorizada", "redirecionamento não validado")
         if not ipaddress.ip_address(response["peer_ip"]).is_global:
-            raise ValueError("endereço peer não público")
-        if response["content_type"].split(";", 1)[0].lower() not in {"text/html", "application/pdf"}:
-            raise ValueError("MIME não suportado")
-        if urlsplit(url).path.lower().endswith('.pdf') and response["content_type"].split(";", 1)[0].lower() == 'text/html':
-            raise ValueError("HTML inesperado para documento PDF")
+            raise DownloadError("url_nao_autorizada", "endereço peer não público")
+        content_type = response["content_type"].split(";", 1)[0].lower()
+        if content_type not in {"text/html", "application/pdf"}:
+            raise DownloadError("arquivo_invalido", "MIME não suportado")
+        if urlsplit(url).path.lower().endswith('.pdf') and content_type == 'text/html':
+            raise DownloadError("arquivo_invalido", "HTML inesperado para documento PDF")
         content = response["body"]
         if not isinstance(content, bytes) or not content or len(content) > MAX_BYTES:
-            raise ValueError("conteúdo vazio ou excede limite")
-        if response["content_type"].split(";", 1)[0].lower() == "application/pdf" and not content.startswith(b"%PDF-"):
-            raise ValueError("assinatura PDF ausente")
+            raise DownloadError("arquivo_invalido", "conteúdo vazio ou excede limite")
+        if content_type == "application/pdf" and not content.startswith(b"%PDF-"):
+            raise DownloadError("arquivo_invalido", "assinatura PDF ausente")
         version = record_version(db_path, document_id, content, dict(fetched_at=now,
                                  fetched_url=response["final_url"], content_type=response["content_type"]))
-    except Exception as error:
-        with closing(connect_documents(db_path)) as conn:
+    except DownloadError as error:
+        with closing(connect_documents(db_path)) as conn, conn:
             conn.execute("INSERT INTO tentativas_download VALUES (?,?,?,?,?,?,?)",
-                         (attempt_id, document_id, now, "falhou", None, type(error).__name__, None))
-            conn.execute("INSERT INTO eventos_documentais (id,document_id,event_type,occurred_at,note) VALUES (?,?,'falha',?,?)",
-                         (str(uuid4()), document_id, now, type(error).__name__))
-            conn.commit()
+                         (attempt_id, document_id, now, "falhou", error.http_status,
+                          error.code, None))
+            conn.execute(
+                "INSERT INTO eventos_documentais (id,document_id,event_type,occurred_at,note) "
+                "VALUES (?,?,'falha',?,?)",
+                (str(uuid4()), document_id, now, json.dumps(
+                    {"code": error.code, "http_status": error.http_status}, ensure_ascii=False)))
         raise
-    with closing(connect_documents(db_path)) as conn:
+    with closing(connect_documents(db_path)) as conn, conn:
         conn.execute("UPDATE documentos SET final_url=?,last_checked_at=? WHERE id=?",
                      (response["final_url"], now, document_id))
         conn.execute("INSERT INTO tentativas_download VALUES (?,?,?,?,?,?,?)",
                      (attempt_id, document_id, now, "concluido", 200, None, response["final_url"]))
-        conn.commit()
     return version

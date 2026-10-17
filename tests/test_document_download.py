@@ -4,7 +4,7 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
-from radar.document_download import download_document
+from radar.document_download import DownloadError, download_document
 from radar.document_store import get_competition_details, migrate_document_schema, register_document
 
 
@@ -115,6 +115,68 @@ class DownloadTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             download_document(self.db, self.doc, transport=moved)
         self.assertEqual(get_competition_details(self.db, 'contest')['documents'][0]['versions'], [])
+
+    def _denied(self, status):
+        calls = []
+        def transport(url, timeout, limit):
+            calls.append(status)
+            return dict(status=status, final_url=url, content_type="text/html",
+                        peer_ip="8.8.8.8", body=b"<html>no</html>")
+        return transport, calls
+
+    def test_acesso_negado_nao_e_repetido(self):
+        transport, calls = self._denied(403)
+        with self.assertRaises(DownloadError) as ctx:
+            download_document(self.db, self.doc, transport=transport, sleep=lambda s: None)
+        self.assertEqual(ctx.exception.code, "acesso_negado")
+        self.assertEqual(ctx.exception.http_status, 403)
+        self.assertEqual(len(calls), 1)
+        detail = get_competition_details(self.db, "contest")["documents"][0]
+        self.assertEqual(detail["versions"], [])
+        self.assertEqual(detail["download_attempts"][0]["error_code"], "acesso_negado")
+
+    def test_limite_de_acesso_nao_e_repetido(self):
+        transport, calls = self._denied(429)
+        with self.assertRaises(DownloadError) as ctx:
+            download_document(self.db, self.doc, transport=transport, sleep=lambda s: None)
+        self.assertEqual(ctx.exception.code, "limite_acesso")
+        self.assertEqual(len(calls), 1)
+
+    def test_erro_temporario_tenta_de_novo_com_backoff(self):
+        calls = []
+        def transport(url, timeout, limit):
+            calls.append(1)
+            return dict(status=503, final_url=url, content_type="application/pdf",
+                        peer_ip="8.8.8.8", body=b"%PDF-1.4 x")
+        with self.assertRaises(DownloadError) as ctx:
+            download_document(self.db, self.doc, transport=transport, attempts=2,
+                              backoff_seconds=0, sleep=lambda s: None)
+        self.assertEqual(ctx.exception.code, "falha_temporaria")
+        self.assertEqual(len(calls), 2)
+
+    def test_host_extra_e_opt_in_e_nao_autoriza_outros_hosts(self):
+        cdn = "https://anexos.cdn.selecao.net.br/uploads/747/concursos/485/anexos/a.pdf"
+        doc = register_document(self.db, dict(
+            observation_id="obs", kind="edital", official_url=cdn, title="Edital",
+            discovery_url="https://concursos.ibfc.org.br/informacoes/485/",
+            discovery_method="manual", discovered_at="2026-10-10T00:00:00+00:00"))
+        def good(url, timeout, limit):
+            return dict(status=200, final_url=url, content_type="application/pdf",
+                        peer_ip="8.8.8.8", body=b"%PDF-1.4 valid")
+        with self.assertRaises(DownloadError) as ctx:
+            download_document(self.db, doc, transport=good)
+        self.assertEqual(ctx.exception.code, "url_nao_autorizada")
+        version = download_document(self.db, doc, transport=good,
+                                    allowed_hosts=("anexos.cdn.selecao.net.br",))
+        self.assertTrue(version)
+        other = register_document(self.db, dict(
+            observation_id="obs", kind="edital",
+            official_url="https://anexos.cdn.selecao.net.br.evil.example/uploads/a.pdf",
+            title="Outro", discovery_url="https://concursos.ibfc.org.br/informacoes/485/",
+            discovery_method="manual", discovered_at="2026-10-10T00:00:00+00:00"))
+        with self.assertRaises(DownloadError):
+            download_document(self.db, other, transport=good,
+                              allowed_hosts=("anexos.cdn.selecao.net.br",))
 
     def test_default_transport_does_not_connect_to_external_redirect(self):
         from unittest.mock import patch

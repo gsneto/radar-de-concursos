@@ -585,8 +585,10 @@ def _cmd_ibfc_piloto(args: argparse.Namespace) -> None:
         print(json.dumps({"modo": "somente_leitura", "entradas": entries},
                          ensure_ascii=False, default=str))
         return
+    hosts = tuple(args.attempt_blocked_host or ())
     result = run_cycle(cfg["db_path"],
-                       sources=[{**ibfc_source.ibfc_source(), "download_new_only": True}],
+                       sources=[{**ibfc_source.ibfc_source(attempt_blocked_hosts=hosts),
+                                 "download_new_only": True}],
                        analyze=args.analyze)
     print(json.dumps(result, ensure_ascii=False, default=str))
 
@@ -663,6 +665,20 @@ def _cmd_documentos_bloqueados(args: argparse.Namespace) -> None:
     print(json.dumps(document_ingest.blocked_report(
         args.db, contest_id=args.contest_id, states=args.state, limit=args.limit),
         ensure_ascii=False, default=str))
+
+
+def _cmd_documentos_baixar_bloqueados(args: argparse.Namespace) -> None:
+    from radar import document_ingest
+    print(json.dumps(document_ingest.retry_policy_documents(
+        args.db, hosts=tuple(args.host or ()), limit=args.limit,
+        delay_seconds=args.delay, dry_run=not args.apply),
+        ensure_ascii=False, default=str))
+
+
+def _cmd_documentos_reclassificar(args: argparse.Namespace) -> None:
+    from radar import document_ingest
+    print(json.dumps(document_ingest.normalize_legacy_policy_events(
+        args.db, apply=args.apply), ensure_ascii=False, default=str))
 
 
 def _cmd_documentos_importar(args: argparse.Namespace) -> None:
@@ -1172,6 +1188,24 @@ def build_parser() -> argparse.ArgumentParser:
     doc_bloq.add_argument('--limit', type=int, default=200)
     doc_bloq.set_defaults(func=_cmd_documentos_bloqueados)
 
+    doc_retry = subparsers.add_parser(
+        'documentos-baixar-bloqueados',
+        help='tenta uma vez, em série, downloads retidos por política de robots')
+    doc_retry.add_argument('--db', required=True)
+    doc_retry.add_argument('--host', action='append', required=True,
+                           help='host explicitamente autorizado (ex.: anexos.cdn.selecao.net.br)')
+    doc_retry.add_argument('--limit', type=int, default=10)
+    doc_retry.add_argument('--delay', type=float, default=1.0)
+    doc_retry.add_argument('--apply', action='store_true')
+    doc_retry.set_defaults(func=_cmd_documentos_baixar_bloqueados)
+
+    doc_reclass = subparsers.add_parser(
+        'documentos-reclassificar-bloqueios',
+        help='reclassifica eventos antigos de robots como politica_robots')
+    doc_reclass.add_argument('--db', required=True)
+    doc_reclass.add_argument('--apply', action='store_true')
+    doc_reclass.set_defaults(func=_cmd_documentos_reclassificar)
+
     doc_imp = subparsers.add_parser('documentos-importar',
                                     help='ingestão manual com procedência e hash')
     doc_imp.add_argument('--db', required=True)
@@ -1189,6 +1223,10 @@ def build_parser() -> argparse.ArgumentParser:
     ibfc.add_argument('--config', default=None)
     ibfc.add_argument('--apply', action='store_true', help='grava o ciclo (sem isto só lê)')
     ibfc.add_argument('--analyze', action='store_true')
+    ibfc.add_argument('--attempt-blocked', action='append', default=[],
+                      metavar='HOST',
+                      help='host de anexo com robots.txt restritivo a tentar baixar '
+                           '(ex.: anexos.cdn.selecao.net.br); opt-in, só neste conector')
     ibfc.set_defaults(func=_cmd_ibfc_piloto)
 
     return parser

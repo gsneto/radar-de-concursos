@@ -501,6 +501,18 @@ _V15_COLUMNS = {
 # - ``ingestoes_documentais``: procedência de documento fornecido manualmente. O arquivo
 #   nunca vira "oficial" só porque foi declarado; guarda origem declarada, URL original,
 #   canal, data, hash local e resultado da validação.
+# Eventos documentais aceitos. ``politica_robots`` (restrição de robots, sem requisição) é
+# distinto de ``download_bloqueado`` (negativa HTTP real); ``identidade_pendente`` sinaliza
+# divergência de identidade para revisão humana.
+EVENT_TYPES = ("descoberta", "download", "analise", "falha", "retificacao", "revisao",
+               "download_bloqueado", "ingestao_manual", "politica_robots",
+               "identidade_pendente")
+
+
+def _event_types_sql() -> str:
+    return ",".join(f"'{value}'" for value in EVENT_TYPES)
+
+
 _V16_ADD_COLUMNS = (
     "ALTER TABLE revisoes_campo ADD COLUMN previous_decision TEXT",
     "ALTER TABLE revisoes_campo ADD COLUMN origin TEXT",
@@ -597,27 +609,8 @@ def _apply_v16(conn) -> None:
         # DROP TABLE remove os índices junto: recriar é obrigatório para o esquema completo.
         conn.execute("CREATE INDEX IF NOT EXISTS idx_revisoes_proposta "
                      "ON revisoes_campo(proposal_id,reviewed_at)")
-    events_sql = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' "
-                              "AND name='eventos_documentais'").fetchone()
-    if events_sql is None or "'ingestao_manual'" not in (events_sql[0] or ""):
-        conn.execute("""CREATE TABLE eventos_documentais_v16 (
-            id TEXT PRIMARY KEY,
-            document_id TEXT NOT NULL REFERENCES documentos(id),
-            version_id TEXT REFERENCES versoes_documento(id),
-            event_type TEXT NOT NULL CHECK(event_type IN
-                ('descoberta','download','analise','falha','retificacao','revisao',
-                 'download_bloqueado','ingestao_manual')),
-            occurred_at TEXT NOT NULL,
-            related_document_id TEXT REFERENCES documentos(id),
-            note TEXT)""")
-        conn.execute("""INSERT INTO eventos_documentais_v16
-            (id,document_id,version_id,event_type,occurred_at,related_document_id,note)
-            SELECT id,document_id,version_id,event_type,occurred_at,related_document_id,note
-            FROM eventos_documentais""")
-        conn.execute("DROP TABLE eventos_documentais")
-        conn.execute("ALTER TABLE eventos_documentais_v16 RENAME TO eventos_documentais")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_eventos_documento "
-                     "ON eventos_documentais(document_id,occurred_at)")
+    _rebuild_events(conn, "v16", "ingestao_manual")
+
     present = {row[0] for row in conn.execute(
         "SELECT name FROM sqlite_master WHERE type IN ('table','index')")}
     for statement in _V16_TABLES:
@@ -646,10 +639,10 @@ _V2_COLUMNS = {
 }
 
 # Versão corrente do esquema documental (v2 base + reconciliação/hash + monitoramento + fila).
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 # Versões que as rotas de leitura aceitam sem migrar (v2..v13 + atual).
-_READABLE_VERSIONS = (2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, SCHEMA_VERSION)
+_READABLE_VERSIONS = (2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, SCHEMA_VERSION)
 
 
 def _validate_schema(conn, statements, columns_by_table, version_label):
@@ -785,6 +778,41 @@ def _apply_v15(conn) -> None:
         conn.execute(statement)
 
 
+def _rebuild_events(conn, label: str, required: str) -> None:
+    """Reconstrói ``eventos_documentais`` com a lista atual de tipos, preservando as linhas."""
+    events_sql = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' "
+                              "AND name='eventos_documentais'").fetchone()
+    if events_sql is not None and f"'{required}'" in (events_sql[0] or ""):
+        return
+    temp = f"eventos_documentais_{label}"
+    conn.execute(f"""CREATE TABLE {temp} (
+        id TEXT PRIMARY KEY,
+        document_id TEXT NOT NULL REFERENCES documentos(id),
+        version_id TEXT REFERENCES versoes_documento(id),
+        event_type TEXT NOT NULL CHECK(event_type IN ({_event_types_sql()})),
+        occurred_at TEXT NOT NULL,
+        related_document_id TEXT REFERENCES documentos(id),
+        note TEXT)""")
+    conn.execute(f"""INSERT INTO {temp}
+        (id,document_id,version_id,event_type,occurred_at,related_document_id,note)
+        SELECT id,document_id,version_id,event_type,occurred_at,related_document_id,note
+        FROM eventos_documentais""")
+    conn.execute("DROP TABLE eventos_documentais")
+    conn.execute(f"ALTER TABLE {temp} RENAME TO eventos_documentais")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_eventos_documento "
+                 "ON eventos_documentais(document_id,occurred_at)")
+
+
+# v17: política de robots e identidade pendente passam a ser eventos distintos de negativa
+# HTTP. Aditivo: reconstrói apenas ``eventos_documentais`` preservando todas as linhas.
+_V17_DDL = ()
+_V17_COLUMNS = {}
+
+
+def _apply_v17(conn) -> None:
+    _rebuild_events(conn, "v17", "politica_robots")
+
+
 def _apply_v13(conn) -> None:
     """Adiciona a flag de idempotência, o snapshot de escopo e o tipo de questão (v13)."""
     plan = (
@@ -895,7 +923,7 @@ def migrate_document_schema(db_path) -> None:
     try:
         conn.execute("BEGIN IMMEDIATE")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, SCHEMA_VERSION):
+        if version not in (0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, SCHEMA_VERSION):
             raise ValueError(f"versão de esquema não suportada: {version}")
         _v3_extra = dict(
             versoes_documento=_V2_COLUMNS["versoes_documento"] | {"comparison_sha256"},
@@ -935,6 +963,7 @@ def migrate_document_schema(db_path) -> None:
             _apply_v14(conn)
             _apply_v15(conn)
             _apply_v16(conn)
+            _apply_v17(conn)
         else:
             if version == 2:
                 _validate_schema(conn, _DDL, _V2_COLUMNS, "v2")
@@ -976,6 +1005,9 @@ def migrate_document_schema(db_path) -> None:
             elif version == 15:
                 _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL + _V12_DDL + _V14_DDL + _V15_DDL,
                                  _v15_extra, "v15")
+            elif version == 16:
+                _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL + _V12_DDL + _V14_DDL + _V15_DDL + _V16_DDL,
+                                 dict(_v15_extra, **_V16_COLUMNS), "v16")
             else:
                 for statement in _DDL:
                     conn.execute(statement)
@@ -993,6 +1025,7 @@ def migrate_document_schema(db_path) -> None:
             _apply_v14(conn)
             _apply_v15(conn)
             _apply_v16(conn)
+            _apply_v17(conn)
             _seed_alert_watermarks(conn)
             conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         _ensure_alert_indexes(conn)

@@ -26,12 +26,23 @@ _AUTHORIZED_SOURCES = (
 )
 
 
-def allowed_document_url(url: str) -> bool:
+def allowed_document_url(url: str, *, extra_hosts=None) -> bool:
+    """URL de documento permitida pela lista global ou por hosts extra explícitos.
+
+    ``extra_hosts`` existe para autorizações **locais de um conector** (ex.: o CDN de anexos
+    do IBFC): nunca é uma lista global e nunca é inferida. O caminho precisa continuar
+    dentro de ``/uploads/`` nesses hosts extras.
+    """
     parts = urlsplit(url)
     if (parts.scheme != "https" or not parts.hostname or parts.username
             or parts.password or parts.port is not None):
         return False
-    return any(parts.hostname == host and check(parts.path) for host, check in _AUTHORIZED_SOURCES)
+    if any(parts.hostname == host and check(parts.path) for host, check in _AUTHORIZED_SOURCES):
+        return True
+    for host in extra_hosts or ():
+        if parts.hostname == host and parts.path.startswith("/uploads/"):
+            return True
+    return False
 
 
 class _Links(HTMLParser):

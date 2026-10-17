@@ -161,6 +161,67 @@ class IdentityTest(unittest.TestCase):
             ibfc_source.catalog_url("hack")
 
 
+class AttemptBlockedHostsTest(unittest.TestCase):
+    """Configuração opt-in: só o conector IBFC pode tentar hosts com robots restritivo."""
+
+    def _entry(self):
+        return {"id": "485", "url": "https://concursos.ibfc.org.br/informacoes/485/",
+                "title": "Concurso", "edital": "01/2025"}
+
+    def _document(self, host):
+        return {"url": f"https://{host}/uploads/747/concursos/485/anexos/a.pdf",
+                "title": "Edital", "kind": "edital", "document_type": "edital_abertura",
+                "date": "2025-07-07"}
+
+    def test_sem_configuracao_cdn_continua_nao_baixando(self):
+        candidate = ibfc_source.to_candidate(
+            self._document("anexos.cdn.selecao.net.br"), self._entry(), "obs", "2026-10-17")
+        self.assertFalse(candidate["fetch_allowed"])
+        self.assertEqual(candidate["fetch_blocked_reason"], "robots_disallow_anexos_cdn")
+        self.assertIsNone(candidate["download_allowed_hosts"])
+
+    def test_configuracao_permite_tentativa_explicita(self):
+        candidate = ibfc_source.to_candidate(
+            self._document("anexos.cdn.selecao.net.br"), self._entry(), "obs", "2026-10-17",
+            attempt_blocked_hosts=("anexos.cdn.selecao.net.br",))
+        self.assertTrue(candidate["fetch_allowed"])
+        self.assertIsNone(candidate["fetch_blocked_reason"])
+        self.assertEqual(candidate["download_allowed_hosts"],
+                         ["anexos.cdn.selecao.net.br"])
+        self.assertIsNone(candidate["robots_policy"])
+
+    def test_host_nao_listado_nao_recebe_autorizacao(self):
+        candidate = ibfc_source.to_candidate(
+            self._document("outro.cdn.example"), self._entry(), "obs", "2026-10-17",
+            attempt_blocked_hosts=("anexos.cdn.selecao.net.br",))
+        self.assertFalse(candidate["fetch_allowed"])
+        self.assertIsNone(candidate["download_allowed_hosts"])
+
+    def test_r2_permanece_autorizado_sem_configuracao(self):
+        candidate = ibfc_source.to_candidate(
+            self._document("anexos-r2.selecao.net.br"), self._entry(), "obs", "2026-10-17")
+        self.assertTrue(candidate["fetch_allowed"])
+        self.assertIsNone(candidate["download_allowed_hosts"])
+
+    def test_fonte_declara_hosts_apenas_quando_configurada(self):
+        default = ibfc_source.ibfc_source()
+        self.assertEqual(default["download_allowed_hosts"], [])
+        configured = ibfc_source.ibfc_source(
+            attempt_blocked_hosts=("anexos.cdn.selecao.net.br",))
+        self.assertEqual(configured["download_allowed_hosts"],
+                         ["anexos.cdn.selecao.net.br"])
+
+    def test_autorizacao_global_nao_muda(self):
+        from radar.document_discovery import allowed_document_url
+        url = "https://anexos.cdn.selecao.net.br/uploads/747/concursos/485/anexos/a.pdf"
+        self.assertFalse(allowed_document_url(url))
+        self.assertTrue(allowed_document_url(
+            url, extra_hosts=("anexos.cdn.selecao.net.br",)))
+        self.assertFalse(allowed_document_url(
+            "https://outro.example/uploads/a.pdf",
+            extra_hosts=("anexos.cdn.selecao.net.br",)))
+
+
 class DiscoverTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

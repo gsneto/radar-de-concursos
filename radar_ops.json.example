@@ -14,7 +14,12 @@
     "dou": {"enabled": true, "min_interval_hours": 6},
     "fgv": {"enabled": true, "min_interval_hours": 6},
     "quadrix": {"enabled": true, "min_interval_hours": 6},
-    "pci": {"enabled": true, "min_interval_hours": 6}
+    "pci": {"enabled": true, "min_interval_hours": 6},
+    "ibfc": {
+      "enabled": false,
+      "min_interval_hours": 6,
+      "download_robots_disallowed_hosts": []
+    }
   },
   "notifications": {
     "local": false,
