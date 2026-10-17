@@ -225,11 +225,52 @@
           <label class="prefs__field">Duração (min)
             <input id="exam-duracao" type="number" min="0" value="60">
           </label>
+          <label class="prefs__field">Disciplina (opcional)
+            <input id="exam-disciplina" type="text" autocomplete="off">
+          </label>
+          <label class="prefs__field">Tópico (opcional)
+            <input id="exam-topico" type="text" autocomplete="off">
+          </label>
+          <label class="prefs__field">Modo
+            <select id="exam-modo">
+              <option value="tradicional">Tradicional (conjunto fixo)</option>
+              <option value="adaptativa">Adaptativa (por desempenho)</option>
+              <option value="revisao_erros">Revisão de erros</option>
+              <option value="personalizada">Personalizada</option>
+            </select>
+          </label>
           <button type="submit" class="button">Montar simulado</button>
           <span id="exam-status" class="prefs__status" role="status" aria-live="polite"></span>
         </form>
+        <p id="exam-modo-aviso" class="prep__basis" role="status" aria-live="polite" hidden></p>
         <div id="exam-panel" class="practice__panel" role="status" aria-live="polite">
           <p class="muted">Carregando simulados.</p>
+        </div>
+      </div>
+
+      <div class="practice__block">
+        <h3 class="study__subtitle">Pacotes de questões e flashcards</h3>
+        <form id="pac-form" class="prefs" aria-label="Importar pacote">
+          <label class="prefs__field">Arquivo .zip
+            <input id="pac-file" type="file" accept=".zip,application/zip">
+          </label>
+          <label class="prefs__field">Licença do que você exportar
+            <select id="pac-licenca">
+              <option value="propria">Própria</option>
+              <option value="autorizada">Autorizada</option>
+              <option value="cc_by">CC BY</option>
+              <option value="cc_by_sa">CC BY-SA</option>
+              <option value="public_domain">Domínio público</option>
+              <option value="desconhecida">Desconhecida</option>
+            </select>
+          </label>
+          <button id="pac-export" type="button" class="button button--ghost">Exportar meus itens</button>
+          <button id="pac-preview" type="button" class="button">Prévia</button>
+          <button id="pac-import" type="button" class="button" disabled>Importar</button>
+          <span id="pac-status" class="prefs__status" role="status" aria-live="polite"></span>
+        </form>
+        <div id="pac-panel" class="practice__panel" role="status" aria-live="polite">
+          <p class="muted">Nenhum pacote importado.</p>
         </div>
       </div>
 

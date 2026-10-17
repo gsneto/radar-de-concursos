@@ -494,11 +494,13 @@ def get_exam(db_path, exam_id: str, *, now=None) -> dict | None:
     conn = connect_documents(db_path)
     try:
         row = conn.execute(
-            "SELECT id,nome,duracao_segundos,iniciado_em,finalizado_em,estado,created_at "
-            "FROM pratica_simulados WHERE id=?", (exam_id,)).fetchone()
+            "SELECT id,nome,duracao_segundos,iniciado_em,finalizado_em,estado,created_at,"
+            "questao_atual,modo,algoritmo_versao FROM pratica_simulados WHERE id=?",
+            (exam_id,)).fetchone()
         if row is None:
             return None
-        keys = ("id", "nome", "duracao_segundos", "iniciado_em", "finalizado_em", "estado", "created_at")
+        keys = ("id", "nome", "duracao_segundos", "iniciado_em", "finalizado_em", "estado",
+                "created_at", "questao_atual", "modo", "algoritmo_versao")
         exam = dict(zip(keys, row))
         if exam["estado"] == "em_andamento" and exams.is_expired(
                 exam["iniciado_em"], exam["duracao_segundos"], now=now):
@@ -523,12 +525,13 @@ def exam_items(db_path, exam_id: str, *, include_answer_key=True) -> list[dict]:
     try:
         rows = conn.execute(
             "SELECT sq.ordem,sq.questao_id,sq.questao_versao,sq.resposta,sq.respondida_em,"
-            "COALESCE(sq.disciplina,q.disciplina),COALESCE(sq.topico,q.topico),q.estado "
+            "COALESCE(sq.disciplina,q.disciplina),COALESCE(sq.topico,q.topico),q.estado,"
+            "sq.marcada_revisao,sq.motivo_selecao "
             "FROM pratica_simulado_questoes sq "
             "JOIN pratica_questoes q ON q.id=sq.questao_id "
             "WHERE sq.simulado_id=? ORDER BY sq.ordem", (exam_id,)).fetchall()
         keys = ("ordem", "questao_id", "questao_versao", "resposta", "respondida_em",
-                "disciplina", "topico", "questao_estado")
+                "disciplina", "topico", "questao_estado", "marcada_revisao", "motivo_selecao")
         items = [dict(zip(keys, row)) for row in rows]
     finally:
         conn.close()
@@ -539,7 +542,8 @@ def exam_items(db_path, exam_id: str, *, include_answer_key=True) -> list[dict]:
             version = {"enunciado": current.get("enunciado"), "alternativas": current.get("alternativas", []),
                        "gabarito": current.get("gabarito"), "comentario": current.get("comentario")}
         item.update({"enunciado": version["enunciado"], "alternativas": version["alternativas"],
-                     "respondida": bool(item.get("resposta"))})
+                     "respondida": bool(item.get("resposta")),
+                     "marcada_revisao": bool(item.get("marcada_revisao"))})
         if include_answer_key:
             item.update({"gabarito": version["gabarito"], "comentario": version["comentario"]})
     return items
@@ -673,12 +677,331 @@ def list_exams(db_path, *, limit=50) -> list[dict]:
     conn = connect_documents(db_path)
     try:
         rows = conn.execute(
-            "SELECT id,nome,duracao_segundos,iniciado_em,finalizado_em,estado,created_at "
-            "FROM pratica_simulados ORDER BY iniciado_em DESC, id LIMIT ?", (max(0, int(limit)),)).fetchall()
-        keys = ("id", "nome", "duracao_segundos", "iniciado_em", "finalizado_em", "estado", "created_at")
+            "SELECT id,nome,duracao_segundos,iniciado_em,finalizado_em,estado,created_at,"
+            "questao_atual,modo,algoritmo_versao FROM pratica_simulados "
+            "ORDER BY iniciado_em DESC, id LIMIT ?", (max(0, int(limit)),)).fetchall()
+        keys = ("id", "nome", "duracao_segundos", "iniciado_em", "finalizado_em", "estado",
+                "created_at", "questao_atual", "modo", "algoritmo_versao")
         return [dict(zip(keys, row)) for row in rows]
     finally:
         conn.close()
+
+
+# --- Navegação do simulado (Fase 24) -----------------------------------------
+
+def _require_open_exam(conn, exam_id, now=None):
+    row = conn.execute("SELECT estado,duracao_segundos,iniciado_em FROM pratica_simulados WHERE id=?",
+                       (exam_id,)).fetchone()
+    if row is None:
+        raise ValueError("simulado inexistente")
+    if row[0] != "em_andamento":
+        raise ValueError("simulado não está em andamento")
+    if exams.is_expired(row[2], row[1], now=now):
+        conn.execute("UPDATE pratica_simulados SET estado='expirado', finalizado_em=? WHERE id=?",
+                     (_now(), exam_id))
+        raise ValueError("tempo do simulado esgotado")
+    return row
+
+
+def set_exam_mark(db_path, exam_id: str, ordem, marcada: bool, *, now=None) -> dict:
+    """Marca/desmarca uma questão para revisão. **Não** altera a resposta nem o tempo."""
+    if ordem is None:
+        raise ValueError("ordem obrigatória")
+    try:
+        ordem = int(ordem)
+    except (TypeError, ValueError):
+        raise ValueError("ordem inválida")
+    conn = connect_documents(db_path)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        _require_open_exam(conn, exam_id, now=now)
+        cur = conn.execute(
+            "UPDATE pratica_simulado_questoes SET marcada_revisao=? WHERE simulado_id=? AND ordem=?",
+            (1 if marcada else 0, exam_id, ordem))
+        if cur.rowcount == 0:
+            conn.rollback()
+            raise ValueError("questão fora do simulado")
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return {"simulado_id": exam_id, "ordem": ordem, "marcada_revisao": bool(marcada)}
+
+
+def set_exam_position(db_path, exam_id: str, ordem, *, now=None) -> dict:
+    """Registra a posição atual (para retomar onde parou)."""
+    if ordem is None:
+        raise ValueError("ordem obrigatória")
+    try:
+        ordem = max(0, int(ordem))
+    except (TypeError, ValueError):
+        raise ValueError("ordem inválida")
+    conn = connect_documents(db_path)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        _require_open_exam(conn, exam_id, now=now)
+        total = conn.execute(
+            "SELECT COUNT(*) FROM pratica_simulado_questoes WHERE simulado_id=?",
+            (exam_id,)).fetchone()[0]
+        if total:
+            ordem = min(ordem, total - 1)
+        conn.execute("UPDATE pratica_simulados SET questao_atual=? WHERE id=?", (ordem, exam_id))
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return {"simulado_id": exam_id, "questao_atual": ordem}
+
+
+def exam_summary(db_path, exam_id: str, *, now=None) -> dict:
+    """Resumo para a confirmação de finalização (respondidas, brancos, marcadas, tempo)."""
+    exam = get_exam(db_path, exam_id, now=now)
+    if exam is None:
+        raise ValueError("simulado inexistente")
+    items = exam_items(db_path, exam_id, include_answer_key=False)
+    respondidas = [i for i in items if i.get("respondida")]
+    marcadas = [i for i in items if i.get("marcada_revisao")]
+    return {"simulado_id": exam_id, "estado": exam["estado"], "modo": exam.get("modo"),
+            "total": len(items), "respondidas": len(respondidas),
+            "brancos": len(items) - len(respondidas), "marcadas": len(marcadas),
+            "marcadas_ordens": [i["ordem"] for i in marcadas],
+            "brancos_ordens": [i["ordem"] for i in items if not i.get("respondida")],
+            "questao_atual": exam.get("questao_atual"),
+            "restante_segundos": exams.remaining_seconds(exam["iniciado_em"],
+                                                         exam["duracao_segundos"], now=now),
+            "pode_finalizar": exam["estado"] == "em_andamento"}
+
+
+# --- Mídia de flashcards (Fase 24) -------------------------------------------
+
+def _media_row(row) -> dict:
+    keys = ("id", "sha256", "mime", "extensao", "bytes", "largura", "altura", "origem",
+            "licenca", "created_at")
+    return dict(zip(keys, row))
+
+
+_MEDIA_COLS = "id,sha256,mime,extensao,bytes,largura,altura,origem,licenca,created_at"
+
+
+def attach_flashcard_image(db_path, flashcard_id: str, data, *, max_bytes=None,
+                           licenca=None) -> dict:
+    """Valida e anexa (ou substitui) a imagem do cartão; o arquivo é nomeado pelo hash."""
+    from radar import media
+    from radar.packages import LICENSE_STATES
+    if licenca is not None:
+        licenca = str(licenca).strip().lower()
+        if licenca not in LICENSE_STATES:
+            raise ValueError("licença de imagem inválida")
+    kwargs = {"origem": "usuario", "licenca": licenca}
+    if max_bytes is not None:
+        kwargs["max_bytes"] = int(max_bytes)
+    probe = connect_documents(db_path)
+    try:
+        if not probe.execute("SELECT 1 FROM pratica_flashcards WHERE id=?",
+                             (flashcard_id,)).fetchone():
+            raise ValueError("flashcard inexistente")
+    finally:
+        probe.close()
+    info = media.store_image(db_path, data, **kwargs)
+    mid, now = str(uuid4()), _now()
+    conn = connect_documents(db_path)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        if not conn.execute("SELECT 1 FROM pratica_flashcards WHERE id=?", (flashcard_id,)).fetchone():
+            conn.rollback()
+            raise ValueError("flashcard inexistente")
+        existing = conn.execute("SELECT id FROM pratica_midias WHERE sha256=?",
+                                (info["sha256"],)).fetchone()
+        if existing:
+            mid = existing[0]
+        else:
+            conn.execute(
+                "INSERT INTO pratica_midias(id,sha256,mime,extensao,bytes,largura,altura,"
+                "origem,licenca,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (mid, info["sha256"], info["mime"], info["extensao"], info["bytes"],
+                 info["largura"], info["altura"], "usuario", licenca, now))
+        conn.execute("UPDATE pratica_flashcards SET imagem_id=?, updated_at=? WHERE id=?",
+                     (mid, now, flashcard_id))
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return {"flashcard_id": flashcard_id, "imagem_id": mid, "mime": info["mime"],
+            "largura": info["largura"], "altura": info["altura"], "bytes": info["bytes"]}
+
+
+def remove_flashcard_image(db_path, flashcard_id: str) -> dict:
+    """Desvincula a imagem do cartão e remove a mídia se nenhum outro cartão a usar."""
+    from radar import media
+    conn = connect_documents(db_path)
+    orphan = None
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT imagem_id FROM pratica_flashcards WHERE id=?",
+                           (flashcard_id,)).fetchone()
+        if row is None:
+            raise ValueError("flashcard inexistente")
+        media_id = row[0]
+        conn.execute("UPDATE pratica_flashcards SET imagem_id=NULL, updated_at=? WHERE id=?",
+                     (_now(), flashcard_id))
+        if media_id:
+            still = conn.execute(
+                "SELECT 1 FROM pratica_flashcards WHERE imagem_id=? LIMIT 1",
+                (media_id,)).fetchone()
+            if not still:
+                orphan = conn.execute(
+                    "SELECT sha256,extensao FROM pratica_midias WHERE id=?",
+                    (media_id,)).fetchone()
+                conn.execute("DELETE FROM pratica_midias WHERE id=?", (media_id,))
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    if orphan:
+        media.delete_media(db_path, orphan[0], orphan[1])
+    return {"flashcard_id": flashcard_id, "imagem_id": None}
+
+
+def get_media(db_path, media_id: str) -> dict | None:
+    conn = connect_documents(db_path)
+    try:
+        row = conn.execute(f"SELECT {_MEDIA_COLS} FROM pratica_midias WHERE id=?",
+                           (media_id,)).fetchone()
+        return _media_row(row) if row else None
+    finally:
+        conn.close()
+
+
+def flashcard_image(db_path, flashcard_id: str) -> dict | None:
+    """Metadados da imagem do cartão (``None`` se não houver)."""
+    conn = connect_documents(db_path)
+    try:
+        row = conn.execute(
+            f"SELECT m.{_MEDIA_COLS.replace(',', ',m.')} FROM pratica_flashcards f "
+            "JOIN pratica_midias m ON m.id=f.imagem_id WHERE f.id=?", (flashcard_id,)).fetchone()
+        return _media_row(row) if row else None
+    finally:
+        conn.close()
+
+
+# --- Sessões adaptativas (Fase 24) -------------------------------------------
+
+def _profile_map(db_path) -> dict:
+    from radar import knowledge_store
+    return knowledge_store.profile_map(db_path)
+
+
+def _adaptive_context(db_path, *, now=None):
+    """Histórico por tópico e perfil declarado para a seleção adaptativa."""
+    from radar import adaptive
+    attempts = list_attempts(db_path, limit=100000)
+    history = adaptive.topic_history(attempts, now=now)
+    answered = [a for a in attempts if a.get("respondida")]
+    accuracy = (sum(1 for a in answered if a.get("correta")) / len(answered)) if answered else None
+    return history, _profile_map(db_path), accuracy
+
+
+def create_adaptive_session(db_path, *, nome, limit, modo="adaptativa", duracao_segundos=None,
+                            seed=None, disciplina=None, topico=None, now=None) -> dict:
+    """Cria uma sessão **adaptativa**: o plano inicial é ordenado por fraqueza explicável.
+
+    O modo ``adaptativa`` escolhe as questões por desempenho; ``revisao_erros`` restringe às
+    questões erradas; ``personalizada`` aplica os filtros do usuário e mantém o peso adaptativo.
+    """
+    from radar import adaptive
+    if modo not in ("adaptativa", "revisao_erros", "personalizada"):
+        raise ValueError("modo adaptativo inválido")
+    if not _clean(nome):
+        raise ValueError("nome da sessão obrigatório")
+    pool = list_questions(db_path, disciplina=disciplina, topico=topico)
+    if modo == "revisao_erros":
+        pool = adaptive.review_questions(list_attempts(db_path, limit=100000), pool)
+    history, profile, accuracy = _adaptive_context(db_path, now=now)
+    plan = adaptive.session_plan(pool, history=history, profile=profile, limit=limit,
+                                 now=now, seed=seed, global_accuracy=accuracy)
+    if not plan:
+        raise ValueError("nenhuma questão elegível para a sessão")
+    if duracao_segundos is not None:
+        duracao_segundos = max(0, min(int(duracao_segundos), exams.MAX_DURATION_SECONDS)) or None
+    sid, at = str(uuid4()), _now()
+    conn = connect_documents(db_path)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            "INSERT INTO pratica_simulados(id,nome,duracao_segundos,iniciado_em,finalizado_em,"
+            "estado,created_at,questao_atual,modo,algoritmo_versao) "
+            "VALUES(?,?,?,?,NULL,'em_andamento',?,0,?,?)",
+            (sid, _clean(nome), duracao_segundos, at, at, modo, adaptive.ALGORITHM_VERSION))
+        for ordem, item in enumerate(plan):
+            question = item["questao"]
+            conn.execute(
+                "INSERT INTO pratica_simulado_questoes(simulado_id,ordem,questao_id,questao_versao,"
+                "resposta,respondida_em,disciplina,topico,marcada_revisao,motivo_selecao) "
+                "VALUES(?,?,?,?,NULL,NULL,?,?,0,?)",
+                (sid, ordem, question["id"], question["versao"], question.get("disciplina"),
+                 question.get("topico"), item["explicacao"]))
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return {"simulado": get_exam(db_path, sid), "plano": plan,
+            "aviso": adaptive.ADAPTIVE_CAVEAT, "modo_label": adaptive.MODE_LABELS[modo]}
+
+
+def next_adaptive_question(db_path, exam_id: str, *, now=None) -> dict:
+    """Acrescenta a **próxima** questão à sessão adaptativa, conforme o desempenho atual."""
+    from radar import adaptive
+    exam = get_exam(db_path, exam_id, now=now)
+    if exam is None:
+        raise ValueError("simulado inexistente")
+    if exam.get("modo") not in ("adaptativa", "personalizada", "revisao_erros"):
+        raise ValueError("simulado não é adaptativo")
+    if exam["estado"] != "em_andamento":
+        raise ValueError("simulado não está em andamento")
+    items = exam_items(db_path, exam_id, include_answer_key=False)
+    used = {i["questao_id"] for i in items}
+    escopo_disc = {i.get("disciplina") for i in items if i.get("disciplina")}
+    escopo_top = {i.get("topico") for i in items if i.get("topico")}
+    pool = [q for q in list_questions(db_path) if q["id"] not in used]
+    if escopo_disc or escopo_top:
+        pool = [q for q in pool
+                if (q.get("disciplina") in escopo_disc) or (q.get("topico") in escopo_top)]
+    history, profile, accuracy = _adaptive_context(db_path, now=now)
+    chosen = adaptive.next_question(pool, history=history, profile=profile, now=now,
+                                    exclude=used, global_accuracy=accuracy)
+    if chosen is None:
+        raise ValueError("não há mais questões elegíveis")
+    question = chosen["questao"]
+    conn = connect_documents(db_path)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        ordem = conn.execute("SELECT COALESCE(MAX(ordem),-1)+1 FROM pratica_simulado_questoes "
+                             "WHERE simulado_id=?", (exam_id,)).fetchone()[0]
+        conn.execute(
+            "INSERT INTO pratica_simulado_questoes(simulado_id,ordem,questao_id,questao_versao,"
+            "resposta,respondida_em,disciplina,topico,marcada_revisao,motivo_selecao) "
+            "VALUES(?,?,?,?,NULL,NULL,?,?,0,?)",
+            (exam_id, ordem, question["id"], question["versao"], question.get("disciplina"),
+             question.get("topico"), chosen["explicacao"]))
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return {"simulado_id": exam_id, "ordem": ordem, "questao_id": question["id"],
+            "score": chosen["score"], "confidence": chosen["confidence"],
+            "explicacao": chosen["explicacao"], "factors": chosen["factors"]}
 
 
 # --- Desempenho agregado -----------------------------------------------------

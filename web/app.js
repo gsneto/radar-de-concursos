@@ -1517,6 +1517,29 @@
   // --- Prática: flashcards, questões e simulados (Fase 23) --------------------
 
   var QUALITY_LABEL = {0: 'Esqueci', 1: 'Errei', 2: 'Difícil', 3: 'Ok', 4: 'Bom', 5: 'Fácil'};
+  var MODE_LABELS = {
+    tradicional: 'Tradicional (conjunto fixo)',
+    adaptativa: 'Adaptativa',
+    revisao_erros: 'Revisão de erros',
+    personalizada: 'Personalizada'
+  };
+
+  function readFileAsBase64(file) {
+    return new Promise(function (resolve, reject) {
+      if (!file || typeof global.FileReader !== 'function') {
+        reject(new Error('Leitura de arquivo indisponível neste navegador.'));
+        return;
+      }
+      var reader = new global.FileReader();
+      reader.onerror = function () { reject(new Error('Falha ao ler o arquivo.')); };
+      reader.onload = function () {
+        var raw = String(reader.result || '');
+        var comma = raw.indexOf(',');
+        resolve(comma >= 0 ? raw.slice(comma + 1) : '');
+      };
+      reader.readAsDataURL(file);
+    });
+  }
 
   function renderFlashcards(document, queue, stats) {
     var wrap = el(document, 'div', 'practice__inner');
@@ -1537,6 +1560,13 @@
     cards.slice(0, 20).forEach(function (card) {
       var row = el(document, 'article', 'study-disc');
       row.appendChild(el(document, 'h4', 'study-disc__title', card.frente));
+      if (card.imagem_id) {
+        var img = el(document, 'img', 'practice__image');
+        img.src = '/api/estudos/midia/' + encodeURIComponent(card.imagem_id);
+        img.alt = 'Imagem do cartão: ' + card.frente;
+        img.loading = 'lazy';
+        row.appendChild(img);
+      }
       var answer = el(document, 'p', 'muted', 'Resposta oculta');
       var reveal = el(document, 'button', 'triage-action', 'Mostrar resposta');
       reveal.type = 'button';
@@ -1546,6 +1576,37 @@
       });
       row.appendChild(reveal);
       row.appendChild(answer);
+      var imageForm = el(document, 'div', 'triage-alert__actions');
+      var file = el(document, 'input', 'practice__file');
+      file.type = 'file';
+      file.accept = 'image/png,image/jpeg,image/gif,image/webp';
+      file.setAttribute('aria-label', 'Anexar imagem ao cartão');
+      var attach = el(document, 'button', 'triage-action', card.imagem_id ? 'Trocar imagem' : 'Anexar imagem');
+      attach.type = 'button';
+      attach.addEventListener('click', function () {
+        var chosen = file.files && file.files[0];
+        if (!chosen) return;
+        if (chosen.size && chosen.size > 8000000) {
+          showError(new Error('Imagem grande demais (limite de 8 MB).'));
+          return;
+        }
+        readFileAsBase64(chosen).then(function (dados) {
+          return studyPost('/api/estudos/flashcards/' + encodeURIComponent(card.id) + '/imagem',
+            {dados_base64: dados, licenca: 'propria'});
+        }).then(fetchPractice).catch(showError);
+      });
+      imageForm.appendChild(file);
+      imageForm.appendChild(attach);
+      if (card.imagem_id) {
+        var remove = el(document, 'button', 'triage-action', 'Remover imagem');
+        remove.type = 'button';
+        remove.addEventListener('click', function () {
+          studyRequest('/api/estudos/flashcards/' + encodeURIComponent(card.id) + '/imagem',
+            {method: 'DELETE'}).then(fetchPractice).catch(showError);
+        });
+        imageForm.appendChild(remove);
+      }
+      row.appendChild(imageForm);
       var actions = el(document, 'div', 'triage-alert__actions');
       [0, 3, 4, 5].forEach(function (quality) {
         var btn = el(document, 'button', 'triage-action', QUALITY_LABEL[quality]);
@@ -1606,7 +1667,12 @@
       var card = el(document, 'article', 'study-disc');
       card.appendChild(el(document, 'h4', 'study-disc__title', exam.nome));
       card.appendChild(el(document, 'p', 'prep__basis',
-        'estado: ' + exam.estado + ' · iniciado ' + formatVerifiedAt(exam.iniciado_em)));
+        'estado: ' + exam.estado + ' · modo: ' + MODE_LABELS[exam.modo || 'tradicional']
+        + ' · iniciado ' + formatVerifiedAt(exam.iniciado_em)));
+      if (exam.modo && exam.modo !== 'tradicional') {
+        card.appendChild(el(document, 'p', 'prep__basis',
+          'Sessão adaptativa: o percentual de acerto não é comparável ao de um simulado tradicional.'));
+      }
       if (exam.estado === 'em_andamento') {
         var open = el(document, 'button', 'triage-action', 'Responder / retomar');
         open.type = 'button';
@@ -1653,10 +1719,44 @@
         }
       }, 1000);
     }
-    questions.forEach(function (q) {
+
+    var items = [];
+    function goTo(ordem) {
+      items.forEach(function (pair) {
+        pair[1].hidden = pair[0] !== ordem;
+      });
+      if (typeof global.document !== 'undefined') {
+        studyPost('/api/estudos/simulados/' + encodeURIComponent(exam.id) + '/posicao',
+          {ordem: ordem}).catch(function () {});
+      }
+    }
+    var map = el(document, 'nav', 'practice__map');
+    map.setAttribute('aria-label', 'Mapa de questões');
+    var buttons = [];
+    questions.forEach(function (q, index) {
       var item = el(document, 'div', 'study-disc');
-      item.appendChild(el(document, 'p', 'study-disc__title',
+      var head = el(document, 'div', 'practice__question-head');
+      head.appendChild(el(document, 'p', 'study-disc__title',
         (q.ordem + 1) + '. ' + q.enunciado));
+      var mark = el(document, 'button', 'triage-action'
+        + (q.marcada_revisao ? ' is-active' : ''), 'Marcar para revisão');
+      mark.type = 'button';
+      mark.setAttribute('aria-pressed', q.marcada_revisao ? 'true' : 'false');
+      mark.addEventListener('click', function () {
+        var next = !q.marcada_revisao;
+        studyPost('/api/estudos/simulados/' + encodeURIComponent(exam.id) + '/marcar',
+          {ordem: q.ordem, marcada: next}).then(function () {
+            q.marcada_revisao = next;
+            mark.classList.toggle('is-active', next);
+            mark.setAttribute('aria-pressed', next ? 'true' : 'false');
+            buttons[index].classList.toggle('is-marked', next);
+          }).catch(showError);
+      });
+      head.appendChild(mark);
+      item.appendChild(head);
+      if (q.motivo_selecao) {
+        item.appendChild(el(document, 'p', 'prep__basis', 'Selecionada porque: ' + q.motivo_selecao));
+      }
       var options = el(document, 'div', 'triage-alert__actions');
       (q.alternativas || []).forEach(function (alt) {
         var btn = el(document, 'button', 'triage-action'
@@ -1670,18 +1770,57 @@
                 node.classList.remove('is-active');
               });
               btn.classList.add('is-active');
+              buttons[index].classList.add('is-answered');
             }).catch(showError);
         });
         options.appendChild(btn);
       });
       item.appendChild(options);
+      item.hidden = index !== (exam.questao_atual || 0);
       box.appendChild(item);
+      items.push([index, item]);
+
+      var jump = el(document, 'button', 'triage-action practice__map-btn',
+        String(index + 1));
+      jump.type = 'button';
+      jump.setAttribute('aria-label', 'Ir para a questão ' + (index + 1));
+      if (q.resposta) jump.classList.add('is-answered');
+      if (q.marcada_revisao) jump.classList.add('is-marked');
+      jump.addEventListener('click', function () { goTo(index); });
+      map.appendChild(jump);
+      buttons.push(jump);
     });
+    box.insertBefore(map, clock);
+
+    var nav = el(document, 'div', 'triage-alert__actions');
+    var prev = el(document, 'button', 'triage-action', 'Anterior');
+    prev.type = 'button';
+    var next = el(document, 'button', 'triage-action', 'Próxima');
+    next.type = 'button';
+    prev.addEventListener('click', function () {
+      var current = items.findIndex(function (pair) { return !pair[1].hidden; });
+      if (current > 0) goTo(current - 1);
+    });
+    next.addEventListener('click', function () {
+      var current = items.findIndex(function (pair) { return !pair[1].hidden; });
+      if (current >= 0 && current < items.length - 1) goTo(current + 1);
+    });
+    nav.appendChild(prev);
+    nav.appendChild(next);
+    box.appendChild(nav);
+
     var finish = el(document, 'button', 'button', 'Finalizar simulado');
     finish.type = 'button';
     finish.addEventListener('click', function () {
-      studyPost('/api/estudos/simulados/' + encodeURIComponent(exam.id) + '/finalizar', {})
-        .then(function () { return fetchPractice(); }).catch(showError);
+      studyRequest('/api/estudos/simulados/' + encodeURIComponent(exam.id) + '/resumo')
+        .then(function (summary) {
+          var blanks = (summary && summary.brancos) || 0;
+          var message = 'Finalizar o simulado?'
+            + (blanks ? ' Há ' + blanks + ' questão(ões) em branco.' : '');
+          if (blanks && global.confirm && !global.confirm(message)) return null;
+          return studyPost('/api/estudos/simulados/' + encodeURIComponent(exam.id) + '/finalizar', {})
+            .then(function () { return fetchPractice(); });
+        }).catch(showError);
     });
     box.appendChild(finish);
     card.appendChild(box);
@@ -1700,6 +1839,53 @@
         + (g.pct === null ? '' : ' (' + g.pct + '%)')));
     });
     card.appendChild(box);
+  }
+
+  function renderPackagePreview(document, preview) {
+    var node = document.getElementById('pac-panel');
+    if (!node) return;
+    node.textContent = '';
+    var wrap = el(document, 'div', 'practice__inner');
+    var manifest = (preview && preview.manifest) || {};
+    var counts = (preview && preview.contagens) || {};
+    wrap.appendChild(el(document, 'p', 'prep__state',
+      (manifest.nome || 'Pacote') + ' · licença: ' + (manifest.licenca || 'desconhecida')
+      + (manifest.licenca_verificada ? '' : ' (não verificada)')));
+    wrap.appendChild(el(document, 'p', 'prep__basis',
+      'Questões: ' + (counts.questoes || 0) + ' · flashcards: ' + (counts.flashcards || 0)
+      + ' · mídias: ' + (counts.midias || 0)));
+    if (manifest.aviso) wrap.appendChild(el(document, 'p', 'prep__basis', manifest.aviso));
+    var conflicts = (preview && preview.conflitos) || [];
+    if (conflicts.length) {
+      wrap.appendChild(el(document, 'p', 'prep__basis',
+        conflicts.length + ' item(ns) já existem localmente e serão preservados.'));
+    }
+    node.appendChild(wrap);
+  }
+
+  function fetchPackages() {
+    var doc = global.document;
+    if (!doc || !doc.getElementById('pac-panel')) return Promise.resolve();
+    return global.fetch('/api/estudos/pacotes', {headers: {Accept: 'application/json'}})
+      .then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (rows) {
+        var node = doc.getElementById('pac-panel');
+        if (!node) return;
+        node.textContent = '';
+        var wrap = el(doc, 'div', 'practice__inner');
+        if (!rows || !rows.length) {
+          wrap.appendChild(el(doc, 'p', 'muted', 'Nenhum pacote importado.'));
+        } else {
+          rows.slice(0, 10).forEach(function (row) {
+            wrap.appendChild(el(doc, 'p', 'study__revision',
+              (row.nome || 'Pacote') + ' · ' + (row.tipo || 'misto')
+              + ' · questões: ' + (row.questoes || 0)
+              + ' · flashcards: ' + (row.flashcards || 0)
+              + ' · ' + formatVerifiedAt(row.importado_em)));
+          });
+        }
+        node.appendChild(wrap);
+      }).catch(function () {});
   }
 
   function renderPerformance(document, report) {
@@ -1986,15 +2172,81 @@
     if (examForm) examForm.addEventListener('submit', function (event) {
       event.preventDefault();
       var minutos = parseInt(doc.getElementById('exam-duracao').value, 10) || 0;
+      var modoField = doc.getElementById('exam-modo');
+      var modo = modoField ? modoField.value : 'tradicional';
+      var discField = doc.getElementById('exam-disciplina');
+      var topField = doc.getElementById('exam-topico');
       studyPost('/api/estudos/simulados', {
         nome: doc.getElementById('exam-nome').value.trim() || 'Simulado',
         limit: parseInt(doc.getElementById('exam-limit').value, 10) || 10,
-        duracao_segundos: minutos > 0 ? minutos * 60 : null
+        duracao_segundos: minutos > 0 ? minutos * 60 : null,
+        modo: modo,
+        disciplina: (discField && discField.value.trim()) || null,
+        topico: (topField && topField.value.trim()) || null
       }).then(function () { return fetchPractice(); }).catch(function (err) {
         var status = doc.getElementById('exam-status');
         if (status) status.textContent = err.message || 'Falha ao montar simulado.';
       });
     });
+    var examModo = doc.getElementById('exam-modo');
+    if (examModo) {
+      var updateExamNotice = function () {
+        var aviso = doc.getElementById('exam-modo-aviso');
+        if (!aviso) return;
+        var adaptativa = examModo.value !== 'tradicional';
+        aviso.hidden = !adaptativa;
+        aviso.textContent = adaptativa
+          ? 'As questões serão escolhidas pelo seu desempenho. O percentual de acerto '
+            + 'não é comparável ao de um simulado tradicional de conjunto fixo.'
+          : '';
+      };
+      examModo.addEventListener('change', updateExamNotice);
+      updateExamNotice();
+    }
+    var pacForm = doc.getElementById('pac-form');
+    var pacPreview = doc.getElementById('pac-preview');
+    var pacImport = doc.getElementById('pac-import');
+    var pacExport = doc.getElementById('pac-export');
+    function pacFileBase64() {
+      var input = doc.getElementById('pac-file');
+      var chosen = input && input.files && input.files[0];
+      if (!chosen) return Promise.reject(new Error('Escolha um arquivo .zip do pacote.'));
+      if (chosen.size && chosen.size > 60000000) {
+        return Promise.reject(new Error('Arquivo grande demais (limite de 60 MB).'));
+      }
+      return readFileAsBase64(chosen);
+    }
+    function setPacStatus(message) {
+      var status = doc.getElementById('pac-status');
+      if (status) status.textContent = message || '';
+    }
+    if (pacPreview) pacPreview.addEventListener('click', function () {
+      pacFileBase64().then(function (dados) {
+        return studyPost('/api/estudos/pacotes/previa', {dados_base64: dados});
+      }).then(function (preview) {
+        if (pacImport) pacImport.disabled = !(preview && preview.pode_importar);
+        setPacStatus('Prévia pronta.');
+        renderPackagePreview(doc, preview);
+      }).catch(function (err) { setPacStatus(err.message || 'Falha na prévia.'); });
+    });
+    if (pacImport) pacImport.addEventListener('click', function () {
+      pacFileBase64().then(function (dados) {
+        return studyPost('/api/estudos/pacotes/importar', {dados_base64: dados});
+      }).then(function (report) {
+        setPacStatus('Importação concluída.');
+        if (pacImport) pacImport.disabled = true;
+        return fetchPackages().then(function () { return fetchPractice(); });
+      }).catch(function (err) { setPacStatus(err.message || 'Falha na importação.'); });
+    });
+    if (pacExport) pacExport.addEventListener('click', function () {
+      var licencaField = doc.getElementById('pac-licenca');
+      var licenca = licencaField ? licencaField.value : 'propria';
+      if (global.location && typeof global.location.assign === 'function') {
+        global.location.assign('/api/estudos/pacotes/exportar?licenca=' + encodeURIComponent(licenca));
+        setPacStatus('Exportação iniciada.');
+      }
+    });
+    if (pacForm) pacForm.addEventListener('submit', function (event) { event.preventDefault(); });
     fetchData().then(focusContestFromHash).catch(function () {});
     fetchMonitoring();
     fetchAlerts();
@@ -2003,6 +2255,7 @@
     fetchStudy();
     fetchPerfil();
     fetchPractice();
+    fetchPackages();
     startAutoRefresh();
     if (global.addEventListener) {
       global.addEventListener('hashchange', function () { focusContestFromHash(); });
@@ -2031,6 +2284,8 @@
     renderQuestions: renderQuestions,
     renderExams: renderExams,
     renderPerformance: renderPerformance,
+    renderPackagePreview: renderPackagePreview,
+    readFileAsBase64: readFileAsBase64,
     formatClock: formatClock,
     matchIdentity: matchIdentity,
     renderList: renderList,

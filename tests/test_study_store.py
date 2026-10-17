@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 from radar import study_store
-from radar.document_store import connect_documents, migrate_document_schema
+from radar.document_store import connect_documents, migrate_document_schema, SCHEMA_VERSION
 from radar.server import create_server
 
 
@@ -22,7 +22,7 @@ class StudyStoreTest(unittest.TestCase):
     def test_migracao_v10_cria_tabelas_e_e_idempotente(self):
         conn = connect_documents(self.db)
         try:
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 13)
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION)
             tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         finally:
             conn.close()

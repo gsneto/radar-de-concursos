@@ -8,7 +8,8 @@ from pathlib import Path
 
 from radar import ops, ops_config
 from radar.document_store import (connect_documents, ensure_observation,
-                                  migrate_document_schema, record_version, register_document)
+                                  migrate_document_schema, record_version, register_document,
+                                  SCHEMA_VERSION)
 
 _TS = "2026-10-16T12:00:00+00:00"
 
@@ -370,7 +371,7 @@ class HealthTest(OpsBase):
         self.assertIsNotNone(h["last_cycle"])
         self.assertIn("queue", h)
         self.assertIn("alerts", h)
-        self.assertEqual(h["database"]["schema_version"], 13)
+        self.assertEqual(h["database"]["schema_version"], SCHEMA_VERSION)
 
     def _touch(self, db_path):
         obs = ensure_observation(db_path, "https://exemplo.test/a/", "X-1")

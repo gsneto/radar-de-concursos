@@ -236,6 +236,27 @@ class TestAppStatic(unittest.TestCase):
         for token in (".prep__panel", ".prep__stats", ".prep__basis"):
             self.assertIn(token, css, "styles.css deve apresentar %r" % token)
 
+    def test_renders_exam_navigation_and_packages(self):
+        js = read(APP_PATH)
+        for token in ("practice__map", "goTo(", "is-marked", "is-answered",
+                      "Marcar para revisão", "aria-pressed", "Anterior", "Próxima",
+                      "/resumo", "em branco", "global.confirm", "MODE_LABELS",
+                      "readFileAsBase64", "FileReader", "practice__image",
+                      "/api/estudos/midia/", "renderPackagePreview", "pac-preview",
+                      "pac-import", "pac-export", "/api/estudos/pacotes/previa",
+                      "/api/estudos/pacotes/importar", "exam-modo-aviso"):
+            self.assertIn(token, js, "app.js deve apresentar %r" % token)
+        html = read(os.path.join(WEB, "index.html"))
+        for token in ('id="exam-modo"', 'id="exam-modo-aviso"', 'role="status"',
+                      'id="exam-disciplina"', 'id="exam-topico"',
+                      'id="pac-form"', 'id="pac-panel"', 'id="pac-file"',
+                      'id="pac-licenca"', 'id="pac-preview"', 'id="pac-import"',
+                      'id="pac-export"'):
+            self.assertIn(token, html, "index.html deve conter %r" % token)
+        css = read(os.path.join(WEB, "styles.css"))
+        for token in (".practice__map", ".practice__image", ".practice__map-btn.is-marked"):
+            self.assertIn(token, css, "styles.css deve conter %r" % token)
+
     def test_renders_practice(self):
         js = read(APP_PATH)
         for token in ("renderFlashcards", "renderQuestions", "renderExams",

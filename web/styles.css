@@ -745,3 +745,14 @@ button:focus-visible {
 .practice__ok { color: var(--st-validated, #1f7a4d); font-size: var(--text-sm, 0.85rem); font-weight: 600; }
 .practice__fail { color: var(--st-conflict, #b00020); font-size: var(--text-sm, 0.85rem); font-weight: 600; }
 .practice__result { margin-top: var(--space-2, 8px); padding-top: var(--space-2, 8px); border-top: 1px solid var(--rule, #e6eae6); }
+
+.practice__image { display: block; max-width: 100%; height: auto; margin: var(--space-1, 4px) 0; border-radius: 8px; }
+.practice__file { font-size: var(--text-sm, 0.85rem); max-width: 100%; }
+.practice__question-head { display: flex; flex-wrap: wrap; gap: var(--space-2, 8px); align-items: center; justify-content: space-between; }
+.practice__map { display: flex; flex-wrap: wrap; gap: var(--space-1, 4px); margin: var(--space-2, 8px) 0; }
+.practice__map-btn { min-width: 2.25rem; justify-content: center; }
+.practice__map-btn.is-answered { border-color: var(--st-validated, #1f7a4d); }
+.practice__map-btn.is-marked { outline: 2px solid var(--st-review, #b58900); outline-offset: 1px; }
+@media (prefers-reduced-motion: reduce) {
+  .practice__map-btn { transition: none; }
+}

@@ -376,6 +376,14 @@ def _cmd_pratica_flashcard(args: argparse.Namespace) -> None:
         out = practice_store.study_queue(cfg["db_path"], limit=args.limit)
     elif action == "stats":
         out = practice_store.flashcard_stats(cfg["db_path"])
+    elif action == "imagem":
+        if args.remover:
+            out = practice_store.remove_flashcard_image(cfg["db_path"], args.id)
+        elif args.file:
+            out = practice_store.attach_flashcard_image(
+                cfg["db_path"], args.id, Path(args.file).read_bytes(), licenca=args.licenca)
+        else:
+            out = practice_store.flashcard_image(cfg["db_path"], args.id)
     else:
         out = practice_store.list_flashcards(cfg["db_path"])
     print(json.dumps(out, ensure_ascii=False, default=str))
@@ -405,16 +413,54 @@ def _cmd_pratica_simulado(args: argparse.Namespace) -> None:
     cfg = load_config(args.config)
     action = args.sim_action
     if action == "create":
-        out = practice_store.create_exam(cfg["db_path"], nome=args.nome, limit=args.limit,
-                                         duracao_segundos=args.duracao, seed=args.seed)
+        modo = getattr(args, "modo", None) or "tradicional"
+        if modo in ("adaptativa", "revisao_erros", "personalizada"):
+            out = practice_store.create_adaptive_session(
+                cfg["db_path"], nome=args.nome or "Sessão adaptativa", limit=args.limit,
+                modo=modo, duracao_segundos=args.duracao, seed=args.seed,
+                disciplina=args.disciplina, topico=args.topico)
+        else:
+            out = practice_store.create_exam(cfg["db_path"], nome=args.nome, limit=args.limit,
+                                             duracao_segundos=args.duracao, seed=args.seed)
     elif action == "answer":
         out = practice_store.save_exam_answer(cfg["db_path"], args.id, args.ordem, args.resposta)
+    elif action == "mark":
+        out = practice_store.set_exam_mark(cfg["db_path"], args.id, args.ordem,
+                                           not args.desmarcar)
+    elif action == "position":
+        out = practice_store.set_exam_position(cfg["db_path"], args.id, args.ordem)
+    elif action == "summary":
+        out = practice_store.exam_summary(cfg["db_path"], args.id)
+    elif action == "next":
+        out = practice_store.next_adaptive_question(cfg["db_path"], args.id)
     elif action == "finish":
         out = practice_store.finish_exam(cfg["db_path"], args.id)
     elif action == "result":
         out = practice_store.exam_result(cfg["db_path"], args.id)
     else:
         out = practice_store.list_exams(cfg["db_path"])
+    print(json.dumps(out, ensure_ascii=False, default=str))
+
+
+def _cmd_pratica_pacote(args: argparse.Namespace) -> None:
+    from radar import packages
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    action = args.pac_action
+    if action == "export":
+        blob = packages.export_package(cfg["db_path"], nome=args.nome or "Pacote",
+                                       tipo=args.tipo or "misto",
+                                       licenca=args.licenca or "propria",
+                                       procedencia=args.procedencia)
+        Path(args.out).write_bytes(blob)
+        out = {"exportado_para": args.out, "bytes": len(blob)}
+    elif action == "preview":
+        out = packages.preview_package(cfg["db_path"], Path(args.file).read_bytes())
+    elif action == "import":
+        out = packages.import_package(cfg["db_path"], Path(args.file).read_bytes(),
+                                      dry_run=args.dry_run)
+    else:
+        out = packages.list_packages(cfg["db_path"])
     print(json.dumps(out, ensure_ascii=False, default=str))
 
 
@@ -726,7 +772,7 @@ def build_parser() -> argparse.ArgumentParser:
     fc = subparsers.add_parser('estudos-flashcard', help='flashcards: criar, revisar, arquivar, fila, estatísticas')
     fc.add_argument('--config', default=None)
     fc.add_argument('fc_action', nargs='?', default='list',
-                    choices=['list', 'create', 'review', 'archive', 'fila', 'stats'])
+                    choices=['list', 'create', 'review', 'archive', 'fila', 'stats', 'imagem'])
     fc.add_argument('--frente', default=None)
     fc.add_argument('--verso', default=None)
     fc.add_argument('--disciplina', default=None)
@@ -734,6 +780,9 @@ def build_parser() -> argparse.ArgumentParser:
     fc.add_argument('--id', default=None)
     fc.add_argument('--qualidade', type=int, default=None)
     fc.add_argument('--limit', type=int, default=20)
+    fc.add_argument('--file', default=None, help='imagem PNG/JPEG/GIF/WebP para anexar')
+    fc.add_argument('--remover', action='store_true', help='remove a imagem do flashcard')
+    fc.add_argument('--licenca', default=None, help='licença declarada da imagem')
     fc.set_defaults(func=_cmd_pratica_flashcard)
 
     q = subparsers.add_parser('estudos-questao', help='questões: criar, responder, arquivar, listar')
@@ -752,7 +801,8 @@ def build_parser() -> argparse.ArgumentParser:
     sim = subparsers.add_parser('estudos-simulado', help='simulados: criar, responder, finalizar, resultado')
     sim.add_argument('--config', default=None)
     sim.add_argument('sim_action', nargs='?', default='list',
-                     choices=['list', 'create', 'answer', 'finish', 'result'])
+                     choices=['list', 'create', 'answer', 'finish', 'result', 'mark',
+                              'position', 'summary', 'next'])
     sim.add_argument('--nome', default=None)
     sim.add_argument('--limit', type=int, default=10)
     sim.add_argument('--duracao', type=int, default=None, help='duração máxima em segundos')
@@ -760,7 +810,26 @@ def build_parser() -> argparse.ArgumentParser:
     sim.add_argument('--id', default=None)
     sim.add_argument('--ordem', type=int, default=None)
     sim.add_argument('--resposta', default=None)
+    sim.add_argument('--modo', default=None,
+                     choices=['tradicional', 'adaptativa', 'revisao_erros', 'personalizada'])
+    sim.add_argument('--disciplina', default=None)
+    sim.add_argument('--topico', default=None)
+    sim.add_argument('--desmarcar', action='store_true', help='remove a marcação de revisão')
     sim.set_defaults(func=_cmd_pratica_simulado)
+
+    pac = subparsers.add_parser('estudos-pacote',
+                                help='pacotes de questões/flashcards: exportar, prévia, importar, listar')
+    pac.add_argument('--config', default=None)
+    pac.add_argument('pac_action', nargs='?', default='list',
+                     choices=['list', 'export', 'preview', 'import'])
+    pac.add_argument('--file', default=None, help='arquivo .zip do pacote')
+    pac.add_argument('--out', default='radar-pacote.zip', help='destino do export')
+    pac.add_argument('--nome', default=None)
+    pac.add_argument('--tipo', default=None, choices=['questoes', 'flashcards', 'misto'])
+    pac.add_argument('--licenca', default=None)
+    pac.add_argument('--procedencia', default=None)
+    pac.add_argument('--dry-run', action='store_true', help='simula a importação sem gravar')
+    pac.set_defaults(func=_cmd_pratica_pacote)
 
     perf = subparsers.add_parser('estudos-desempenho', help='desempenho agregado (tentativas e simulados)')
     perf.add_argument('--config', default=None)

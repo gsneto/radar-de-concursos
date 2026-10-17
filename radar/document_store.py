@@ -406,6 +406,42 @@ _V13_COLUMNS = {
     "pratica_questoes": {"tipo"},
 }
 
+# v14: navegação do simulado (marcação de revisão + posição + modo), mídia de flashcards e
+# proveniência de pacotes importados. Tudo aditivo; nenhum dado histórico é reescrito.
+_V14_ADD_COLUMNS = (
+    "ALTER TABLE pratica_simulado_questoes ADD COLUMN marcada_revisao INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE pratica_simulados ADD COLUMN questao_atual INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE pratica_simulados ADD COLUMN modo TEXT NOT NULL DEFAULT 'tradicional'",
+    "ALTER TABLE pratica_simulados ADD COLUMN algoritmo_versao TEXT",
+    "ALTER TABLE pratica_simulado_questoes ADD COLUMN motivo_selecao TEXT",
+    "ALTER TABLE pratica_flashcards ADD COLUMN imagem_id TEXT",
+)
+_V14_TABLES = (
+    """CREATE TABLE pratica_midias (
+        id TEXT PRIMARY KEY,
+        sha256 TEXT NOT NULL UNIQUE,
+        mime TEXT NOT NULL, extensao TEXT NOT NULL, bytes INTEGER NOT NULL,
+        largura INTEGER, altura INTEGER, origem TEXT NOT NULL DEFAULT 'usuario',
+        licenca TEXT, created_at TEXT NOT NULL)""",
+    """CREATE TABLE pratica_pacotes (
+        id TEXT PRIMARY KEY, nome TEXT NOT NULL, formato TEXT NOT NULL,
+        versao_formato INTEGER NOT NULL, procedencia TEXT, licenca TEXT,
+        counts_json TEXT NOT NULL, importado_em TEXT NOT NULL)""",
+)
+_V14_INDEXES = (
+    "CREATE INDEX IF NOT EXISTS idx_pratica_fc_imagem ON pratica_flashcards(imagem_id)",
+)
+_V14_DDL = _V14_ADD_COLUMNS + _V14_TABLES
+_V14_COLUMNS = {
+    "pratica_simulado_questoes": {"marcada_revisao", "motivo_selecao"},
+    "pratica_simulados": {"questao_atual", "modo", "algoritmo_versao"},
+    "pratica_flashcards": {"imagem_id"},
+    "pratica_midias": {"id", "sha256", "mime", "extensao", "bytes", "largura", "altura",
+                       "origem", "licenca", "created_at"},
+    "pratica_pacotes": {"id", "nome", "formato", "versao_formato", "procedencia", "licenca",
+                        "counts_json", "importado_em"},
+}
+
 _V2_COLUMNS = {
     "concursos_identidade": {"id", "created_at"},
     "observacoes_concurso": {"id", "contest_id", "source_url", "competition_id", "observed_at"},
@@ -425,10 +461,10 @@ _V2_COLUMNS = {
 }
 
 # Versão corrente do esquema documental (v2 base + reconciliação/hash + monitoramento + fila).
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
-# Versões que as rotas de leitura aceitam sem migrar (v2..v10).
-_READABLE_VERSIONS = (2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, SCHEMA_VERSION)
+# Versões que as rotas de leitura aceitam sem migrar (v2..v13 + atual).
+_READABLE_VERSIONS = (2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, SCHEMA_VERSION)
 
 
 def _validate_schema(conn, statements, columns_by_table, version_label):
@@ -515,6 +551,31 @@ def _apply_v8(conn) -> None:
         name = re.match(r"CREATE INDEX (\w+)", statement).group(1)
         if name not in present:
             conn.execute(statement)
+
+
+def _apply_v14(conn) -> None:
+    """Navegação do simulado, mídia de flashcards e pacotes (v14), tolerando banco parcial."""
+    plan = (
+        ("pratica_simulado_questoes", _V14_ADD_COLUMNS[0]),
+        ("pratica_simulados", _V14_ADD_COLUMNS[1]),
+        ("pratica_simulados", _V14_ADD_COLUMNS[2]),
+        ("pratica_simulados", _V14_ADD_COLUMNS[3]),
+        ("pratica_simulado_questoes", _V14_ADD_COLUMNS[4]),
+        ("pratica_flashcards", _V14_ADD_COLUMNS[5]),
+    )
+    for table, statement in plan:
+        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        column = statement.rsplit("ADD COLUMN ", 1)[1].split()[0]
+        if column not in columns:
+            conn.execute(statement)
+    present = {row[0] for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type IN ('table','index')")}
+    for statement in _V14_TABLES:
+        name = re.match(r"CREATE TABLE (\w+)", statement).group(1)
+        if name not in present:
+            conn.execute(statement)
+    for statement in _V14_INDEXES:
+        conn.execute(statement)
 
 
 def _apply_v13(conn) -> None:
@@ -627,7 +688,7 @@ def migrate_document_schema(db_path) -> None:
     try:
         conn.execute("BEGIN IMMEDIATE")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, SCHEMA_VERSION):
+        if version not in (0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, SCHEMA_VERSION):
             raise ValueError(f"versão de esquema não suportada: {version}")
         _v3_extra = dict(
             versoes_documento=_V2_COLUMNS["versoes_documento"] | {"comparison_sha256"},
@@ -643,15 +704,17 @@ def migrate_document_schema(db_path) -> None:
         _v11_extra = dict(_v10_extra, **_V11_COLUMNS)
         _v12_extra = dict(_v11_extra, **_V12_COLUMNS)
         _v13_extra = dict(_v12_extra, **_V13_COLUMNS)
+        _v14_extra = dict(_v13_extra, **_V14_COLUMNS)
         if version == SCHEMA_VERSION:
-            _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL + _V12_DDL,
-                             dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v13_extra),
+            _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL + _V12_DDL + _V14_DDL,
+                             dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v14_extra),
                              f"v{SCHEMA_VERSION}")
             _seed_alert_watermarks(conn)
             _apply_v10(conn)  # garante índices v10 (ex.: sessão aberta única) em base já migrada
             _apply_v11(conn)
             _apply_v12(conn)
             _apply_v13(conn)
+            _apply_v14(conn)
         else:
             if version == 2:
                 _validate_schema(conn, _DDL, _V2_COLUMNS, "v2")
@@ -684,6 +747,9 @@ def migrate_document_schema(db_path) -> None:
             elif version == 12:
                 _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL + _V12_DDL,
                                  dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v12_extra), "v12")
+            elif version == 13:
+                _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL + _V12_DDL,
+                                 dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v13_extra), "v13")
             else:
                 for statement in _DDL:
                     conn.execute(statement)
@@ -698,6 +764,7 @@ def migrate_document_schema(db_path) -> None:
             _apply_v11(conn)
             _apply_v12(conn)
             _apply_v13(conn)
+            _apply_v14(conn)
             _seed_alert_watermarks(conn)
             conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         _ensure_alert_indexes(conn)

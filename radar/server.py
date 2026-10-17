@@ -14,6 +14,8 @@ Somente loopback por padrão; nunca faz bind em interfaces públicas sem pedido.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import sqlite3
 from uuid import UUID
@@ -61,10 +63,12 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
 
     # --- Helpers de resposta -------------------------------------------------
 
-    def _send(self, status, content_type, body_bytes):
+    def _send(self, status, content_type, body_bytes, headers=None):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body_bytes)))
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(body_bytes)
 
@@ -225,6 +229,15 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         body = json.dumps({"error": message}, ensure_ascii=False).encode("utf-8")
         self._send(HTTPStatus.BAD_REQUEST, "application/json; charset=utf-8", body)
 
+    def _drain(self, length, *, limit=64 * 1024 * 1024):
+        """Consome o corpo rejeitado (até um teto) para o cliente receber a resposta HTTP."""
+        remaining = min(int(length or 0), limit)
+        while remaining > 0:
+            chunk = self.rfile.read(min(65536, remaining))
+            if not chunk:
+                break
+            remaining -= len(chunk)
+
     def _read_json(self, max_len=8192):
         """Lê e valida o corpo JSON da requisição; devolve ``dict`` ou ``None`` (já responde 400)."""
         try:
@@ -232,6 +245,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         except (TypeError, ValueError):
             length = 0
         if length <= 0 or length > max_len:
+            if length > max_len:
+                self._drain(length)
             self._bad_request("corpo ausente ou grande demais")
             return None
         try:
@@ -248,8 +263,9 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         from radar import study_store
         try:
             payload = fn(self.server.db_path, *args, **kwargs)
-        except ValueError as error:
-            body = json.dumps({"error": str(error)}, ensure_ascii=False).encode("utf-8")
+        except (ValueError, TypeError, KeyError, AttributeError) as error:
+            body = json.dumps({"error": str(error) or "requisição inválida"},
+                              ensure_ascii=False).encode("utf-8")
             self._send(HTTPStatus.BAD_REQUEST, "application/json; charset=utf-8", body)
             return
         except sqlite3.Error:
@@ -258,6 +274,40 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             return
         body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
         self._send(HTTPStatus.OK, "application/json; charset=utf-8", body)
+
+    def _serve_media(self, media_id):
+        """Serve a imagem do flashcard com `Content-Type` fixo (nunca inferido do cliente)."""
+        from radar import media, practice_store
+        meta = practice_store.get_media(self.server.db_path, media_id)
+        if meta is None:
+            self._send_no_content(HTTPStatus.NOT_FOUND)
+            return
+        payload = media.read_media(self.server.db_path, meta["sha256"], meta["extensao"])
+        if payload is None:
+            self._send(HTTPStatus.NOT_FOUND, "application/json; charset=utf-8",
+                       b'{"error":"arquivo de midia ausente"}')
+            return
+        self._send(HTTPStatus.OK, meta["mime"], payload,
+                   {"X-Content-Type-Options": "nosniff",
+                    "Cache-Control": "private, max-age=3600"})
+
+    def _decode_base64(self, value, *, max_bytes):
+        """Decodifica base64 do corpo JSON com limite; responde 400 e devolve ``None`` se inválido."""
+        if not isinstance(value, str) or not value:
+            self._bad_request("conteúdo base64 obrigatório")
+            return None
+        if len(value) > (max_bytes * 4 // 3) + 16:
+            self._bad_request("conteúdo acima do limite")
+            return None
+        try:
+            payload = base64.b64decode(value, validate=True)
+        except (binascii.Error, ValueError):
+            self._bad_request("base64 inválido")
+            return None
+        if len(payload) > max_bytes:
+            self._bad_request("conteúdo acima do limite")
+            return None
+        return payload
 
     def _serve_exam(self, loader):
         """Resposta de simulado com códigos corretos: 404 ausente, 409 em andamento, 200 ok."""
@@ -354,7 +404,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
     # --- Roteamento ----------------------------------------------------------
 
     def do_GET(self):
-        from radar import study_store, knowledge_store, study_backup, practice_store
+        from radar import study_store, knowledge_store, study_backup, practice_store, packages
         parts = urlsplit(self.path)
         path = parts.path
         if path == "/api/concursos":
@@ -562,10 +612,48 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 if exam_id and "/" not in exam_id:
                     self._serve_exam(lambda: practice_store.exam_questions(self.server.db_path, exam_id))
                     return
+            elif rest.endswith("/resumo"):
+                exam_id = rest[:-len("/resumo")]
+                if exam_id and "/" not in exam_id:
+                    self._serve_exam(lambda: practice_store.exam_summary(self.server.db_path, exam_id))
+                    return
             elif rest and "/" not in rest:
                 self._serve_exam(lambda: practice_store.get_exam(self.server.db_path, rest))
                 return
             self._send_no_content(HTTPStatus.NOT_FOUND)
+        elif path == "/api/estudos/midia" or path.startswith("/api/estudos/midia/"):
+            media_id = path[len("/api/estudos/midia/"):] if path.startswith("/api/estudos/midia/") else ""
+            if parts.query or not media_id or "/" in media_id:
+                self._bad_request("midia inválida")
+                return
+            self._serve_media(media_id)
+        elif path == "/api/estudos/pacotes":
+            query = parse_qs(parts.query)
+            try:
+                limit = int(query.get("limit", ["50"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            if limit < 1 or set(query) - {"limit"}:
+                self._bad_request("parâmetros inválidos")
+            else:
+                self._serve_study(packages.list_packages, limit=limit)
+        elif path == "/api/estudos/pacotes/exportar":
+            query = parse_qs(parts.query)
+            licenca = query.get("licenca", ["propria"])[0]
+            tipo = query.get("tipo", ["misto"])[0]
+            nome = query.get("nome", ["Pacote"])[0]
+            if set(query) - {"licenca", "tipo", "nome"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                blob = packages.export_package(self.server.db_path, nome=nome, tipo=tipo,
+                                               licenca=licenca)
+            except ValueError as error:
+                self._bad_request(str(error))
+                return
+            self._send(HTTPStatus.OK, "application/zip",
+                       blob, {"Content-Disposition": 'attachment; filename="radar-pacote.zip"'})
         elif path == "/api/estudos/simulados":
             query = parse_qs(parts.query)
             try:
@@ -588,7 +676,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         self._send_no_content(HTTPStatus.METHOD_NOT_ALLOWED, {"Allow": allow})
 
     def do_POST(self):
-        from radar import study_store, knowledge_store, study_backup, practice_store
+        from radar import study_store, knowledge_store, study_backup, practice_store, packages, media
         parts = urlsplit(self.path)
         path = parts.path
         if path.startswith("/api/alertas/") and not parts.query:
@@ -792,6 +880,14 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             body = self._read_json(max_len=32768)
             if body is None:
                 return
+            modo = body.get("modo") or "tradicional"
+            if modo in ("adaptativa", "revisao_erros", "personalizada"):
+                self._serve_study(practice_store.create_adaptive_session,
+                                  nome=body.get("nome"), limit=body.get("limit") if body.get("limit") is not None else 10,
+                                  modo=modo, duracao_segundos=body.get("duracao_segundos"),
+                                  seed=body.get("seed"), disciplina=body.get("disciplina"),
+                                  topico=body.get("topico"))
+                return
             self._serve_study(practice_store.create_exam,
                               nome=body.get("nome"),
                               limit=body.get("limit") if body.get("limit") is not None else 10,
@@ -805,25 +901,104 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         if path.startswith("/api/estudos/simulados/") and not parts.query:
             rest = path[len("/api/estudos/simulados/"):]
             parts_rest = rest.split("/")
-            if len(parts_rest) == 2 and parts_rest[0] and parts_rest[1] in ("responder", "finalizar"):
+            if len(parts_rest) == 2 and parts_rest[0] and parts_rest[1] in (
+                    "responder", "finalizar", "marcar", "posicao", "proxima"):
                 exam_id, verb = parts_rest
-                body = self._read_json()
+                body = self._read_json(max_len=32768)
                 if body is None:
                     return
                 if verb == "responder":
                     self._serve_study(practice_store.save_exam_answer, exam_id,
                                       body.get("ordem"), body.get("resposta"))
+                elif verb == "marcar":
+                    self._serve_study(practice_store.set_exam_mark, exam_id,
+                                      body.get("ordem"), bool(body.get("marcada")))
+                elif verb == "posicao":
+                    self._serve_study(practice_store.set_exam_position, exam_id,
+                                      body.get("ordem"))
+                elif verb == "proxima":
+                    self._serve_study(practice_store.next_adaptive_question, exam_id)
                 else:
                     self._serve_study(practice_store.finish_exam, exam_id)
                 return
+        if path.startswith("/api/estudos/flashcards/") and not parts.query:
+            rest = path[len("/api/estudos/flashcards/"):]
+            pieces = rest.split("/")
+            if len(pieces) == 2 and pieces[0] and pieces[1] == "imagem":
+                flashcard_id = pieces[0]
+                body = self._read_json(max_len=12_000_000)
+                if body is None:
+                    return
+                payload = self._decode_base64(body.get("dados_base64"),
+                                              max_bytes=media.DEFAULT_MAX_BYTES)
+                if payload is None:
+                    return
+                self._serve_study(practice_store.attach_flashcard_image, flashcard_id, payload,
+                                  licenca=body.get("licenca"))
+                return
+        if path == "/api/estudos/pacotes/previa":
+            if parts.query:
+                self._bad_request("parâmetros inválidos")
+                return
+            body = self._read_json(max_len=60_000_000)
+            if body is None:
+                return
+            payload = self._decode_base64(body.get("dados_base64"),
+                                          max_bytes=packages.MAX_TOTAL_BYTES)
+            if payload is None:
+                return
+            try:
+                preview = packages.preview_package(self.server.db_path, payload)
+            except packages.PackageError as error:
+                self._bad_request(str(error))
+                return
+            except (KeyError, TypeError, ValueError, AttributeError):
+                self._bad_request("pacote com estrutura inválida")
+                return
+            self._send(HTTPStatus.OK, "application/json; charset=utf-8",
+                       json.dumps(preview, ensure_ascii=False, default=str).encode("utf-8"))
+            return
+        if path == "/api/estudos/pacotes/importar":
+            if parts.query:
+                self._bad_request("parâmetros inválidos")
+                return
+            body = self._read_json(max_len=60_000_000)
+            if body is None:
+                return
+            payload = self._decode_base64(body.get("dados_base64"),
+                                          max_bytes=packages.MAX_TOTAL_BYTES)
+            if payload is None:
+                return
+            try:
+                report = packages.import_package(self.server.db_path, payload,
+                                                 dry_run=bool(body.get("dry_run")))
+            except packages.PackageError as error:
+                self._bad_request(str(error))
+                return
+            except (KeyError, TypeError, ValueError, AttributeError):
+                self._bad_request("pacote com estrutura inválida")
+                return
+            except sqlite3.Error:
+                self._send(HTTPStatus.SERVICE_UNAVAILABLE, "application/json; charset=utf-8",
+                           b'{"error":"Migracao documental pendente"}')
+                return
+            self._send(HTTPStatus.OK, "application/json; charset=utf-8",
+                       json.dumps(report, ensure_ascii=False, default=str).encode("utf-8"))
+            return
         self._method_not_allowed()
 
     def do_PUT(self):
         self._verb_not_allowed()
 
     def do_DELETE(self):
-        from radar import knowledge_store
+        from radar import knowledge_store, practice_store
         parts = urlsplit(self.path)
+        if parts.path.startswith("/api/estudos/flashcards/") and not parts.query:
+            rest = parts.path[len("/api/estudos/flashcards/"):]
+            pieces = rest.split("/")
+            if len(pieces) == 2 and pieces[0] and pieces[1] == "imagem":
+                self._serve_study(practice_store.remove_flashcard_image, pieces[0])
+                return
         if parts.path == "/api/estudos/perfil":
             query = parse_qs(parts.query)
             key = query.get("conceito_key", [None])[0]
