@@ -330,7 +330,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
     # --- Roteamento ----------------------------------------------------------
 
     def do_GET(self):
-        from radar import study_store
+        from radar import study_store, knowledge_store, study_backup
         parts = urlsplit(self.path)
         path = parts.path
         if path == "/api/concursos":
@@ -449,6 +449,30 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
             else:
                 self._serve_study(study_store.pending_revisions)
+        elif path == "/api/estudos/perfil":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_study(knowledge_store.list_profile)
+        elif path == "/api/estudos/conteudo":
+            query = parse_qs(parts.query)
+            contest_id = query.get("contest_id", [None])[0]
+            if set(query) - {"contest_id"} or not contest_id:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_study(knowledge_store.resolve_program, contest_id)
+        elif path == "/api/estudos/preparacao":
+            query = parse_qs(parts.query)
+            contest_id = query.get("contest_id", [None])[0]
+            if set(query) - {"contest_id"} or not contest_id:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_study(knowledge_store.preparation_report, contest_id)
+        elif path == "/api/estudos/exportar":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_study(study_backup.export_study_data)
         elif path in ("/", "/index.html"):
             self._serve_file("index.html")
         elif path in _ASSET_ROUTES:
@@ -460,7 +484,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         self._send_no_content(HTTPStatus.METHOD_NOT_ALLOWED, {"Allow": allow})
 
     def do_POST(self):
-        from radar import study_store
+        from radar import study_store, knowledge_store, study_backup
         parts = urlsplit(self.path)
         path = parts.path
         if path.startswith("/api/alertas/") and not parts.query:
@@ -534,12 +558,78 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._serve_study(study_store.mark_revision_done, body.get("progresso_id"),
                                   resultado=body.get("resultado"))
             return
+        if path == "/api/estudos/perfil":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+                return
+            body = self._read_json()
+            if body is not None:
+                self._serve_study(knowledge_store.set_profile,
+                                  disciplina=body.get("disciplina"), rotulo=body.get("rotulo"),
+                                  nivel=body.get("nivel") or "nao_avaliado",
+                                  revisar=bool(body.get("revisar")),
+                                  confianca=body.get("confianca"),
+                                  observacoes=body.get("observacoes"),
+                                  origem=body.get("origem") or "usuario")
+            return
+        if path == "/api/estudos/lacuna":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+                return
+            body = self._read_json()
+            if body is not None:
+                self._serve_study(knowledge_store.send_gap_to_study, body.get("contest_id"),
+                                  body.get("conceito_key"))
+            return
+        if path == "/api/estudos/importar":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+                return
+            body = self._read_json(max_len=2_000_000)
+            if body is None:
+                return
+            payload = body.get("payload") if isinstance(body.get("payload"), dict) else body
+            try:
+                report = study_backup.import_study_data(self.server.db_path, payload,
+                                                        dry_run=bool(body.get("dry_run")))
+            except sqlite3.Error:
+                self._send(HTTPStatus.SERVICE_UNAVAILABLE, "application/json; charset=utf-8",
+                           b'{"error":"Migracao documental pendente"}')
+                return
+            except Exception as error:  # payload inesperado não deve derrubar a conexão
+                body_err = json.dumps({"ok": False, "errors": [f"importação falhou: {type(error).__name__}"]},
+                                      ensure_ascii=False).encode("utf-8")
+                self._send(HTTPStatus.BAD_REQUEST, "application/json; charset=utf-8", body_err)
+                return
+            status = HTTPStatus.OK if report.get("ok") else HTTPStatus.BAD_REQUEST
+            out = json.dumps(report, ensure_ascii=False, default=str).encode("utf-8")
+            self._send(status, "application/json; charset=utf-8", out)
+            return
         self._method_not_allowed()
 
     def do_PUT(self):
         self._verb_not_allowed()
 
     def do_DELETE(self):
+        from radar import knowledge_store
+        parts = urlsplit(self.path)
+        if parts.path == "/api/estudos/perfil":
+            query = parse_qs(parts.query)
+            key = query.get("conceito_key", [None])[0]
+            if set(query) - {"conceito_key"} or not key:
+                self._bad_request("conceito_key obrigatório")
+                return
+            try:
+                removed = knowledge_store.delete_profile(self.server.db_path, key)
+            except sqlite3.Error:
+                self._send(HTTPStatus.SERVICE_UNAVAILABLE, "application/json; charset=utf-8",
+                           b'{"error":"Migracao documental pendente"}')
+                return
+            if not removed:
+                self._send_no_content(HTTPStatus.NOT_FOUND)
+                return
+            self._send(HTTPStatus.OK, "application/json; charset=utf-8", b'{"removed":true}')
+            return
         self._verb_not_allowed()
 
     def do_PATCH(self):
@@ -548,8 +638,11 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
     def _verb_not_allowed(self):
         path = urlsplit(self.path).path
         post_paths = ("/api/preferencias", "/api/estudos/disciplinas", "/api/estudos/topicos",
-                      "/api/estudos/progresso", "/api/estudos/sessoes")
+                      "/api/estudos/progresso", "/api/estudos/sessoes", "/api/estudos/revisoes",
+                      "/api/estudos/perfil", "/api/estudos/lacuna", "/api/estudos/importar")
         allow = "GET, POST" if path in post_paths else "GET"
+        if path == "/api/estudos/perfil":
+            allow = "GET, POST, DELETE"
         self._method_not_allowed(allow)
 
     def do_HEAD(self):

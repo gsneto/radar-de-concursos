@@ -238,4 +238,8 @@ def extract_field_proposals(blocks: list[dict], version_id: str, contest_id: str
             proposals.extend(edital_requirements.extract_declared_education(
                 blocks, contest_id, label_prefix=LABEL_PREFIX))
         proposals.extend(edital_requirements.extract_exemption_dates(blocks, contest_id))
+        # Conteúdo programático (Fase 22): seções de programa, com evidência por item.
+        from radar import program_content
+        proposals.extend(program_content.extract_program_content(
+            blocks, contest_id, label_prefix=LABEL_PREFIX))
     return proposals

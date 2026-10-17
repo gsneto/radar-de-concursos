@@ -281,6 +281,26 @@ _V10_COLUMNS = {
     "estudo_revisoes": {"id", "progresso_id", "agendada_para", "feita_em", "resultado", "created_at"},
 }
 
+# v11: perfil pessoal de conhecimentos (Fase 22). É **dado pessoal**, separado do conteúdo
+# oficial do edital (que vive em `propostas_campo`/`evidencias`). Um conceito é identificado
+# por uma chave normalizada (`conceito_key`). As dimensões são **separadas**:
+#   - `nivel`  = familiaridade declarada (subjetiva).
+#   - `revisar`= necessidade de revisão (decisão de planejamento), NÃO um nível de domínio.
+#   - `origem` = de onde veio o valor (ex.: "usuario", "resultado"), para nunca confundir
+#                declaração do usuário com desempenho observado.
+_V11_PROFILE_TABLE = """CREATE TABLE estudo_perfil (
+    id TEXT PRIMARY KEY,
+    conceito_key TEXT NOT NULL UNIQUE,
+    disciplina TEXT, rotulo TEXT NOT NULL,
+    nivel TEXT NOT NULL CHECK(nivel IN ('nao_avaliado','nao_conheco','basico','intermediario','avancado')),
+    revisar INTEGER NOT NULL DEFAULT 0,
+    confianca TEXT CHECK(confianca IN ('baixa','media','alta')),
+    observacoes TEXT, origem TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"""
+_V11_DDL = (_V11_PROFILE_TABLE,)
+_V11_COLUMNS = {"estudo_perfil": {"id", "conceito_key", "disciplina", "rotulo", "nivel",
+                                  "revisar", "confianca", "observacoes", "origem",
+                                  "created_at", "updated_at"}}
+
 _V2_COLUMNS = {
     "concursos_identidade": {"id", "created_at"},
     "observacoes_concurso": {"id", "contest_id", "source_url", "competition_id", "observed_at"},
@@ -300,10 +320,10 @@ _V2_COLUMNS = {
 }
 
 # Versão corrente do esquema documental (v2 base + reconciliação/hash + monitoramento + fila).
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 # Versões que as rotas de leitura aceitam sem migrar (v2..v10).
-_READABLE_VERSIONS = (2, 3, 4, 5, 6, 7, 8, 9, SCHEMA_VERSION)
+_READABLE_VERSIONS = (2, 3, 4, 5, 6, 7, 8, 9, 10, SCHEMA_VERSION)
 
 
 def _validate_schema(conn, statements, columns_by_table, version_label):
@@ -392,6 +412,14 @@ def _apply_v8(conn) -> None:
             conn.execute(statement)
 
 
+def _apply_v11(conn) -> None:
+    """Cria a tabela do perfil pessoal (v11), tolerando banco parcialmente atualizado."""
+    present = {row[0] for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type IN ('table','index')")}
+    if "estudo_perfil" not in present:
+        conn.execute(_V11_PROFILE_TABLE)
+
+
 def _apply_v10(conn) -> None:
     """Cria as tabelas de estudo (v10), tolerando banco parcialmente atualizado."""
     present = {row[0] for row in conn.execute(
@@ -467,7 +495,7 @@ def migrate_document_schema(db_path) -> None:
     try:
         conn.execute("BEGIN IMMEDIATE")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 2, 3, 4, 5, 6, 7, 8, 9, SCHEMA_VERSION):
+        if version not in (0, 2, 3, 4, 5, 6, 7, 8, 9, 10, SCHEMA_VERSION):
             raise ValueError(f"versão de esquema não suportada: {version}")
         _v3_extra = dict(
             versoes_documento=_V2_COLUMNS["versoes_documento"] | {"comparison_sha256"},
@@ -480,12 +508,14 @@ def migrate_document_schema(db_path) -> None:
         _v9_extra["alertas"] = _V8_COLUMNS["alertas"] | _V9_COLUMNS["alertas"]
         _v9_extra["ops_state"] = _V9_COLUMNS["ops_state"]
         _v10_extra = dict(_v9_extra, **_V10_COLUMNS)
+        _v11_extra = dict(_v10_extra, **_V11_COLUMNS)
         if version == SCHEMA_VERSION:
-            _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL,
-                             dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v10_extra),
+            _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL,
+                             dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v11_extra),
                              f"v{SCHEMA_VERSION}")
             _seed_alert_watermarks(conn)
             _apply_v10(conn)  # garante índices v10 (ex.: sessão aberta única) em base já migrada
+            _apply_v11(conn)
         else:
             if version == 2:
                 _validate_schema(conn, _DDL, _V2_COLUMNS, "v2")
@@ -509,6 +539,9 @@ def migrate_document_schema(db_path) -> None:
             elif version == 9:
                 _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL,
                                  dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v9_extra), "v9")
+            elif version == 10:
+                _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL,
+                                 dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v10_extra), "v10")
             else:
                 for statement in _DDL:
                     conn.execute(statement)
@@ -520,6 +553,7 @@ def migrate_document_schema(db_path) -> None:
             _apply_v8(conn)
             _apply_v9(conn)
             _apply_v10(conn)
+            _apply_v11(conn)
             _seed_alert_watermarks(conn)
             conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         _ensure_alert_indexes(conn)
@@ -739,9 +773,13 @@ _FIELDS = {"education", "accepted_courses", "si_compatibility", "immediate_vacan
             "reserve_vacancies", "indigenous_vacancies", "indigenous_reserve_vacancies",
             "registration_start", "registration_end", "exam_date", "exam_location", "work_location",
             "exemption_start", "exemption_end", "exemption_result_preliminary",
-            "exemption_appeal", "exemption_result_final"}
+            "exemption_appeal", "exemption_result_final",
+            # Conteúdo programático (Fase 22): níveis hierárquicos da seção de programa.
+            "conteudo_secao", "conteudo_disciplina", "conteudo_topico", "conteudo_subtopico"}
 _COUNTS = {"immediate_vacancies", "reserve_vacancies", "indigenous_vacancies",
            "indigenous_reserve_vacancies"}
+# Campos de conteúdo programático (multi-item; não entram na detecção de conflito escalar).
+_CONTENT_FIELDS = {"conteudo_secao", "conteudo_disciplina", "conteudo_topico", "conteudo_subtopico"}
 _DATES = {"registration_start", "registration_end", "exam_date", "exemption_start",
           "exemption_end", "exemption_result_preliminary", "exemption_appeal",
           "exemption_result_final"}
@@ -1202,6 +1240,10 @@ def get_competition_details(db_path, contest_id: str) -> dict | None:
 
         grouped = {}
         for item in proposals:
+            # O conteúdo programático é multi-item por natureza (vários tópicos por seção);
+            # não é "conflito" de campo e é lido por `knowledge_store.resolve_program`.
+            if item["field_name"] in _CONTENT_FIELDS:
+                continue
             grouped.setdefault(_scope(item) + (item["field_name"],), []).append(item)
         conflicts = []
         for (scope_type, scope_ref, scope_label, field_name), items in grouped.items():

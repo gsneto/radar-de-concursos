@@ -222,6 +222,20 @@ class TestAppStatic(unittest.TestCase):
         for token in (".study__panel", ".study__stat", ".study-disc", ".timer__display"):
             self.assertIn(token, css, "styles.css deve apresentar %r" % token)
 
+    def test_renders_prep_and_profile(self):
+        js = read(APP_PATH)
+        for token in ("renderPrep", "fetchPrep", "/api/estudos/conteudo", "/api/estudos/preparacao",
+                      "/api/estudos/perfil", "/api/estudos/lacuna", "renderPerfil", "fetchPerfil",
+                      "savePerfil", "prep-panel", "perfil-panel", "Enviar para estudos"):
+            self.assertIn(token, js, "app.js deve apresentar %r" % token)
+        html = read(os.path.join(WEB, "index.html"))
+        for token in ('id="prep-panel"', 'id="perfil-panel"', 'id="prep-concurso"',
+                      'id="perfil-form"', 'id="perfil-nivel"'):
+            self.assertIn(token, html)
+        css = read(STYLES_PATH)
+        for token in (".prep__panel", ".prep__stats", ".prep__basis"):
+            self.assertIn(token, css, "styles.css deve apresentar %r" % token)
+
 
 class TestStylesStatic(unittest.TestCase):
     """Responsividade e acessibilidade do styles.css."""
@@ -690,6 +704,30 @@ assert.ok(studyText.includes('50%'), 'progresso derivado dos dados');
 assert.ok(studyText.includes('01:01:01'), 'tempo total formatado');
 assert.ok(studyText.includes('Revisões pendentes'), 'revisões pendentes exibidas');
 assert.ok(!studyText.includes('innerHTML'), 'render sem innerHTML');
+
+// Preparação: cobertura, conteúdo, estados e lacunas.
+const prep = Radar.renderPrep(doc, {
+  coverage_state: 'extraido_nao_revisado',
+  topicos: [
+    {value: 'Redes de computadores', disciplina: 'INFORMÁTICA', estado: 'extraido_nao_revisado',
+     page_number: 3, conceito_key: 'informatica::redes'},
+    {value: 'Banco de dados', disciplina: 'INFORMÁTICA', estado: 'confirmado',
+     page_number: 3, conceito_key: 'informatica::banco'}]
+}, {coverage: {pct: 50, denominator: 2, basis: 'cobertura sobre 2 tópico(s) identificado(s)',
+    counts: {identificados: 2, confirmados: 1, conhecidos: 1, nao_conhecidos: 0, revisar: 0}},
+   gaps: [{rotulo: 'Banco de dados', disciplina: 'INFORMÁTICA', nivel: 'nao_avaliado'}],
+   coverage_state: 'extraido_nao_revisado'});
+const prepText = flattenText(prep);
+assert.ok(prepText.includes('50%'), 'cobertura exibida');
+assert.ok(prepText.includes('não revisado'), 'estado do conteúdo exibido');
+assert.ok(prepText.includes('pág. 3'), 'página da evidência exibida');
+assert.ok(prepText.includes('Enviar para estudos'), 'ação de enviar lacuna');
+assert.ok(prepText.includes('cobertura sobre 2'), 'denominador explicado');
+
+const perfil = Radar.renderPerfil(doc, [
+  {conceito_key: 'informatica::redes', disciplina: 'INFORMÁTICA', rotulo: 'Redes', nivel: 'basico', revisar: 0}]);
+const perfilText = flattenText(perfil);
+assert.ok(perfilText.includes('Redes') && perfilText.includes('Básico'), 'perfil exibido com nível');
 
 console.log('OK');
 """

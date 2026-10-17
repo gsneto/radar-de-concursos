@@ -301,6 +301,64 @@ def _cmd_estudos_revisao(args: argparse.Namespace) -> None:
         print(json.dumps(study_store.pending_revisions(cfg["db_path"]), ensure_ascii=False))
 
 
+def _cmd_estudos_conteudo(args: argparse.Namespace) -> None:
+    from radar import knowledge_store
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    print(json.dumps(knowledge_store.resolve_program(cfg["db_path"], args.concurso),
+                     ensure_ascii=False, default=str))
+
+
+def _cmd_estudos_perfil(args: argparse.Namespace) -> None:
+    from radar import knowledge_store
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    if args.rotulo:
+        print(json.dumps(knowledge_store.set_profile(
+            cfg["db_path"], disciplina=args.disciplina, rotulo=args.rotulo, nivel=args.nivel,
+            revisar=args.revisar, confianca=args.confianca, observacoes=args.observacoes),
+            ensure_ascii=False, default=str))
+    else:
+        print(json.dumps(knowledge_store.list_profile(cfg["db_path"]), ensure_ascii=False, default=str))
+
+
+def _cmd_estudos_cobertura(args: argparse.Namespace) -> None:
+    from radar import knowledge_store
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    print(json.dumps(knowledge_store.preparation_report(cfg["db_path"], args.concurso),
+                     ensure_ascii=False, default=str))
+
+
+def _cmd_estudos_exportar(args: argparse.Namespace) -> None:
+    from radar import study_backup
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    payload = study_backup.export_study_data(cfg["db_path"])
+    if args.out:
+        Path(args.out).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(json.dumps({"exported_to": args.out, "counts": payload["counts"]}, ensure_ascii=False))
+    else:
+        print(json.dumps(payload, ensure_ascii=False, default=str))
+
+
+def _cmd_estudos_importar(args: argparse.Namespace) -> None:
+    from radar import study_backup
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    payload = json.loads(Path(args.file).read_text(encoding="utf-8"))
+    report = study_backup.import_study_data(cfg["db_path"], payload, dry_run=args.dry_run)
+    print(json.dumps(report, ensure_ascii=False, default=str))
+
+
+def _cmd_estudos_backup(args: argparse.Namespace) -> None:
+    from radar import study_backup
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    print(json.dumps(study_backup.backup_database(cfg["db_path"], args.dest),
+                     ensure_ascii=False, default=str))
+
+
 def build_parser() -> argparse.ArgumentParser:
     from radar.preferences import PRIORITIES
     parser = argparse.ArgumentParser(prog="python -m radar")
@@ -561,6 +619,42 @@ def build_parser() -> argparse.ArgumentParser:
     est_rev.add_argument('--progresso', default=None, help='id do progresso a marcar como revisado')
     est_rev.add_argument('--resultado', default=None)
     est_rev.set_defaults(func=_cmd_estudos_revisao)
+
+    est_cont = subparsers.add_parser('estudos-conteudo', help='conteúdo programático extraído de um concurso')
+    est_cont.add_argument('--config', default=None)
+    est_cont.add_argument('--concurso', required=True)
+    est_cont.set_defaults(func=_cmd_estudos_conteudo)
+
+    est_perf = subparsers.add_parser('estudos-perfil', help='lista/atualiza o perfil de conhecimentos')
+    est_perf.add_argument('--config', default=None)
+    est_perf.add_argument('--disciplina', default=None)
+    est_perf.add_argument('--rotulo', default=None)
+    est_perf.add_argument('--nivel', default='nao_avaliado')
+    est_perf.add_argument('--revisar', action='store_true')
+    est_perf.add_argument('--confianca', default=None)
+    est_perf.add_argument('--observacoes', default=None)
+    est_perf.set_defaults(func=_cmd_estudos_perfil)
+
+    est_cob = subparsers.add_parser('estudos-cobertura', help='cobertura de preparação de um concurso')
+    est_cob.add_argument('--config', default=None)
+    est_cob.add_argument('--concurso', required=True)
+    est_cob.set_defaults(func=_cmd_estudos_cobertura)
+
+    est_exp = subparsers.add_parser('estudos-exportar', help='exporta os dados pessoais de estudo')
+    est_exp.add_argument('--config', default=None)
+    est_exp.add_argument('--out', default=None)
+    est_exp.set_defaults(func=_cmd_estudos_exportar)
+
+    est_imp = subparsers.add_parser('estudos-importar', help='importa dados pessoais de estudo (com prévia)')
+    est_imp.add_argument('--config', default=None)
+    est_imp.add_argument('--file', required=True)
+    est_imp.add_argument('--dry-run', action='store_true')
+    est_imp.set_defaults(func=_cmd_estudos_importar)
+
+    est_bak = subparsers.add_parser('estudos-backup', help='backup consistente do banco (com integridade)')
+    est_bak.add_argument('--config', default=None)
+    est_bak.add_argument('--dest', required=True)
+    est_bak.set_defaults(func=_cmd_estudos_backup)
 
     return parser
 

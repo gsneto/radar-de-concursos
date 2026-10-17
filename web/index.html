@@ -131,6 +131,44 @@
       </div>
     </section>
 
+    <section class="prep" aria-labelledby="prep-title">
+      <h2 id="prep-title" class="results__title">Preparação e conteúdo programático</h2>
+      <div class="prep__controls">
+        <label class="prefs__field">Concurso
+          <select id="prep-concurso" class="priorities__select"></select>
+        </label>
+        <button id="prep-reload" type="button" class="button button--ghost">Carregar conteúdo</button>
+      </div>
+      <div id="prep-panel" class="prep__panel" role="status" aria-live="polite">
+        <p class="muted">Selecione um concurso para ver o conteúdo programático.</p>
+      </div>
+      <form id="perfil-form" class="prefs" aria-label="Perfil de conhecimentos">
+        <label class="prefs__field">Disciplina
+          <input id="perfil-disciplina" type="text" autocomplete="off">
+        </label>
+        <label class="prefs__field">Tópico
+          <input id="perfil-rotulo" type="text" autocomplete="off">
+        </label>
+        <label class="prefs__field">Familiaridade
+          <select id="perfil-nivel" class="priorities__select">
+            <option value="nao_avaliado">Não avaliado</option>
+            <option value="nao_conheco">Ainda não conheço</option>
+            <option value="basico">Básico</option>
+            <option value="intermediario">Intermediário</option>
+            <option value="avancado">Avançado</option>
+          </select>
+        </label>
+        <label class="prefs__field">Revisar
+          <input id="perfil-revisar" type="checkbox">
+        </label>
+        <button type="submit" class="button">Salvar no perfil</button>
+        <span id="perfil-status" class="prefs__status" role="status" aria-live="polite"></span>
+      </form>
+      <div id="perfil-panel" class="prep__panel" role="status" aria-live="polite">
+        <p class="muted">Carregando perfil.</p>
+      </div>
+    </section>
+
     <section class="results" aria-labelledby="results-title">
       <h2 id="results-title" class="results__title">Concursos monitorados</h2>
 

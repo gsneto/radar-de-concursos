@@ -1022,6 +1022,7 @@
         container.textContent = '';
         container.appendChild(renderPriorities(doc, payload));
         if (payload && payload.preferences) loadPreferencesForm(doc, payload.preferences);
+        if (payload && payload.items) fillContestSelect(doc, payload.items);
       })
       .catch(function (err) {
         showError(err);
@@ -1312,6 +1313,207 @@
       });
   }
 
+  // --- Preparação e conteúdo programático (Fase 22) ---------------------------
+
+  var LEVEL_LABEL = {
+    nao_avaliado: 'Não avaliado', nao_conheco: 'Ainda não conheço', basico: 'Básico',
+    intermediario: 'Intermediário', avancado: 'Avançado'
+  };
+  var CONTENT_STATE_LABEL = {
+    confirmado: 'confirmado por revisão', extraido_nao_revisado: 'extraído (não revisado)',
+    ambiguo: 'ambíguo', rejeitado: 'rejeitado'
+  };
+
+  function prepContestId() {
+    var doc = global.document;
+    var select = doc && doc.getElementById('prep-concurso');
+    return select ? select.value : '';
+  }
+
+  function renderPrep(document, program, report) {
+    var wrap = el(document, 'div', 'prep__inner');
+    var counts = (report && report.coverage && report.coverage.counts) || {};
+    var coverage = (report && report.coverage) || {};
+    var state = (program && program.coverage_state) || 'nao_localizado';
+    var stateLabel = {
+      nao_localizado: 'Conteúdo programático não localizado',
+      extraido_nao_revisado: 'Conteúdo extraído, ainda não revisado',
+      extraido_parcial: 'Conteúdo parcialmente extraído/revisado'
+    }[state] || state;
+
+    wrap.appendChild(el(document, 'p', 'prep__state', 'Situação: ' + stateLabel));
+
+    var stats = el(document, 'div', 'prep__stats');
+    var pctText = coverage.pct === null || coverage.pct === undefined ? 'não calculável'
+      : (coverage.pct + '%');
+    [
+      ['Tópicos identificados', counts.identificados || 0],
+      ['Confirmados (revisão)', counts.confirmados || 0],
+      ['Cobertura do perfil', pctText],
+      ['Conhecidos', counts.conhecidos || 0],
+      ['Ainda não conheço', counts.nao_conhecidos || 0],
+      ['Precisam revisar', counts.revisar || 0]
+    ].forEach(function (pair) {
+      var card = el(document, 'div', 'study__stat');
+      card.appendChild(el(document, 'span', 'study__stat-value', String(pair[1])));
+      card.appendChild(el(document, 'span', 'study__stat-label', pair[0]));
+      stats.appendChild(card);
+    });
+    wrap.appendChild(stats);
+    wrap.appendChild(el(document, 'p', 'prep__basis', coverage.basis || ''));
+
+    // Conteúdo por disciplina.
+    var byDisc = {};
+    (program && program.topicos ? program.topicos : []).forEach(function (t) {
+      var disc = t.disciplina || 'Sem disciplina';
+      byDisc[disc] = byDisc[disc] || [];
+      byDisc[disc].push(t);
+    });
+    var discNames = Object.keys(byDisc);
+    if (!discNames.length) {
+      wrap.appendChild(el(document, 'p', 'muted', 'Nenhum conteúdo programático identificado.'));
+    }
+    discNames.sort().forEach(function (disc) {
+      var card = el(document, 'article', 'study-disc');
+      card.appendChild(el(document, 'h4', 'study-disc__title', disc));
+      var list = el(document, 'ul', 'study-disc__topics');
+      byDisc[disc].forEach(function (topic) {
+        var row = el(document, 'li', 'study-topic study-topic--' + topic.estado);
+        row.appendChild(el(document, 'span', 'study-topic__name', topic.value));
+        row.appendChild(badge(document, CONTENT_STATE_LABEL[topic.estado] || topic.estado, 'kind'));
+        if (!isMissing(topic.page_number)) {
+          row.appendChild(el(document, 'span', 'prep__page', 'pág. ' + topic.page_number));
+        }
+        var gap = el(document, 'button', 'triage-action', 'Enviar para estudos');
+        gap.type = 'button';
+        gap.addEventListener('click', function () {
+          studyPost('/api/estudos/lacuna',
+            {contest_id: prepContestId(), conceito_key: topic.conceito_key})
+            .then(function () { if (global.alert) global.alert('Tópico enviado para o módulo de estudos.'); })
+            .catch(showError);
+        });
+        row.appendChild(gap);
+        list.appendChild(row);
+      });
+      card.appendChild(list);
+      wrap.appendChild(card);
+    });
+
+    if (report && report.gaps && report.gaps.length) {
+      wrap.appendChild(el(document, 'h3', 'study__subtitle', 'Principais lacunas'));
+      var gaps = el(document, 'ul', 'study__revisions');
+      report.gaps.slice(0, 15).forEach(function (g) {
+        gaps.appendChild(el(document, 'li', 'study__revision',
+          (g.disciplina ? g.disciplina + ' — ' : '') + g.rotulo + ' (' + (LEVEL_LABEL[g.nivel] || g.nivel) + ')'));
+      });
+      wrap.appendChild(gaps);
+    }
+    return wrap;
+  }
+
+  function fetchPrep() {
+    var doc = global.document;
+    var panel = doc && doc.getElementById('prep-panel');
+    var contest = prepContestId();
+    if (!panel) return Promise.resolve();
+    if (!contest) {
+      panel.textContent = '';
+      panel.appendChild(el(doc, 'p', 'muted', 'Selecione um concurso para ver o conteúdo programático.'));
+      return Promise.resolve();
+    }
+    return Promise.all([
+      global.fetch('/api/estudos/conteudo?contest_id=' + encodeURIComponent(contest), {headers: {Accept: 'application/json'}})
+        .then(function (r) { return r.ok ? r.json() : {}; }),
+      global.fetch('/api/estudos/preparacao?contest_id=' + encodeURIComponent(contest), {headers: {Accept: 'application/json'}})
+        .then(function (r) { return r.ok ? r.json() : {}; })
+    ]).then(function (parts) {
+      panel.textContent = '';
+      panel.appendChild(renderPrep(doc, parts[0], parts[1]));
+    }).catch(function (err) {
+      showError(err);
+      panel.textContent = '';
+      panel.appendChild(el(doc, 'p', 'muted', 'Preparação indisponível.'));
+    });
+  }
+
+  function fillContestSelect(document, items) {
+    var select = document.getElementById('prep-concurso');
+    if (!select) return;
+    var current = select.value;
+    select.textContent = '';
+    var none = el(document, 'option', '', 'Selecione um concurso');
+    none.setAttribute('value', '');
+    select.appendChild(none);
+    (items || []).slice(0, 100).forEach(function (item) {
+      var opt = el(document, 'option', '', 'Concurso ' + shortId(item.contest_id));
+      opt.setAttribute('value', item.contest_id);
+      select.appendChild(opt);
+    });
+    if (current) select.value = current;
+  }
+
+  function renderPerfil(document, entries) {
+    var wrap = el(document, 'div', 'prep__inner');
+    if (!entries || !entries.length) {
+      wrap.appendChild(el(document, 'p', 'muted', 'Perfil vazio: registre o que você já conhece.'));
+      return wrap;
+    }
+    var list = el(document, 'ul', 'study__revisions');
+    entries.forEach(function (entry) {
+      var row = el(document, 'li', 'study__revision');
+      var label = (entry.disciplina ? entry.disciplina + ' — ' : '') + entry.rotulo
+        + ' (' + (LEVEL_LABEL[entry.nivel] || entry.nivel) + (entry.revisar ? ', revisar' : '') + ')';
+      row.appendChild(el(document, 'span', 'study__revision-label', label));
+      var del = el(document, 'button', 'triage-action triage-action--danger', 'Remover');
+      del.type = 'button';
+      del.addEventListener('click', function () {
+        global.fetch('/api/estudos/perfil?conceito_key=' + encodeURIComponent(entry.conceito_key),
+          {method: 'DELETE'})
+          .then(function (res) { if (!res.ok) throw new Error('HTTP ' + res.status); return fetchPerfil(); })
+          .catch(showError);
+      });
+      row.appendChild(del);
+      list.appendChild(row);
+    });
+    wrap.appendChild(list);
+    return wrap;
+  }
+
+  function fetchPerfil() {
+    var doc = global.document;
+    var panel = doc && doc.getElementById('perfil-panel');
+    if (!panel) return Promise.resolve();
+    return global.fetch('/api/estudos/perfil', {headers: {Accept: 'application/json'}})
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (entries) {
+        panel.textContent = '';
+        panel.appendChild(renderPerfil(doc, entries));
+      }).catch(function (err) { showError(err); });
+  }
+
+  function savePerfil() {
+    var doc = global.document;
+    var status = doc.getElementById('perfil-status');
+    var payload = {
+      disciplina: doc.getElementById('perfil-disciplina').value.trim() || null,
+      rotulo: doc.getElementById('perfil-rotulo').value.trim(),
+      nivel: doc.getElementById('perfil-nivel').value,
+      revisar: doc.getElementById('perfil-revisar').checked
+    };
+    if (!payload.rotulo) {
+      if (status) status.textContent = 'Informe o tópico.';
+      return;
+    }
+    return studyPost('/api/estudos/perfil', payload).then(function () {
+      if (status) status.textContent = 'Salvo.';
+      doc.getElementById('perfil-rotulo').value = '';
+      return Promise.all([fetchPerfil(), fetchPrep()]);
+    }).catch(function (err) {
+      if (status) status.textContent = err.message || 'Falha ao salvar.';
+      showError(err);
+    });
+  }
+
   // Atualização periódica (sem recarregar a página). Intervalo configurável por
   // `data-refresh-seconds` no <body>; padrão conservador de 60 s.
   function autoRefreshSeconds() {
@@ -1496,12 +1698,22 @@
       var btn = doc.getElementById(pair[0]);
       if (btn) btn.addEventListener('click', function () { timerAction(pair[1]); });
     });
+    var perfilForm = doc.getElementById('perfil-form');
+    if (perfilForm) perfilForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      savePerfil();
+    });
+    var prepSelect = doc.getElementById('prep-concurso');
+    if (prepSelect) prepSelect.addEventListener('change', function () { fetchPrep(); });
+    var prepReload = doc.getElementById('prep-reload');
+    if (prepReload) prepReload.addEventListener('click', function () { fetchPrep(); });
     fetchData().then(focusContestFromHash).catch(function () {});
     fetchMonitoring();
     fetchAlerts();
     fetchTriage();
     fetchPriorities();
     fetchStudy();
+    fetchPerfil();
     startAutoRefresh();
     if (global.addEventListener) {
       global.addEventListener('hashchange', function () { focusContestFromHash(); });
@@ -1524,6 +1736,8 @@
     renderTriage: renderTriage,
     renderPriorities: renderPriorities,
     renderStudy: renderStudy,
+    renderPrep: renderPrep,
+    renderPerfil: renderPerfil,
     formatClock: formatClock,
     matchIdentity: matchIdentity,
     renderList: renderList,
