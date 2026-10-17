@@ -66,10 +66,35 @@ class DocumentExtractTest(unittest.TestCase):
         output = BytesIO()
         writer.write(output)
         pdf = output.getvalue()
-        with self.assertRaisesRegex(ValueError, 'páginas em excesso'):
+        with self.assertRaisesRegex(ValueError, 'excede o limite'):
             extract_blocks(pdf, 'application/pdf', max_pages=1)
         with self.assertRaisesRegex(ValueError, 'sem texto'):
             extract_blocks(pdf, 'application/pdf', max_pages=2)
+
+    def test_prefixo_declarado_para_pdf_longo(self):
+        from radar.document_extract import ExtractionError, extract_document
+        writer = PdfWriter()
+        for _ in range(3):
+            writer.add_blank_page(width=200, height=200)
+        output = BytesIO()
+        writer.write(output)
+        pdf = output.getvalue()
+        with self.assertRaises(ExtractionError) as ctx:
+            extract_document(pdf, "application/pdf", max_pages=1)
+        self.assertEqual(ctx.exception.code, "pdf_paginas_excedidas")
+        # Prefixo não inventa texto: páginas em branco continuam sem texto extraível.
+        with self.assertRaises(ExtractionError) as ctx2:
+            extract_document(pdf, "application/pdf", max_pages=1, prefix_pages=1)
+        self.assertEqual(ctx2.exception.code, "pdf_sem_texto")
+
+    def test_codigos_de_falha_sao_estaveis(self):
+        from radar.document_extract import ExtractionError, extract_document
+        with self.assertRaises(ExtractionError) as ctx:
+            extract_document(b"<html>sem corpo</html>", "text/html")
+        self.assertEqual(ctx.exception.code, "html_sem_texto")
+        with self.assertRaises(ExtractionError) as ctx2:
+            extract_document(b"MZ executavel", "application/pdf")
+        self.assertEqual(ctx2.exception.code, "tipo_invalido")
 
     def test_simple_vagas_table_produces_per_role_immediate(self):
         # Documento cujo único quadro é CARGO | VAGAS: nova capacidade da Fase 8.

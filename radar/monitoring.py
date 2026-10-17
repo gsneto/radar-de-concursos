@@ -7,6 +7,7 @@ Nunca promove propostas, nunca faz loop interno e nunca migra o banco sozinho.
 
 from __future__ import annotations
 
+import json
 from contextlib import closing
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -79,6 +80,10 @@ def _pending_analysis(conn, contest_id: str) -> int:
         "WHERE d.contest_id=? AND v.extraction_state='nao_iniciada'", (contest_id,)).fetchone()[0]
 
 
+PREFIX_PAGES = 40
+EXTRACTOR_VERSION = "extract_v2"
+
+
 def _analyze_version(db_path, version_id: str) -> None:
     """Extrai blocos/propostas de uma versão nova; falha vira estado auditável."""
     import hashlib
@@ -100,19 +105,33 @@ def _analyze_version(db_path, version_id: str) -> None:
     content = artifact.read_bytes()
     if hashlib.sha256(content).hexdigest() != digest:
         raise ValueError("hash de artefato divergente")
+    from radar.document_extract import ExtractionError, extract_document
     try:
-        blocks = extract_blocks(content, content_type)
+        extracted = extract_document(content, content_type, prefix_pages=PREFIX_PAGES)
+    except ExtractionError as error:
+        with closing(connect_documents(db_path)) as conn, conn:
+            conn.execute("UPDATE versoes_documento SET extraction_state='falhou',error_code=? WHERE id=?",
+                         (error.code, version_id))
+            conn.execute("""INSERT INTO eventos_documentais
+                (id,document_id,version_id,event_type,occurred_at,note)
+                SELECT ?,document_id,id,'falha',?,? FROM versoes_documento WHERE id=?""",
+                (str(uuid4()), _now(), json.dumps(
+                    {"code": error.code, "message": str(error)[:200],
+                     "extractor_version": EXTRACTOR_VERSION}, ensure_ascii=False), version_id))
+        return
     except ValueError as error:
         with closing(connect_documents(db_path)) as conn, conn:
             conn.execute("UPDATE versoes_documento SET extraction_state='falhou',error_code=? WHERE id=?",
                          (type(error).__name__, version_id))
-            conn.execute("""INSERT INTO eventos_documentais
-                (id,document_id,version_id,event_type,occurred_at,note)
-                SELECT ?,document_id,id,'falha',?,? FROM versoes_documento WHERE id=?""",
-                (str(uuid4()), _now(), type(error).__name__, version_id))
         return
+    blocks = extracted["blocks"]
     proposals = extract_field_proposals(blocks, version_id, contest_id, role_id)
-    record_analysis(db_path, version_id, blocks, proposals)
+    note = json.dumps({"extractor_version": extracted["extractor_version"],
+                       "truncated": extracted["truncated"],
+                       "total_pages": extracted["total_pages"],
+                       "limitation": extracted["limitation"],
+                       "blocks": len(blocks)}, ensure_ascii=False)
+    record_analysis(db_path, version_id, blocks, proposals, note=note)
     if invalid_registration_period(blocks):
         with closing(connect_documents(db_path)) as conn, conn:
             conn.execute("UPDATE versoes_documento SET error_code='invalid_registration_period' WHERE id=?", (version_id,))

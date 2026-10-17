@@ -2,14 +2,38 @@
 
 from __future__ import annotations
 
+import logging
 from html.parser import HTMLParser
 from io import BytesIO
+
+# O pypdf emite avisos de estrutura no logger/stderr. Eles não são erro de extração e não
+# podem poluir a saída JSON da CLI nem o log operacional.
+logging.getLogger("pypdf").setLevel(logging.ERROR)
 
 
 _MAX_BYTES = 20 * 1024 * 1024
 # Edições oficiais diárias podem passar de 300 páginas; o limite protege contra
 # PDFs anômalos sem impedir o processamento de uma edição real.
 _MAX_PAGES = 400
+# Listas de resultado chegam a 3.000 páginas. Extrair o **prefixo** documentado é melhor do
+# que recusar o documento: o cabeçalho do ato identifica órgão, número e data, e a limitação
+# fica registrada na versão. Nunca lemos o arquivo inteiro nesses casos.
+# Versão do extrator: gravada no evento de análise para rastrear mudanças de comportamento.
+EXTRACTOR_VERSION = "extract_v2"
+
+# Códigos estáveis de falha/limitação de extração.
+PDF_SEM_TEXTO = "pdf_sem_texto"
+PDF_PAGINAS_EXCEDIDAS = "pdf_paginas_excedidas"
+PDF_ILEGIVEL = "pdf_ilegivel"
+TIPO_INVALIDO = "tipo_invalido"
+
+
+class ExtractionError(ValueError):
+    """Falha de extração com código estável (nunca só ``ValueError``)."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
 
 
 class _HTMLBlocks(HTMLParser):
@@ -68,9 +92,18 @@ class _HTMLBlocks(HTMLParser):
             self._parts = []
 
 
-def extract_blocks(content: bytes, content_type: str, max_pages: int = _MAX_PAGES) -> list[dict]:
+def extract_document(content: bytes, content_type: str, *, max_pages: int | None = None,
+                     prefix_pages: int | None = None) -> dict:
+    """Extrai blocos e declara a limitação real (truncamento, ausência de texto).
+
+    ``prefix_pages`` só é usado quando o PDF excede ``max_pages``: lê apenas o prefixo e
+    devolve ``truncated=True`` com a contagem total de páginas. Sem ele, o documento é
+    recusado com ``pdf_paginas_excedidas`` — nunca silenciosamente ignorado.
+    """
+    if max_pages is None:
+        max_pages = _MAX_PAGES  # resolvido em tempo de chamada (testável)
     if not isinstance(content, bytes) or not content or len(content) > _MAX_BYTES:
-        raise ValueError('documento vazio ou grande demais')
+        raise ExtractionError('documento_invalido', 'documento vazio ou grande demais')
     mime = content_type.split(';', 1)[0].strip().lower()
     if mime == 'text/html':
         parser = _HTMLBlocks()
@@ -78,27 +111,56 @@ def extract_blocks(content: bytes, content_type: str, max_pages: int = _MAX_PAGE
             parser.feed(content.decode('utf-8'))
             parser.close()
         except UnicodeDecodeError as error:
-            raise ValueError('HTML não codificado em UTF-8') from error
+            raise ExtractionError('html_invalido', 'HTML não codificado em UTF-8') from error
         if not parser.blocks:
-            raise ValueError('HTML sem texto extraível')
-        return parser.blocks
+            raise ExtractionError('html_sem_texto', 'HTML sem texto extraível')
+        return {'blocks': parser.blocks, 'truncated': False, 'total_pages': None,
+                'limitation': None, 'extractor_version': EXTRACTOR_VERSION}
     if mime != 'application/pdf' or not content.startswith(b'%PDF-'):
-        raise ValueError('tipo ou assinatura de documento inválido')
-    from pypdf import PdfReader
+        raise ExtractionError(TIPO_INVALIDO, 'tipo ou assinatura de documento inválido')
+    try:
+        from pypdf import PdfReader
+    except ImportError as error:  # dependência ausente não pode prender a versão
+        raise ExtractionError('extrator_indisponivel',
+                              'pypdf não instalado neste ambiente') from error
     try:
         reader = PdfReader(BytesIO(content), strict=True)
-        if reader.is_encrypted or not 0 < len(reader.pages) <= max_pages:
-            raise ValueError('PDF criptografado, vazio ou páginas em excesso')
+        if reader.is_encrypted:
+            raise ExtractionError('pdf_criptografado', 'PDF criptografado')
+        total = len(reader.pages)
+        if total <= 0:
+            raise ExtractionError(PDF_SEM_TEXTO, 'PDF sem páginas')
+        truncated = False
+        limit = total
+        if total > max_pages:
+            if prefix_pages is None:
+                raise ExtractionError(PDF_PAGINAS_EXCEDIDAS,
+                                      f'PDF com {total} páginas excede o limite de {max_pages}')
+            limit = max(1, min(int(prefix_pages), max_pages))
+            truncated = True
         blocks = []
         for number, page in enumerate(reader.pages, 1):
+            if number > limit:
+                break
             text = ' '.join((page.extract_text() or '').split())
             if text:
                 blocks.append(dict(page_number=number, locator=f'página {number}',
                                    start_offset=0, end_offset=len(text), text=text))
         if not blocks:
-            raise ValueError('PDF sem texto extraível')
-        return blocks
-    except ValueError:
+            raise ExtractionError(PDF_SEM_TEXTO, 'PDF sem texto extraível (possível digitalização)')
+        limitation = None
+        if truncated:
+            limitation = (f'extração limitada às {limit} primeiras de {total} páginas; '
+                          f'conteúdo posterior não lido')
+        return {'blocks': blocks, 'truncated': truncated, 'total_pages': total,
+                'limitation': limitation, 'extractor_version': EXTRACTOR_VERSION}
+    except ExtractionError:
         raise
     except Exception as error:
-        raise ValueError('PDF ilegível') from error
+        raise ExtractionError(PDF_ILEGIVEL, 'PDF ilegível') from error
+
+
+def extract_blocks(content: bytes, content_type: str,
+                   max_pages: int | None = None) -> list[dict]:
+    """Compatibilidade: apenas os blocos (recusa PDF acima do limite)."""
+    return extract_document(content, content_type, max_pages=max_pages)['blocks']

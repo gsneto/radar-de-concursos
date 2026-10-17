@@ -541,6 +541,67 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             else:
                 from radar import association
                 self._serve_study(association.suspect_associations)
+        elif path == "/api/pipeline":
+            if parts.query:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import pipeline
+            self._serve_study(pipeline.pipeline_summary)
+        elif path == "/api/pipeline/ocr":
+            query = parse_qs(parts.query)
+            if set(query) - {"limit"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["100"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            from radar import ocr
+            self._serve_study(ocr.ocr_report, limit=limit)
+        elif path == "/api/pipeline/duplicidades":
+            query = parse_qs(parts.query)
+            if set(query) - {"limit"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["100"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            from radar import pipeline
+            self._serve_study(pipeline.duplicate_report, limit=limit)
+        elif path == "/api/pipeline/cobertura":
+            query = parse_qs(parts.query)
+            if set(query) - {"limit"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["500"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            from radar import pipeline
+            self._serve_study(pipeline.contest_coverage, limit=limit)
+        elif path == "/api/pipeline/documentos":
+            query = parse_qs(parts.query)
+            if set(query) - {"contest_id", "limit", "pending"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["100"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            pending_raw = query.get("pending", ["0"])[0].lower()
+            if pending_raw not in ("0", "1", "true", "false"):
+                self._bad_request("pending inválido")
+                return
+            from radar import pipeline
+            self._serve_study(pipeline.audit_documents,
+                              contest_id=query.get("contest_id", [None])[0],
+                              limit=limit,
+                              only_pending=pending_raw in ("1", "true"))
         elif path == "/api/fontes":
             if parts.query:
                 self._bad_request("parâmetros inválidos")

@@ -236,6 +236,18 @@ class TestAppStatic(unittest.TestCase):
         for token in (".prep__panel", ".prep__stats", ".prep__basis"):
             self.assertIn(token, css, "styles.css deve apresentar %r" % token)
 
+    def test_renders_pipeline_panel(self):
+        js = read(APP_PATH)
+        for token in ("renderPipeline", "fetchPipeline", "/api/pipeline",
+                      "PIPELINE_CATEGORY_LABEL", "PIPELINE_BLOCK_LABEL",
+                      "pipeline-panel", "sem_texto", "paginas_excedidas",
+                      "pronto_para_revisao"):
+            self.assertIn(token, js, "app.js deve apresentar %r" % token)
+        html = read(os.path.join(WEB, "index.html"))
+        for token in ('id="pipeline-panel"', 'id="pipeline-refresh"',
+                      "Pipeline documental"):
+            self.assertIn(token, html)
+
     def test_renders_sources_catalog(self):
         js = read(APP_PATH)
         for token in ("renderSources", "fetchSources", "/api/fontes", "sources-panel",

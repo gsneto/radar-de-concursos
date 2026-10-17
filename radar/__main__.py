@@ -75,12 +75,14 @@ def _cmd_analyze(args: argparse.Namespace) -> None:
     content = artifact.read_bytes()
     if hashlib.sha256(content).hexdigest() != digest:
         raise ValueError('hash de artefato divergente')
+    from radar.monitoring import PREFIX_PAGES
     try:
-        blocks = extract_blocks(content, content_type)
+        blocks = extract_blocks(content, content_type, max_pages=PREFIX_PAGES)
     except ValueError as error:
+        code = getattr(error, "code", type(error).__name__)
         with closing(connect_documents(args.db)) as conn, conn:
             conn.execute("UPDATE versoes_documento SET extraction_state='falhou',error_code=? WHERE id=?",
-                         (type(error).__name__, args.version_id))
+                         (code, args.version_id))
             conn.execute("""INSERT INTO eventos_documentais
                 (id,document_id,version_id,event_type,occurred_at,note)
                 SELECT ?,document_id,id,'falha',?,? FROM versoes_documento WHERE id=?""",
@@ -733,6 +735,59 @@ def _cmd_localidades(args: argparse.Namespace) -> None:
                      ensure_ascii=False, default=str))
 
 
+def _cmd_pipeline(args: argparse.Namespace) -> None:
+    from radar import pipeline
+    print(json.dumps(pipeline.pipeline_summary(args.db), ensure_ascii=False, default=str))
+
+
+def _cmd_pipeline_documentos(args: argparse.Namespace) -> None:
+    from radar import pipeline
+    print(json.dumps(pipeline.audit_documents(
+        args.db, contest_id=args.contest_id, document_id=args.document_id,
+        limit=args.limit, only_pending=args.pending), ensure_ascii=False, default=str))
+
+
+def _cmd_pipeline_cobertura(args: argparse.Namespace) -> None:
+    from radar import pipeline
+    print(json.dumps(pipeline.contest_coverage(args.db, limit=args.limit),
+                     ensure_ascii=False, default=str))
+
+
+def _cmd_documentos_pendentes(args: argparse.Namespace) -> None:
+    from radar import pipeline
+    itens = pipeline.pending_versions(
+        args.db, contest_id=args.contest_id, document_id=args.document_id,
+        limit=args.limit, include_blocked=args.include_blocked)
+    print(json.dumps({"total": len(itens), "itens": itens}, ensure_ascii=False, default=str))
+
+
+def _cmd_documentos_extrair(args: argparse.Namespace) -> None:
+    from radar import pipeline
+    ids = []
+    if args.version_id:
+        ids = list(args.version_id)  # ids explícitos não são truncados pelo limite
+    else:
+        ids = [item["version_id"] for item in pipeline.pending_versions(
+            args.db, contest_id=args.contest_id, document_id=args.document_id,
+            limit=args.limit, include_blocked=args.include_blocked)]
+    print(json.dumps(pipeline.analyze_versions(
+        args.db, ids, dry_run=not args.apply,
+        limit=None if args.version_id else args.limit),
+                     ensure_ascii=False, default=str))
+
+
+def _cmd_pipeline_duplicados(args: argparse.Namespace) -> None:
+    from radar import pipeline
+    print(json.dumps(pipeline.duplicate_report(args.db, limit=args.limit),
+                     ensure_ascii=False, default=str))
+
+
+def _cmd_ocr_pendentes(args: argparse.Namespace) -> None:
+    from radar import ocr
+    print(json.dumps(ocr.ocr_report(args.db, limit=args.limit),
+                     ensure_ascii=False, default=str))
+
+
 def build_parser() -> argparse.ArgumentParser:
     from radar.preferences import PRIORITIES
     parser = argparse.ArgumentParser(prog="python -m radar")
@@ -1161,6 +1216,57 @@ def build_parser() -> argparse.ArgumentParser:
     arev.add_argument('--revisor', required=True)
     arev.add_argument('--motivo', required=True)
     arev.set_defaults(func=_cmd_associacao_revisar)
+
+    pipe = subparsers.add_parser('pipeline', help='indicadores do pipeline documental')
+    pipe.add_argument('--db', required=True)
+    pipe.set_defaults(func=_cmd_pipeline)
+
+    pipe_docs = subparsers.add_parser('pipeline-documentos',
+                                      help='auditoria por documento (etapas e bloqueio)')
+    pipe_docs.add_argument('--db', required=True)
+    pipe_docs.add_argument('--contest-id')
+    pipe_docs.add_argument('--document-id')
+    pipe_docs.add_argument('--limit', type=int, default=200)
+    pipe_docs.add_argument('--pending', action='store_true')
+    pipe_docs.set_defaults(func=_cmd_pipeline_documentos)
+
+    ocr_pend = subparsers.add_parser('ocr-pendentes',
+                                     help='PDFs que precisam de OCR (não executa OCR)')
+    ocr_pend.add_argument('--db', required=True)
+    ocr_pend.add_argument('--limit', type=int, default=100)
+    ocr_pend.set_defaults(func=_cmd_ocr_pendentes)
+
+    pipe_dup = subparsers.add_parser('pipeline-duplicados',
+                                     help='duplicidades existentes (somente leitura)')
+    pipe_dup.add_argument('--db', required=True)
+    pipe_dup.add_argument('--limit', type=int, default=100)
+    pipe_dup.set_defaults(func=_cmd_pipeline_duplicados)
+
+    pipe_cob = subparsers.add_parser('pipeline-cobertura',
+                                     help='cobertura por concurso com categorias explícitas')
+    pipe_cob.add_argument('--db', required=True)
+    pipe_cob.add_argument('--limit', type=int, default=500)
+    pipe_cob.set_defaults(func=_cmd_pipeline_cobertura)
+
+    pend = subparsers.add_parser('documentos-pendentes',
+                                 help='versões baixadas ainda não extraídas')
+    pend.add_argument('--db', required=True)
+    pend.add_argument('--contest-id')
+    pend.add_argument('--document-id')
+    pend.add_argument('--limit', type=int, default=100)
+    pend.add_argument('--include-blocked', action='store_true')
+    pend.set_defaults(func=_cmd_documentos_pendentes)
+
+    extrair = subparsers.add_parser('documentos-extrair',
+                                    help='extração controlada (dry-run por padrão)')
+    extrair.add_argument('--db', required=True)
+    extrair.add_argument('--contest-id')
+    extrair.add_argument('--document-id')
+    extrair.add_argument('--version-id', action='append')
+    extrair.add_argument('--limit', type=int, default=50)
+    extrair.add_argument('--include-blocked', action='store_true')
+    extrair.add_argument('--apply', action='store_true')
+    extrair.set_defaults(func=_cmd_documentos_extrair)
 
     fontes = subparsers.add_parser('fontes', help='catálogo de fontes e estado operacional')
     fontes.add_argument('--db', required=True)

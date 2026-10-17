@@ -2230,6 +2230,116 @@
     });
   }
 
+  // --- Pipeline documental (Fase 30) ---
+
+  var PIPELINE_CATEGORY_LABEL = {
+    sem_documento: 'Sem documento encontrado',
+    documento_sem_texto: 'Documento obtido, sem texto extraível',
+    documento_nao_extraido: 'Documento obtido, não extraído',
+    texto_sem_campo: 'Texto extraído, sem campo relevante',
+    campo_candidato: 'Campo candidato (aguarda revisão)',
+    proposta_sem_campo_decisivo: 'Proposta sem campo decisivo',
+    campo_confirmado: 'Campo revisado e confirmado'
+  };
+
+  var PIPELINE_BLOCK_LABEL = {
+    sem_versao: 'Documento sem byte obtido',
+    nao_iniciada: 'Extração não executada',
+    sem_texto: 'PDF sem texto extraível (exige OCR)',
+    paginas_excedidas: 'Extração limitada ao prefixo (PDF longo)',
+    falhou: 'Extração falhou',
+    sem_propostas: 'Extraído sem proposta',
+    associacao_pendente: 'Documento sem associação confirmada',
+    pronto_para_revisao: 'Pronto para revisão'
+  };
+
+  // Percentual desconhecido (denominador zero) nunca vira 0%.
+  function pipelinePct(value) {
+    return (value === null || value === undefined) ? '—' : value + '%';
+  }
+
+  function pipelineStatus(message) {
+    var doc = global.document;
+    var node = doc && doc.getElementById('pipeline-status');
+    if (node) node.textContent = message || '';
+  }
+
+  function renderPipeline(document, payload) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    var stats = el(document, 'ul', 'study__revisions');
+    [
+      ['Concursos', payload.concursos],
+      ['Com documento', payload.concursos_com_documento],
+      ['Com edital principal', payload.concursos_com_edital],
+      ['Documentos', payload.documentos],
+      ['Com texto', payload.documentos_com_texto],
+      ['Versões extraídas', payload.versoes_extraidas],
+      ['Propostas', payload.propostas],
+      ['Evidências', payload.evidencias],
+      ['Revisões humanas', payload.revisoes_humanas],
+      ['Campos confirmados', payload.campos_confirmados],
+      ['PDFs sem texto (OCR)', payload.sem_texto],
+      ['Extração limitada (prefixo)', payload.paginas_excedidas]
+    ].forEach(function (pair) {
+      stats.appendChild(el(document, 'li', 'study__revision',
+        pair[0] + ': ' + pair[1]));
+    });
+    wrap.appendChild(stats);
+    var coverage = payload.cobertura || {};
+    wrap.appendChild(el(document, 'p', 'prep__basis',
+      'documentos com texto ' + pipelinePct(coverage.documentos_com_texto_pct) + ' · ' +
+      'versões extraídas ' + pipelinePct(coverage.versoes_extraidas_pct) + ' · ' +
+      'concursos com documento ' + pipelinePct(coverage.concursos_com_documento_pct) + ' · ' +
+      'concursos com edital ' + pipelinePct(coverage.concursos_com_edital_pct)));
+    var categories = el(document, 'ul', 'study__revisions');
+    Object.keys(payload.concursos_por_categoria || {}).forEach(function (key) {
+      categories.appendChild(el(document, 'li', 'study__revision',
+        (PIPELINE_CATEGORY_LABEL[key] || key) + ': ' +
+        payload.concursos_por_categoria[key]));
+    });
+    wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Concursos por situação'));
+    wrap.appendChild(categories);
+    var blocks = el(document, 'ul', 'study__revisions');
+    Object.keys(payload.documentos_por_bloqueio || {}).forEach(function (key) {
+      blocks.appendChild(el(document, 'li', 'study__revision',
+        (PIPELINE_BLOCK_LABEL[key] || key) + ': ' +
+        payload.documentos_por_bloqueio[key]));
+    });
+    wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Documentos por bloqueio'));
+    wrap.appendChild(blocks);
+    if (payload.falhas_por_codigo && Object.keys(payload.falhas_por_codigo).length) {
+      var failures = el(document, 'ul', 'study__revisions');
+      Object.keys(payload.falhas_por_codigo).forEach(function (code) {
+        failures.appendChild(el(document, 'li', 'study__revision',
+          code + ': ' + payload.falhas_por_codigo[code]));
+      });
+      wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Falhas de extração'));
+      wrap.appendChild(failures);
+    }
+    wrap.appendChild(el(document, 'p', 'muted', payload.limitacao || ''));
+    return wrap;
+  }
+
+  function fetchPipeline() {
+    var doc = global.document;
+    if (!doc || !doc.getElementById('pipeline-panel')) return Promise.resolve();
+    pipelineStatus('Atualizando…');
+    return global.fetch('/api/pipeline', {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        var node = doc.getElementById('pipeline-panel');
+        clearContainer(node);
+        node.appendChild(renderPipeline(doc, payload));
+        pipelineStatus('');
+      })
+      .catch(function (error) {
+        pipelineStatus('Pipeline indisponível (' + error.message + ').');
+      });
+  }
+
   // --- Catálogo de fontes (Fase 29) ---
 
   var SOURCE_STATUS_LABEL = {
@@ -3167,6 +3277,8 @@
     if (assocRefresh) assocRefresh.addEventListener('click', fetchAssociations);
     var sourcesRefresh = doc.getElementById('sources-refresh');
     if (sourcesRefresh) sourcesRefresh.addEventListener('click', fetchSources);
+    var pipelineRefresh = doc.getElementById('pipeline-refresh');
+    if (pipelineRefresh) pipelineRefresh.addEventListener('click', fetchPipeline);
     var coverageRefresh = doc.getElementById('coverage-refresh');
     if (coverageRefresh) coverageRefresh.addEventListener('click', function () { fetchCoverage(); });
     fetchData().then(focusContestFromHash).catch(function () {});
@@ -3183,6 +3295,7 @@
     fetchBlocked();
     fetchAssociations();
     fetchSources();
+    fetchPipeline();
     restoreBatch();
     startAutoRefresh();
     if (global.addEventListener) {
@@ -3224,6 +3337,8 @@
     fetchAssociations: fetchAssociations,
     renderSources: renderSources,
     fetchSources: fetchSources,
+    renderPipeline: renderPipeline,
+    fetchPipeline: fetchPipeline,
     fetchCoverage: fetchCoverage,
     readFileAsBase64: readFileAsBase64,
     formatClock: formatClock,

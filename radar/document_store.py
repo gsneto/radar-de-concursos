@@ -1354,8 +1354,13 @@ _DATES = {"registration_start", "registration_end", "exam_date", "exemption_star
           "exemption_result_final"}
 
 
-def record_analysis(db_path, version_id: str, blocks: list[dict], proposals: list[dict]) -> None:
-    """Persiste blocos e propostas somente se todas as citações são verificáveis."""
+def record_analysis(db_path, version_id: str, blocks: list[dict], proposals: list[dict],
+                    *, note: str | None = None) -> None:
+    """Persiste blocos e propostas somente se todas as citações são verificáveis.
+
+    ``note`` registra a versão do extrator e limitações (ex.: extração de prefixo) no evento
+    de análise, sem alterar o esquema.
+    """
     conn = connect_documents(db_path)
     try:
         conn.execute("BEGIN IMMEDIATE")
@@ -1368,6 +1373,9 @@ def record_analysis(db_path, version_id: str, blocks: list[dict], proposals: lis
         contest_id, document_id, observation_id, document_role_id = version
         if conn.execute("SELECT 1 FROM blocos_documento WHERE version_id=? LIMIT 1", (version_id,)).fetchone():
             raise ValueError("versão já analisada")
+        if not isinstance(blocks, list) or not blocks:
+            # Blocos vazios não são "falha analisada": são entrada inválida.
+            raise ValueError("análise sem blocos")
         block_ids = []
         for block in blocks:
             text = block["text"]
@@ -1381,7 +1389,17 @@ def record_analysis(db_path, version_id: str, blocks: list[dict], proposals: lis
             )
             block_ids.append(block_id)
         period_dates = {}
+        # Deduplicação intra-versão: mesma evidência + mesmo escopo + mesmo valor é a mesma
+        # proposta. Evita que cabeçalho/rodapé/tabela repetidos gerem candidatos duplicados.
+        seen_keys = set()
         for proposal in proposals:
+            evidence = proposal.get("evidence") or {}
+            key = (proposal.get("role_id"), proposal["field_name"], proposal["value_json"],
+                   evidence.get("block_index"), evidence.get("quote"),
+                   evidence.get("start_offset"), evidence.get("end_offset"))
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
             index = proposal["evidence"]["block_index"]
             if not isinstance(index, int) or isinstance(index, bool) or index < 0 or index >= len(blocks):
                 raise ValueError("bloco inexistente")
@@ -1434,10 +1452,11 @@ def record_analysis(db_path, version_id: str, blocks: list[dict], proposals: lis
         for period in period_dates.values():
             if period.get("registration_start", date.min) > period.get("registration_end", date.max):
                 raise ValueError("datas de inscrição invertidas")
-        conn.execute("UPDATE versoes_documento SET extraction_state=? WHERE id=?",
+        # Sucesso limpa o código de erro de uma tentativa anterior (não deixa estado contraditório).
+        conn.execute("UPDATE versoes_documento SET extraction_state=?, error_code=NULL WHERE id=?",
                      ("parcial" if blocks else "falhou", version_id))
-        conn.execute("INSERT INTO eventos_documentais (id,document_id,version_id,event_type,occurred_at) VALUES (?,?,?,'analise',?)",
-                     (str(uuid4()), document_id, version_id, _now()))
+        conn.execute("INSERT INTO eventos_documentais (id,document_id,version_id,event_type,occurred_at,note) VALUES (?,?,?,'analise',?,?)",
+                     (str(uuid4()), document_id, version_id, _now(), note))
         conn.commit()
     except BaseException:
         conn.rollback()
