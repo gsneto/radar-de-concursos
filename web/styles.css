@@ -756,3 +756,9 @@ button:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .practice__map-btn { transition: none; }
 }
+
+.coverage__panel { border: 1px solid var(--border, #d8ded9); border-radius: 10px; padding: var(--space-3, 12px); background: var(--surface, #fff); margin-bottom: var(--space-3, 12px); }
+.coverage__dims { display: grid; gap: var(--space-1, 4px); }
+.coverage__dim { display: flex; flex-wrap: wrap; gap: var(--space-2, 8px); justify-content: space-between; border-bottom: 1px solid var(--rule, #e6eae6); padding: var(--space-1, 4px) 0; }
+.coverage__dim-label { font-weight: 600; font-size: var(--text-sm, 0.85rem); }
+.coverage__dim-value { font-size: var(--text-sm, 0.85rem); color: var(--ink-soft, #333); }

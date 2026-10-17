@@ -80,6 +80,15 @@ def _proposal_rows(conn):
     return out
 
 
+def proposal_rows(conn):
+    """API pública das propostas por concurso/campo (mesma semântica de ``_proposal_rows``).
+
+    Reutilizada pela auditoria de cobertura para não duplicar o vocabulário de estados:
+    ``revisoes_campo.decision`` > ``ambiguo`` (quando há ``ambiguity_reason``) > ``extraido``.
+    """
+    return _proposal_rows(conn)
+
+
 def _current_values(conn):
     """Seleções vigentes (valores_atuais) por concurso/campo -> proposal_id."""
     out = {}

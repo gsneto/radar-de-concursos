@@ -405,6 +405,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         from radar import study_store, knowledge_store, study_backup, practice_store, packages
+        from radar import data_quality
         parts = urlsplit(self.path)
         path = parts.path
         if path == "/api/concursos":
@@ -474,6 +475,27 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
             else:
                 self._serve_priorities(limit)
+        elif path == "/api/cobertura":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_study(data_quality.audit)
+        elif path == "/api/cobertura/resumo":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_study(data_quality.summary)
+        elif path == "/api/lacunas":
+            query = parse_qs(parts.query)
+            try:
+                limit = int(query.get("limit", ["50"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            if limit < 1 or set(query) - {"limit"}:
+                self._bad_request("parâmetros inválidos")
+            else:
+                self._serve_study(data_quality.gaps, limit=limit)
         elif path == "/api/preferencias":
             if parts.query:
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
@@ -684,6 +706,17 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             if alert_id and "/" not in alert_id:
                 self._alert_action(alert_id)
                 return
+        if path == "/api/cobertura/papeis":
+            if parts.query:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import enrichment
+            body = self._read_json()
+            if body is None:
+                return
+            self._serve_study(enrichment.materialize_document_roles,
+                              dry_run=bool(body.get("dry_run", True)))
+            return
         if path == "/api/preferencias":
             if parts.query:
                 self._send_no_content(HTTPStatus.BAD_REQUEST)

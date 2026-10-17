@@ -99,6 +99,26 @@
       </div>
     </section>
 
+    <section class="coverage" aria-labelledby="coverage-title">
+      <h2 id="coverage-title" class="results__title">Cobertura e qualidade dos dados</h2>
+      <p class="prep__basis">
+        Mede o que a base realmente sabe e por que falta o resto. Percentuais usam como denominador
+        apenas os concursos efetivamente avaliados; quem ainda não foi pesquisado aparece separado
+        e nunca conta como zero.
+      </p>
+      <div class="prefs">
+        <button id="coverage-refresh" type="button" class="button button--ghost">Atualizar auditoria</button>
+        <span id="coverage-status" class="prefs__status" role="status" aria-live="polite"></span>
+      </div>
+      <div id="coverage-panel" class="coverage__panel" role="status" aria-live="polite">
+        <p class="muted">Carregando cobertura.</p>
+      </div>
+      <h3 class="study__subtitle">Fila de lacunas</h3>
+      <div id="gaps-panel" class="coverage__panel" role="status" aria-live="polite">
+        <p class="muted">Carregando lacunas.</p>
+      </div>
+    </section>
+
     <section class="study" aria-labelledby="study-title">
       <h2 id="study-title" class="results__title">Estudos</h2>
       <div class="study__timer" role="group" aria-label="Cronômetro de estudo">

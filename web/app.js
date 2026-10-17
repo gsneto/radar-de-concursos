@@ -1514,6 +1514,135 @@
     });
   }
 
+  // --- Cobertura e qualidade dos dados (Fase 25) -----------------------------
+
+  var CAUSE_LABELS = {
+    confirmado: 'Dados confirmados por revisão humana',
+    sem_documento: 'Nenhum documento localizado',
+    apenas_agregador: 'Somente agregador/notícia; sem edital oficial',
+    edital_sem_processamento: 'Edital localizado, não processado',
+    falha_extracao: 'Falha técnica de extração',
+    edital_sem_campos: 'Edital processado sem campos reconhecidos',
+    extraido_ambiguo: 'Campos extraídos, todos ambíguos',
+    extraido_parcial: 'Campos extraídos, revisão pendente',
+    inconclusivo: 'Diagnóstico inconclusivo'
+  };
+
+  function renderCoverage(document, summary) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    var escopo = (summary && summary.escopo) || {};
+    wrap.appendChild(el(document, 'p', 'prep__state',
+      'Concursos: ' + (escopo.concursos || 0)
+      + ' · com documento: ' + (escopo.com_documento || 0)
+      + ' · com edital oficial: ' + (escopo.com_edital_oficial || 0)
+      + ' · com propostas: ' + (escopo.com_propostas || 0)));
+
+    var causas = (summary && summary.causas) || {};
+    var causeList = el(document, 'ul', 'study__revisions');
+    Object.keys(causas).sort(function (a, b) { return causas[b] - causas[a]; }).forEach(function (key) {
+      causeList.appendChild(el(document, 'li', 'study__revision',
+        (CAUSE_LABELS[key] || key) + ': ' + causas[key]));
+    });
+    wrap.appendChild(el(document, 'h3', 'study__subtitle', 'Por que faltam dados'));
+    wrap.appendChild(causeList);
+
+    var dims = (summary && summary.dimensoes_obrigatorias) || [];
+    if (dims.length) {
+      wrap.appendChild(el(document, 'h3', 'study__subtitle', 'Dimensões obrigatórias'));
+      var table = el(document, 'div', 'coverage__dims');
+      dims.forEach(function (dim) {
+        var row = el(document, 'div', 'coverage__dim');
+        row.appendChild(el(document, 'span', 'coverage__dim-label', dim.label));
+        var confirmado = dim.pct_confirmado === null || dim.pct_confirmado === undefined
+          ? 'não medido' : dim.pct_confirmado + '% confirmado';
+        var comDado = dim.pct_com_dado === null || dim.pct_com_dado === undefined
+          ? '' : ' · ' + dim.pct_com_dado + '% com algum dado';
+        row.appendChild(el(document, 'span', 'coverage__dim-value',
+          confirmado + comDado + ' (denominador ' + dim.denominador + ')'));
+        table.appendChild(row);
+      });
+      wrap.appendChild(table);
+    }
+
+    var limitacoes = (summary && summary.limitacoes) || [];
+    if (limitacoes.length) {
+      wrap.appendChild(el(document, 'h3', 'study__subtitle', 'Limitações desta medição'));
+      var notes = el(document, 'ul', 'study__revisions');
+      limitacoes.forEach(function (note) {
+        notes.appendChild(el(document, 'li', 'study__revision', note));
+      });
+      wrap.appendChild(notes);
+    }
+    return wrap;
+  }
+
+  function renderGaps(document, payload) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    var items = (payload && payload.itens) || [];
+    if (!items.length) {
+      wrap.appendChild(el(document, 'p', 'muted', 'Nenhuma lacuna acionável.'));
+      return wrap;
+    }
+    items.slice(0, 12).forEach(function (item) {
+      var card = el(document, 'article', 'study-disc');
+      card.appendChild(el(document, 'h4', 'study-disc__title',
+        'Prioridade ' + item.prioridade + ' · ' + (item.causa_label || item.causa)));
+      card.appendChild(el(document, 'p', 'prep__basis',
+        (item.acao_label || item.acao) + ' · tarefa: ' + item.tipo_tarefa));
+      if (item.motivos && item.motivos.length) {
+        var reasons = el(document, 'ul', 'study__revisions');
+        item.motivos.forEach(function (reason) {
+          reasons.appendChild(el(document, 'li', 'study__revision', reason));
+        });
+        card.appendChild(reasons);
+      }
+      wrap.appendChild(card);
+    });
+    return wrap;
+  }
+
+  function fetchCoverage() {
+    var doc = global.document;
+    if (!doc || !doc.getElementById('coverage-panel')) return Promise.resolve();
+    return Promise.all([
+      global.fetch('/api/cobertura/resumo', {headers: {Accept: 'application/json'}})
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        }),
+      global.fetch('/api/lacunas?limit=20', {headers: {Accept: 'application/json'}})
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+    ]).then(function (parts) {
+      var summaryNode = doc.getElementById('coverage-panel');
+      if (summaryNode) {
+        summaryNode.textContent = '';
+        summaryNode.appendChild(renderCoverage(doc, parts[0]));
+      }
+      var gapsNode = doc.getElementById('gaps-panel');
+      if (gapsNode) {
+        gapsNode.textContent = '';
+        gapsNode.appendChild(renderGaps(doc, parts[1]));
+      }
+      var status = doc.getElementById('coverage-status');
+      if (status) status.textContent = '';
+    }).catch(function (err) {
+      // Falha de API nunca vira zero: mostra indisponibilidade explícita.
+      var status = doc.getElementById('coverage-status');
+      if (status) {
+        status.textContent = 'Cobertura indisponível (' + (err && err.message ? err.message : 'erro') + ').';
+      }
+      ['coverage-panel', 'gaps-panel'].forEach(function (id) {
+        var node = doc.getElementById(id);
+        if (!node) return;
+        node.textContent = '';
+        node.appendChild(el(doc, 'p', 'muted', 'Cobertura indisponível.'));
+      });
+    });
+  }
+
   // --- Prática: flashcards, questões e simulados (Fase 23) --------------------
 
   var QUALITY_LABEL = {0: 'Esqueci', 1: 'Errei', 2: 'Difícil', 3: 'Ok', 4: 'Bom', 5: 'Fácil'};
@@ -2247,6 +2376,8 @@
       }
     });
     if (pacForm) pacForm.addEventListener('submit', function (event) { event.preventDefault(); });
+    var coverageRefresh = doc.getElementById('coverage-refresh');
+    if (coverageRefresh) coverageRefresh.addEventListener('click', function () { fetchCoverage(); });
     fetchData().then(focusContestFromHash).catch(function () {});
     fetchMonitoring();
     fetchAlerts();
@@ -2256,6 +2387,7 @@
     fetchPerfil();
     fetchPractice();
     fetchPackages();
+    fetchCoverage();
     startAutoRefresh();
     if (global.addEventListener) {
       global.addEventListener('hashchange', function () { focusContestFromHash(); });
@@ -2285,6 +2417,9 @@
     renderExams: renderExams,
     renderPerformance: renderPerformance,
     renderPackagePreview: renderPackagePreview,
+    renderCoverage: renderCoverage,
+    renderGaps: renderGaps,
+    fetchCoverage: fetchCoverage,
     readFileAsBase64: readFileAsBase64,
     formatClock: formatClock,
     matchIdentity: matchIdentity,

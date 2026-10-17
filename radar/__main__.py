@@ -472,6 +472,32 @@ def _cmd_pratica_desempenho(args: argparse.Namespace) -> None:
                      ensure_ascii=False, default=str))
 
 
+
+def _cmd_cobertura(args: argparse.Namespace) -> None:
+    from radar import data_quality
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    out = data_quality.audit(cfg["db_path"])
+    print(json.dumps(out, ensure_ascii=False, default=str))
+
+
+def _cmd_lacunas(args: argparse.Namespace) -> None:
+    from radar import data_quality
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    out = data_quality.gaps(cfg["db_path"], limit=args.limit)
+    print(json.dumps(out, ensure_ascii=False, default=str))
+
+
+def _cmd_cobertura_papeis(args: argparse.Namespace) -> None:
+    from radar import enrichment
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    out = enrichment.materialize_document_roles(cfg["db_path"], dry_run=not args.apply)
+    out["resumo"] = enrichment.unresolved_role_summary(cfg["db_path"])
+    print(json.dumps(out, ensure_ascii=False, default=str))
+
+
 def build_parser() -> argparse.ArgumentParser:
     from radar.preferences import PRIORITIES
     parser = argparse.ArgumentParser(prog="python -m radar")
@@ -834,6 +860,23 @@ def build_parser() -> argparse.ArgumentParser:
     perf = subparsers.add_parser('estudos-desempenho', help='desempenho agregado (tentativas e simulados)')
     perf.add_argument('--config', default=None)
     perf.set_defaults(func=_cmd_pratica_desempenho)
+
+
+    cob = subparsers.add_parser('cobertura', help='auditoria de cobertura e qualidade dos dados')
+    cob.add_argument('--config', default=None)
+    cob.set_defaults(func=_cmd_cobertura)
+
+    lac = subparsers.add_parser('lacunas', help='fila priorizada de lacunas de dados')
+    lac.add_argument('--config', default=None)
+    lac.add_argument('--limit', type=int, default=50)
+    lac.set_defaults(func=_cmd_lacunas)
+
+    cobp = subparsers.add_parser('cobertura-papeis',
+                                 help='materializa identidades de cargo a partir do edital')
+    cobp.add_argument('--config', default=None)
+    cobp.add_argument('--apply', action='store_true',
+                      help='grava as identidades (sem isto, apenas simula)')
+    cobp.set_defaults(func=_cmd_cobertura_papeis)
 
     return parser
 

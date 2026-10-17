@@ -236,6 +236,21 @@ class TestAppStatic(unittest.TestCase):
         for token in (".prep__panel", ".prep__stats", ".prep__basis"):
             self.assertIn(token, css, "styles.css deve apresentar %r" % token)
 
+    def test_renders_coverage_panel(self):
+        js = read(APP_PATH)
+        for token in ("renderCoverage", "renderGaps", "fetchCoverage",
+                      "/api/cobertura/resumo", "/api/lacunas", "CAUSE_LABELS",
+                      "denominador", "limitacoes", "dimensoes_obrigatorias",
+                      "coverage-panel", "gaps-panel"):
+            self.assertIn(token, js, "app.js deve apresentar %r" % token)
+        html = read(os.path.join(WEB, "index.html"))
+        for token in ('id="coverage-panel"', 'id="gaps-panel"',
+                      'id="coverage-refresh"', 'id="coverage-title"'):
+            self.assertIn(token, html, "index.html deve conter %r" % token)
+        css = read(os.path.join(WEB, "styles.css"))
+        for token in (".coverage__panel", ".coverage__dim"):
+            self.assertIn(token, css, "styles.css deve conter %r" % token)
+
     def test_renders_exam_navigation_and_packages(self):
         js = read(APP_PATH)
         for token in ("practice__map", "goTo(", "is-marked", "is-answered",
