@@ -226,6 +226,61 @@ _V9_COLUMNS = {"alertas": {"notified_at", "notify_state", "notify_attempts",
                            "notify_error", "snoozed_until"},
                "ops_state": {"key", "value", "updated_at"}}
 
+# v10: gestão de estudos (dados **pessoais**, separados do catálogo oficial). Nada aqui é
+# exposto pelo contrato v1 nem enviado às fontes. O catálogo de tópicos é separado do
+# progresso: `estudo_progresso.contest_id` isola o progresso por edital ('' = geral).
+_V10_STUDY_TABLES = (
+    """CREATE TABLE estudo_disciplinas (
+        id TEXT PRIMARY KEY, nome TEXT NOT NULL, created_at TEXT NOT NULL)""",
+    """CREATE TABLE estudo_topicos (
+        id TEXT PRIMARY KEY,
+        disciplina_id TEXT NOT NULL REFERENCES estudo_disciplinas(id),
+        parent_id TEXT REFERENCES estudo_topicos(id),
+        nome TEXT NOT NULL, created_at TEXT NOT NULL)""",
+    """CREATE TABLE estudo_progresso (
+        id TEXT PRIMARY KEY,
+        contest_id TEXT NOT NULL DEFAULT '',
+        topico_id TEXT NOT NULL REFERENCES estudo_topicos(id),
+        state TEXT NOT NULL CHECK(state IN ('nao_iniciado','estudando','revisado','concluido')),
+        data_conclusao TEXT, adiamentos INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        UNIQUE(contest_id, topico_id))""",
+    """CREATE TABLE estudo_sessoes (
+        id TEXT PRIMARY KEY,
+        disciplina_id TEXT REFERENCES estudo_disciplinas(id),
+        topico_id TEXT REFERENCES estudo_topicos(id),
+        contest_id TEXT NOT NULL DEFAULT '',
+        inicio TEXT, fim TEXT,
+        duracao_segundos INTEGER NOT NULL DEFAULT 0,
+        estado TEXT NOT NULL CHECK(estado IN ('em_andamento','pausada','concluida','descartada')),
+        modo TEXT NOT NULL DEFAULT 'livre' CHECK(modo IN ('livre','pomodoro')),
+        notas TEXT, created_at TEXT NOT NULL)""",
+    """CREATE TABLE estudo_revisoes (
+        id TEXT PRIMARY KEY,
+        progresso_id TEXT NOT NULL REFERENCES estudo_progresso(id),
+        agendada_para TEXT NOT NULL, feita_em TEXT, resultado TEXT,
+        created_at TEXT NOT NULL)""",
+)
+_V10_INDEXES = (
+    "CREATE INDEX IF NOT EXISTS idx_estudo_topicos_disc ON estudo_topicos(disciplina_id)",
+    "CREATE INDEX IF NOT EXISTS idx_estudo_progresso_topico ON estudo_progresso(topico_id)",
+    "CREATE INDEX IF NOT EXISTS idx_estudo_sessoes_estado ON estudo_sessoes(estado)",
+    "CREATE INDEX IF NOT EXISTS idx_estudo_revisoes_agenda ON estudo_revisoes(agendada_para)",
+    # Defesa em profundidade: no máximo UMA sessão aberta (em andamento/pausada).
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_estudo_sessao_unica ON estudo_sessoes((1)) "
+    "WHERE estado IN ('em_andamento','pausada')",
+)
+_V10_DDL = _V10_STUDY_TABLES  # índices (IF NOT EXISTS) aplicados por `_apply_v10`
+_V10_COLUMNS = {
+    "estudo_disciplinas": {"id", "nome", "created_at"},
+    "estudo_topicos": {"id", "disciplina_id", "parent_id", "nome", "created_at"},
+    "estudo_progresso": {"id", "contest_id", "topico_id", "state", "data_conclusao",
+                         "adiamentos", "created_at", "updated_at"},
+    "estudo_sessoes": {"id", "disciplina_id", "topico_id", "contest_id", "inicio", "fim",
+                       "duracao_segundos", "estado", "modo", "notas", "created_at"},
+    "estudo_revisoes": {"id", "progresso_id", "agendada_para", "feita_em", "resultado", "created_at"},
+}
+
 _V2_COLUMNS = {
     "concursos_identidade": {"id", "created_at"},
     "observacoes_concurso": {"id", "contest_id", "source_url", "competition_id", "observed_at"},
@@ -245,10 +300,10 @@ _V2_COLUMNS = {
 }
 
 # Versão corrente do esquema documental (v2 base + reconciliação/hash + monitoramento + fila).
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
-# Versões que as rotas de leitura aceitam sem migrar (v2..v9).
-_READABLE_VERSIONS = (2, 3, 4, 5, 6, 7, 8, SCHEMA_VERSION)
+# Versões que as rotas de leitura aceitam sem migrar (v2..v10).
+_READABLE_VERSIONS = (2, 3, 4, 5, 6, 7, 8, 9, SCHEMA_VERSION)
 
 
 def _validate_schema(conn, statements, columns_by_table, version_label):
@@ -337,6 +392,18 @@ def _apply_v8(conn) -> None:
             conn.execute(statement)
 
 
+def _apply_v10(conn) -> None:
+    """Cria as tabelas de estudo (v10), tolerando banco parcialmente atualizado."""
+    present = {row[0] for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type IN ('table','index')")}
+    for statement in _V10_STUDY_TABLES:
+        name = re.match(r"CREATE TABLE (\w+)", statement).group(1)
+        if name not in present:
+            conn.execute(statement)
+    for statement in _V10_INDEXES:
+        conn.execute(statement)
+
+
 def _apply_v9(conn) -> None:
     """Adiciona estado de notificação/adiamento e `ops_state`, tolerando banco parcial."""
     present = {row[0] for row in conn.execute(
@@ -400,7 +467,7 @@ def migrate_document_schema(db_path) -> None:
     try:
         conn.execute("BEGIN IMMEDIATE")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 2, 3, 4, 5, 6, 7, 8, SCHEMA_VERSION):
+        if version not in (0, 2, 3, 4, 5, 6, 7, 8, 9, SCHEMA_VERSION):
             raise ValueError(f"versão de esquema não suportada: {version}")
         _v3_extra = dict(
             versoes_documento=_V2_COLUMNS["versoes_documento"] | {"comparison_sha256"},
@@ -412,11 +479,13 @@ def migrate_document_schema(db_path) -> None:
         _v9_extra = dict(_v8_extra)
         _v9_extra["alertas"] = _V8_COLUMNS["alertas"] | _V9_COLUMNS["alertas"]
         _v9_extra["ops_state"] = _V9_COLUMNS["ops_state"]
+        _v10_extra = dict(_v9_extra, **_V10_COLUMNS)
         if version == SCHEMA_VERSION:
-            _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL,
-                             dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v9_extra),
+            _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL,
+                             dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v10_extra),
                              f"v{SCHEMA_VERSION}")
             _seed_alert_watermarks(conn)
+            _apply_v10(conn)  # garante índices v10 (ex.: sessão aberta única) em base já migrada
         else:
             if version == 2:
                 _validate_schema(conn, _DDL, _V2_COLUMNS, "v2")
@@ -437,6 +506,9 @@ def migrate_document_schema(db_path) -> None:
             elif version == 8:
                 _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL,
                                  dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v8_extra), "v8")
+            elif version == 9:
+                _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL,
+                                 dict(_V2_COLUMNS, **_v3_extra, **_V4_COLUMNS, **_V5_COLUMNS, **_v9_extra), "v9")
             else:
                 for statement in _DDL:
                     conn.execute(statement)
@@ -447,6 +519,7 @@ def migrate_document_schema(db_path) -> None:
             _apply_v7(conn)
             _apply_v8(conn)
             _apply_v9(conn)
+            _apply_v10(conn)
             _seed_alert_watermarks(conn)
             conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         _ensure_alert_indexes(conn)

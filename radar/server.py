@@ -219,6 +219,46 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         body = json.dumps(saved, ensure_ascii=False).encode("utf-8")
         self._send(HTTPStatus.OK, "application/json; charset=utf-8", body)
 
+    # --- Gestão de estudos (dados pessoais; rotas aditivas, v1 intacta) ------
+
+    def _bad_request(self, message="requisição inválida"):
+        body = json.dumps({"error": message}, ensure_ascii=False).encode("utf-8")
+        self._send(HTTPStatus.BAD_REQUEST, "application/json; charset=utf-8", body)
+
+    def _read_json(self, max_len=8192):
+        """Lê e valida o corpo JSON da requisição; devolve ``dict`` ou ``None`` (já responde 400)."""
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except (TypeError, ValueError):
+            length = 0
+        if length <= 0 or length > max_len:
+            self._bad_request("corpo ausente ou grande demais")
+            return None
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            self._bad_request("JSON inválido")
+            return None
+        if not isinstance(payload, dict):
+            self._bad_request("corpo deve ser um objeto JSON")
+            return None
+        return payload
+
+    def _serve_study(self, fn, *args, **kwargs):
+        from radar import study_store
+        try:
+            payload = fn(self.server.db_path, *args, **kwargs)
+        except ValueError as error:
+            body = json.dumps({"error": str(error)}, ensure_ascii=False).encode("utf-8")
+            self._send(HTTPStatus.BAD_REQUEST, "application/json; charset=utf-8", body)
+            return
+        except sqlite3.Error:
+            self._send(HTTPStatus.SERVICE_UNAVAILABLE, "application/json; charset=utf-8",
+                       b'{"error":"Migracao documental pendente"}')
+            return
+        body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+        self._send(HTTPStatus.OK, "application/json; charset=utf-8", body)
+
     def _serve_triage(self, include_seen, limit):
         from radar import ops
         from radar.ops_config import load_config
@@ -290,6 +330,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
     # --- Roteamento ----------------------------------------------------------
 
     def do_GET(self):
+        from radar import study_store
         parts = urlsplit(self.path)
         path = parts.path
         if path == "/api/concursos":
@@ -364,6 +405,50 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
             else:
                 self._serve_preferences()
+        elif path == "/api/estudos/painel":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_study(study_store.study_dashboard)
+        elif path == "/api/estudos/disciplinas":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_study(study_store.list_disciplinas)
+        elif path == "/api/estudos/topicos":
+            query = parse_qs(parts.query)
+            if set(query) - {"disciplina_id"}:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_study(study_store.list_topicos, query.get("disciplina_id", [None])[0])
+        elif path == "/api/estudos/progresso":
+            query = parse_qs(parts.query)
+            if set(query) - {"contest_id"}:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_study(study_store.list_progresso,
+                                  contest_id=query.get("contest_id", [""])[0])
+        elif path == "/api/estudos/sessoes":
+            query = parse_qs(parts.query)
+            try:
+                limit = int(query.get("limit", ["50"])[0])
+            except ValueError:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+                return
+            if limit < 1 or set(query) - {"limit"}:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_study(study_store.list_sessions, limit=limit)
+        elif path == "/api/estudos/sessao-atual":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_study(study_store.current_session)
+        elif path == "/api/estudos/revisoes":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_study(study_store.pending_revisions)
         elif path in ("/", "/index.html"):
             self._serve_file("index.html")
         elif path in _ASSET_ROUTES:
@@ -375,6 +460,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         self._send_no_content(HTTPStatus.METHOD_NOT_ALLOWED, {"Allow": allow})
 
     def do_POST(self):
+        from radar import study_store
         parts = urlsplit(self.path)
         path = parts.path
         if path.startswith("/api/alertas/") and not parts.query:
@@ -388,6 +474,66 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             else:
                 self._save_preferences()
             return
+        if path == "/api/estudos/disciplinas":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+                return
+            body = self._read_json()
+            if body is not None:
+                self._serve_study(study_store.create_disciplina, body.get("nome"))
+            return
+        if path == "/api/estudos/topicos":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+                return
+            body = self._read_json()
+            if body is not None:
+                self._serve_study(study_store.create_topico, body.get("disciplina_id"),
+                                  body.get("nome"), body.get("parent_id"))
+            return
+        if path == "/api/estudos/progresso":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+                return
+            body = self._read_json()
+            if body is not None:
+                self._serve_study(study_store.set_progress, body.get("topico_id"),
+                                  body.get("state"), contest_id=body.get("contest_id") or "")
+            return
+        if path == "/api/estudos/sessoes":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+                return
+            body = self._read_json()
+            if body is None:
+                return
+            action = body.get("action")
+            if action == "start":
+                self._serve_study(study_store.start_session,
+                                  disciplina_id=body.get("disciplina_id"),
+                                  topico_id=body.get("topico_id"),
+                                  contest_id=body.get("contest_id") or "",
+                                  modo=body.get("modo") or "livre")
+            elif action == "pause":
+                self._serve_study(study_store.pause_session, body.get("id"))
+            elif action == "resume":
+                self._serve_study(study_store.resume_session, body.get("id"))
+            elif action == "finish":
+                self._serve_study(study_store.finish_session, body.get("id"))
+            elif action == "discard":
+                self._serve_study(study_store.discard_session, body.get("id"))
+            else:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            return
+        if path == "/api/estudos/revisoes":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+                return
+            body = self._read_json()
+            if body is not None:
+                self._serve_study(study_store.mark_revision_done, body.get("progresso_id"),
+                                  resultado=body.get("resultado"))
+            return
         self._method_not_allowed()
 
     def do_PUT(self):
@@ -400,7 +546,10 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         self._verb_not_allowed()
 
     def _verb_not_allowed(self):
-        allow = "GET, POST" if urlsplit(self.path).path == "/api/preferencias" else "GET"
+        path = urlsplit(self.path).path
+        post_paths = ("/api/preferencias", "/api/estudos/disciplinas", "/api/estudos/topicos",
+                      "/api/estudos/progresso", "/api/estudos/sessoes")
+        allow = "GET, POST" if path in post_paths else "GET"
         self._method_not_allowed(allow)
 
     def do_HEAD(self):

@@ -206,6 +206,23 @@ class TestAppStatic(unittest.TestCase):
             self.assertIn(token, css, "styles.css deve apresentar %r" % token)
 
 
+    def test_renders_study_panel(self):
+        js = read(APP_PATH)
+        for token in ("renderStudy", "fetchStudy", "/api/estudos/painel", "/api/estudos/sessoes",
+                      "/api/estudos/disciplinas", "/api/estudos/topicos", "/api/estudos/progresso",
+                      "/api/estudos/revisoes", "Marcar revisada",
+                      "renderStudyTimer", "formatClock", "study-panel", "timer-display",
+                      "timerAction", "study__stat"):
+            self.assertIn(token, js, "app.js deve apresentar %r" % token)
+        html = read(os.path.join(WEB, "index.html"))
+        for token in ('id="study-panel"', 'id="timer-display"', 'id="study-form"',
+                      'id="timer-start"', 'id="timer-finish"'):
+            self.assertIn(token, html)
+        css = read(STYLES_PATH)
+        for token in (".study__panel", ".study__stat", ".study-disc", ".timer__display"):
+            self.assertIn(token, css, "styles.css deve apresentar %r" % token)
+
+
 class TestStylesStatic(unittest.TestCase):
     """Responsividade e acessibilidade do styles.css."""
 
@@ -649,6 +666,30 @@ assert.ok(!prioText.includes('distância rodoviária') && !prioText.includes('km
 assert.ok(!prioText.includes('probabilidade') && !prioText.includes('chance de'), 'sem falsa probabilidade');
 assert.ok(prioText.includes('prazo expirado'), 'urgência exibida à parte');
 assert.strictEqual(collectAnchors(prio).length, 3, 'um link de concurso por item');
+
+// Estudos: relógio formatado e painel derivado de dados persistidos.
+eq(Radar.formatClock(0), '00:00:00');
+eq(Radar.formatClock(59), '00:00:59');
+eq(Radar.formatClock(3661), '01:01:01');
+eq(Radar.formatClock(-5), '00:00:00');
+
+const study = Radar.renderStudy(doc, {
+  disciplinas: 1, topicos: 2, total_segundos: 3661, semana_segundos: 1800,
+  sessoes_concluidas: 3, revisoes_pendentes: 1,
+  conteudo: {overall: {done: 1, total: 2, pct: 50}},
+  minutos_por_disciplina: [{disciplina_id: 'd1', nome: 'TI', minutos: 61}],
+  revisoes: [{progresso_id: 'p-abc12345', data: '2026-01-02'}],
+  lista_disciplinas: [{id: 'd1', nome: 'TI', topicos: [
+    {id: 't1', nome: 'Redes', state: 'concluido'},
+    {id: 't2', nome: 'Banco', state: 'nao_iniciado'}]}]
+});
+const studyText = flattenText(study);
+assert.ok(studyText.includes('TI'), 'disciplina exibida');
+assert.ok(studyText.includes('Redes') && studyText.includes('Banco'), 'tópicos exibidos');
+assert.ok(studyText.includes('50%'), 'progresso derivado dos dados');
+assert.ok(studyText.includes('01:01:01'), 'tempo total formatado');
+assert.ok(studyText.includes('Revisões pendentes'), 'revisões pendentes exibidas');
+assert.ok(!studyText.includes('innerHTML'), 'render sem innerHTML');
 
 console.log('OK');
 """

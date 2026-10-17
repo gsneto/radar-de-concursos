@@ -241,6 +241,66 @@ def _cmd_ops_preferencias(args: argparse.Namespace) -> None:
     print(json.dumps(current, ensure_ascii=False))
 
 
+def _cmd_estudos_painel(args: argparse.Namespace) -> None:
+    from radar import study_store
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    print(json.dumps(study_store.study_dashboard(cfg["db_path"]), ensure_ascii=False, default=str))
+
+
+def _cmd_estudos_disciplina(args: argparse.Namespace) -> None:
+    from radar import study_store
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    if args.nome:
+        print(json.dumps(study_store.create_disciplina(cfg["db_path"], args.nome), ensure_ascii=False))
+    else:
+        print(json.dumps(study_store.list_disciplinas(cfg["db_path"]), ensure_ascii=False))
+
+
+def _cmd_estudos_topico(args: argparse.Namespace) -> None:
+    from radar import study_store
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    if args.nome:
+        print(json.dumps(study_store.create_topico(cfg["db_path"], args.disciplina, args.nome),
+                         ensure_ascii=False))
+    else:
+        print(json.dumps(study_store.list_topicos(cfg["db_path"], args.disciplina), ensure_ascii=False))
+
+
+def _cmd_estudos_sessao(args: argparse.Namespace) -> None:
+    from radar import study_store
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    action = args.sessao_action
+    if action == "start":
+        out = study_store.start_session(cfg["db_path"], disciplina_id=args.disciplina,
+                                        topico_id=args.topico, modo=args.modo or "livre")
+    elif action == "pause":
+        out = study_store.pause_session(cfg["db_path"])
+    elif action == "resume":
+        out = study_store.resume_session(cfg["db_path"])
+    elif action == "finish":
+        out = study_store.finish_session(cfg["db_path"])
+    elif action == "discard":
+        out = study_store.discard_session(cfg["db_path"])
+    else:
+        out = study_store.current_session(cfg["db_path"])
+    print(json.dumps(out, ensure_ascii=False, default=str))
+
+
+def _cmd_estudos_revisao(args: argparse.Namespace) -> None:
+    from radar import study_store
+    from radar.ops_config import load_config
+    cfg = load_config(args.config)
+    if args.progresso:
+        print(json.dumps(study_store.mark_revision_done(cfg["db_path"], args.progresso,
+                                                        resultado=args.resultado), ensure_ascii=False))
+    else:
+        print(json.dumps(study_store.pending_revisions(cfg["db_path"]), ensure_ascii=False))
+
+
 def build_parser() -> argparse.ArgumentParser:
     from radar.preferences import PRIORITIES
     parser = argparse.ArgumentParser(prog="python -m radar")
@@ -471,6 +531,36 @@ def build_parser() -> argparse.ArgumentParser:
     ops_pref.add_argument('--priority', default=None, choices=PRIORITIES)
     ops_pref.add_argument('--interest-states', default=None, help='UFs separadas por vírgula, ex.: BA,PE')
     ops_pref.set_defaults(func=_cmd_ops_preferencias)
+
+    est_painel = subparsers.add_parser('estudos-painel', help='painel de estudos (progresso, tempo, revisões)')
+    est_painel.add_argument('--config', default=None)
+    est_painel.set_defaults(func=_cmd_estudos_painel)
+
+    est_disc = subparsers.add_parser('estudos-disciplina', help='lista/cria disciplinas de estudo')
+    est_disc.add_argument('--config', default=None)
+    est_disc.add_argument('--nome', default=None)
+    est_disc.set_defaults(func=_cmd_estudos_disciplina)
+
+    est_top = subparsers.add_parser('estudos-topico', help='lista/cria tópicos de uma disciplina')
+    est_top.add_argument('--config', default=None)
+    est_top.add_argument('--disciplina', required=True)
+    est_top.add_argument('--nome', default=None)
+    est_top.set_defaults(func=_cmd_estudos_topico)
+
+    est_sess = subparsers.add_parser('estudos-sessao', help='cronômetro de estudo (start/pause/resume/finish/discard/status)')
+    est_sess.add_argument('--config', default=None)
+    est_sess.add_argument('sessao_action', nargs='?', default='status',
+                          choices=['start', 'pause', 'resume', 'finish', 'discard', 'status'])
+    est_sess.add_argument('--disciplina', default=None)
+    est_sess.add_argument('--topico', default=None)
+    est_sess.add_argument('--modo', default=None, choices=['livre', 'pomodoro'])
+    est_sess.set_defaults(func=_cmd_estudos_sessao)
+
+    est_rev = subparsers.add_parser('estudos-revisao', help='lista revisões pendentes ou marca uma como feita')
+    est_rev.add_argument('--config', default=None)
+    est_rev.add_argument('--progresso', default=None, help='id do progresso a marcar como revisado')
+    est_rev.add_argument('--resultado', default=None)
+    est_rev.set_defaults(func=_cmd_estudos_revisao)
 
     return parser
 

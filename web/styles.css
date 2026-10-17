@@ -706,3 +706,26 @@ button:focus-visible {
 .factor { font-size: var(--text-xs, 0.75rem); color: var(--ink-soft, #333); }
 .factor--unknown { color: var(--muted); font-style: italic; }
 .priority-item__links { margin-top: var(--space-1, 4px); }
+
+/* Estudos (Fase 21) */
+.study__timer { display: flex; flex-wrap: wrap; gap: var(--space-2, 8px); align-items: center; margin-bottom: var(--space-3, 12px); padding: var(--space-3, 12px); border: 1px solid var(--border, #d8ded9); border-radius: 10px; background: var(--surface, #fff); }
+.timer__display { font-size: 1.6rem; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--brand-deep, #14452f); }
+.timer__context { font-size: var(--text-sm, 0.85rem); color: var(--muted); margin-right: auto; }
+.study__panel { border: 1px solid var(--border, #d8ded9); border-radius: 10px; padding: var(--space-3, 12px); background: var(--surface, #fff); }
+.study__stats { display: flex; flex-wrap: wrap; gap: var(--space-2, 8px); margin-bottom: var(--space-3, 12px); }
+.study__stat { display: flex; flex-direction: column; min-width: 110px; padding: var(--space-2, 8px); border: 1px solid var(--rule, #e6eae6); border-radius: 8px; background: var(--surface-alt, #f6f8f6); }
+.study__stat-value { font-size: var(--text-lg, 1.1rem); font-weight: 600; }
+.study__stat-label { font-size: var(--text-xs, 0.75rem); color: var(--muted); }
+.study__subtitle { margin: var(--space-3, 12px) 0 var(--space-1, 4px); font-size: var(--text-base, 1rem); }
+.study__by-disc, .study__revisions { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.study__by-disc-row, .study__revision { font-size: var(--text-sm, 0.85rem); color: var(--ink-soft, #333); }
+.study-disc { border-left: 3px solid var(--brand-deep, #14452f); padding: var(--space-2, 8px) var(--space-3, 12px); border-radius: 6px; background: var(--surface-alt, #f6f8f6); margin-bottom: var(--space-2, 8px); }
+.study-disc__title { margin: 0 0 var(--space-1, 4px); font-size: var(--text-base, 1rem); }
+.study-disc__topics { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1, 4px); }
+.study-topic { display: flex; flex-wrap: wrap; gap: var(--space-2, 8px); align-items: center; }
+.study-topic__name { flex: 1 1 auto; font-size: var(--text-sm, 0.85rem); }
+.study-topic--concluido .study-topic__name { color: var(--st-validated, #1f7a4d); }
+.study-topic--estudando .study-topic__name { color: var(--st-ambiguous, #b8860b); }
+.study-topic__state { font: inherit; font-size: var(--text-xs, 0.75rem); padding: 2px var(--space-2, 8px); border: 1px solid var(--rule-strong, #c8cfc9); border-radius: 6px; }
+.study-disc__add { display: flex; gap: var(--space-1, 4px); margin-top: var(--space-1, 4px); }
+.study-disc__input { font: inherit; flex: 1 1 auto; padding: 2px var(--space-2, 8px); border: 1px solid var(--rule-strong, #c8cfc9); border-radius: 6px; }

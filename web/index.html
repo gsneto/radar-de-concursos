@@ -99,6 +99,38 @@
       </div>
     </section>
 
+    <section class="study" aria-labelledby="study-title">
+      <h2 id="study-title" class="results__title">Estudos</h2>
+      <div class="study__timer" role="group" aria-label="Cronômetro de estudo">
+        <span id="timer-display" class="timer__display" aria-live="off">00:00:00</span>
+        <span id="timer-context" class="timer__context">sem sessão</span>
+        <label class="prefs__field">Disciplina
+          <select id="timer-disciplina" class="priorities__select"></select>
+        </label>
+        <label class="prefs__field">Modo
+          <select id="timer-modo" class="priorities__select">
+            <option value="livre">Livre</option>
+            <option value="pomodoro">Pomodoro</option>
+          </select>
+        </label>
+        <button id="timer-start" type="button" class="button">Iniciar</button>
+        <button id="timer-pause" type="button" class="button button--ghost">Pausar</button>
+        <button id="timer-resume" type="button" class="button button--ghost">Retomar</button>
+        <button id="timer-finish" type="button" class="button">Concluir</button>
+        <button id="timer-discard" type="button" class="button button--ghost">Descartar</button>
+      </div>
+      <form id="study-form" class="prefs" aria-label="Nova disciplina">
+        <label class="prefs__field">Nova disciplina
+          <input id="study-disciplina-nome" type="text" autocomplete="off" placeholder="Ex.: Direito Constitucional">
+        </label>
+        <button type="submit" class="button">Adicionar disciplina</button>
+        <span id="study-status" class="prefs__status" role="status" aria-live="polite"></span>
+      </form>
+      <div id="study-panel" class="study__panel" role="status" aria-live="polite">
+        <p class="muted">Carregando estudos.</p>
+      </div>
+    </section>
+
     <section class="results" aria-labelledby="results-title">
       <h2 id="results-title" class="results__title">Concursos monitorados</h2>
 

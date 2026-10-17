@@ -1074,6 +1074,244 @@
     });
   }
 
+  // --- Estudos: cronômetro, sessões e painel (Fase 21) ------------------------
+
+  var studyTimer = null;
+
+  function formatClock(seconds) {
+    seconds = Math.max(0, Math.floor(seconds || 0));
+    var h = Math.floor(seconds / 3600);
+    var m = Math.floor((seconds % 3600) / 60);
+    var s = seconds % 60;
+    return [h, m, s].map(function (n) { return String(n).padStart(2, '0'); }).join(':');
+  }
+
+  function studyRequest(path, options) {
+    return global.fetch(path, options).then(function (res) {
+      return res.json().then(function (payload) {
+        if (!res.ok) throw new Error(payload && payload.error ? payload.error : ('HTTP ' + res.status));
+        return payload;
+      });
+    });
+  }
+
+  function studyPost(path, body) {
+    return studyRequest(path, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', Accept: 'application/json'},
+      body: JSON.stringify(body || {})
+    });
+  }
+
+  function stopStudyClock() {
+    if (studyTimer && typeof global.clearInterval === 'function') {
+      global.clearInterval(studyTimer);
+    }
+    studyTimer = null;
+  }
+
+  function renderStudyTimer(document, current) {
+    var display = document.getElementById('timer-display');
+    var context = document.getElementById('timer-context');
+    if (!display) { stopStudyClock(); return; }
+    if (!current) {
+      display.textContent = '00:00:00';
+      if (context) context.textContent = 'sem sessão';
+      stopStudyClock();
+      return;
+    }
+    var base = current.elapsed_seconds || 0;
+    var startedAt = current.estado === 'em_andamento' ? Date.now() : null;
+    function tick() {
+      var extra = startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0;
+      display.textContent = formatClock(base + extra);
+    }
+    tick();
+    stopStudyClock();
+    if (startedAt && typeof global.setInterval === 'function') {
+      studyTimer = global.setInterval(tick, 1000);
+    }
+    if (context) {
+      var estado = current.estado === 'em_andamento' ? 'em andamento'
+        : (current.estado === 'pausada' ? 'pausada' : current.estado);
+      context.textContent = estado + ' · ' + (current.modo || 'livre');
+    }
+  }
+
+  function renderStudy(document, data) {
+    data = data || {};
+    var wrap = el(document, 'div', 'study__inner');
+
+    var stats = el(document, 'div', 'study__stats');
+    var overall = (data.conteudo && data.conteudo.overall) || {done: 0, total: 0, pct: 0};
+    [
+      ['Disciplinas', data.disciplinas || 0],
+      ['Tópicos', data.topicos || 0],
+      ['Progresso', overall.pct + '% (' + overall.done + '/' + overall.total + ')'],
+      ['Tempo total', formatClock(data.total_segundos || 0)],
+      ['Últimos 7 dias', formatClock(data.semana_segundos || 0)],
+      ['Sessões concluídas', data.sessoes_concluidas || 0],
+      ['Revisões pendentes', data.revisoes_pendentes || 0]
+    ].forEach(function (pair) {
+      var card = el(document, 'div', 'study__stat');
+      card.appendChild(el(document, 'span', 'study__stat-value', String(pair[1])));
+      card.appendChild(el(document, 'span', 'study__stat-label', pair[0]));
+      stats.appendChild(card);
+    });
+    wrap.appendChild(stats);
+
+    if (data.minutos_por_disciplina && data.minutos_por_disciplina.length) {
+      var byDisc = el(document, 'ul', 'study__by-disc');
+      data.minutos_por_disciplina.forEach(function (row) {
+        byDisc.appendChild(el(document, 'li', 'study__by-disc-row',
+          row.nome + ': ' + row.minutos + ' min'));
+      });
+      wrap.appendChild(el(document, 'h3', 'study__subtitle', 'Tempo por disciplina'));
+      wrap.appendChild(byDisc);
+    }
+
+    if (data.revisoes && data.revisoes.length) {
+      wrap.appendChild(el(document, 'h3', 'study__subtitle', 'Revisões pendentes'));
+      var revs = el(document, 'ul', 'study__revisions');
+      data.revisoes.slice(0, 10).forEach(function (rev) {
+        var row = el(document, 'li', 'study__revision');
+        row.appendChild(el(document, 'span', 'study__revision-label',
+          'Tópico ' + shortId(rev.topico_id || rev.progresso_id) + ' — revisar desde ' + formatDate(rev.data)));
+        var done = el(document, 'button', 'triage-action', 'Marcar revisada');
+        done.type = 'button';
+        done.addEventListener('click', function () {
+          studyPost('/api/estudos/revisoes', {progresso_id: rev.progresso_id})
+            .then(fetchStudy).catch(showError);
+        });
+        row.appendChild(done);
+        revs.appendChild(row);
+      });
+      wrap.appendChild(revs);
+    }
+
+    wrap.appendChild(el(document, 'h3', 'study__subtitle', 'Disciplinas e tópicos'));
+    var disciplinas = data.lista_disciplinas || [];
+    if (!disciplinas.length) {
+      wrap.appendChild(el(document, 'p', 'muted', 'Nenhuma disciplina cadastrada ainda.'));
+    }
+    disciplinas.forEach(function (disc) {
+      var card = el(document, 'article', 'study-disc');
+      card.appendChild(el(document, 'h4', 'study-disc__title', disc.nome));
+      var list = el(document, 'ul', 'study-disc__topics');
+      (disc.topicos || []).forEach(function (top) {
+        var row = el(document, 'li', 'study-topic study-topic--' + top.state);
+        row.appendChild(el(document, 'span', 'study-topic__name', top.nome));
+        var select = el(document, 'select', 'study-topic__state');
+        [['nao_iniciado', 'Não iniciado'], ['estudando', 'Estudando'],
+         ['revisado', 'Revisado'], ['concluido', 'Concluído']].forEach(function (opt) {
+          var option = el(document, 'option', '', opt[1]);
+          option.setAttribute('value', opt[0]);
+          if (opt[0] === top.state) option.setAttribute('selected', 'selected');
+          select.appendChild(option);
+        });
+        select.addEventListener('change', function () {
+          studyPost('/api/estudos/progresso', {topico_id: top.id, state: select.value})
+            .then(fetchStudy).catch(showError);
+        });
+        row.appendChild(select);
+        list.appendChild(row);
+      });
+      if (!(disc.topicos || []).length) {
+        list.appendChild(el(document, 'li', 'muted', 'Sem tópicos.'));
+      }
+      card.appendChild(list);
+      var form = el(document, 'form', 'study-disc__add');
+      var input = el(document, 'input', 'study-disc__input');
+      input.setAttribute('type', 'text');
+      input.setAttribute('placeholder', 'Novo tópico');
+      input.setAttribute('aria-label', 'Novo tópico em ' + disc.nome);
+      var btn = el(document, 'button', 'button button--ghost', 'Adicionar');
+      btn.setAttribute('type', 'submit');
+      form.appendChild(input);
+      form.appendChild(btn);
+      form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        if (!input.value.trim()) return;
+        studyPost('/api/estudos/topicos', {disciplina_id: disc.id, nome: input.value.trim()})
+          .then(fetchStudy).catch(showError);
+      });
+      card.appendChild(form);
+      wrap.appendChild(card);
+    });
+    return wrap;
+  }
+
+  function fetchStudy() {
+    var doc = global.document;
+    var panel = doc && doc.getElementById('study-panel');
+    if (!panel) return Promise.resolve();
+    return global.fetch('/api/estudos/painel', {headers: {Accept: 'application/json'}})
+      .then(function (res) { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+      .then(function (data) {
+        return Promise.all([
+          global.fetch('/api/estudos/disciplinas', {headers: {Accept: 'application/json'}})
+            .then(function (r) { return r.json(); }),
+          global.fetch('/api/estudos/topicos', {headers: {Accept: 'application/json'}})
+            .then(function (r) { return r.json(); })
+        ]).then(function (parts) {
+          var disciplinas = parts[0], topicos = parts[1];
+          var byDisc = {};
+          topicos.forEach(function (t) { byDisc[t.disciplina_id] = byDisc[t.disciplina_id] || []; });
+          var states = {};
+          (data.progresso || []).forEach(function (p) { states[p.topico_id] = p.state; });
+          topicos.forEach(function (t) {
+            byDisc[t.disciplina_id].push({id: t.id, nome: t.nome, state: states[t.id] || 'nao_iniciado'});
+          });
+          data.lista_disciplinas = disciplinas.map(function (d) {
+            return {id: d.id, nome: d.nome, topicos: byDisc[d.id] || []};
+          });
+          panel.textContent = '';
+          panel.appendChild(renderStudy(doc, data));
+          renderStudyTimer(doc, data.sessao_aberta);
+          fillDisciplinaSelect(doc, disciplinas);
+        });
+      })
+      .catch(function (err) {
+        showError(err);
+        panel.textContent = '';
+        panel.appendChild(el(doc, 'p', 'muted', 'Estudos indisponíveis.'));
+      });
+  }
+
+  function fillDisciplinaSelect(doc, disciplinas) {
+    var select = doc.getElementById('timer-disciplina');
+    if (!select) return;
+    var current = select.value;
+    select.textContent = '';
+    var none = el(doc, 'option', '', 'Sem disciplina');
+    none.setAttribute('value', '');
+    select.appendChild(none);
+    disciplinas.forEach(function (d) {
+      var opt = el(doc, 'option', '', d.nome);
+      opt.setAttribute('value', d.id);
+      select.appendChild(opt);
+    });
+    if (current) select.value = current;
+  }
+
+  function timerAction(action) {
+    var doc = global.document;
+    var body = {action: action};
+    if (action === 'start') {
+      var disc = doc.getElementById('timer-disciplina');
+      var modo = doc.getElementById('timer-modo');
+      body.disciplina_id = (disc && disc.value) || null;
+      body.modo = (modo && modo.value) || 'livre';
+    }
+    var status = doc.getElementById('study-status');
+    return studyPost('/api/estudos/sessoes', body)
+      .then(function () { if (status) status.textContent = ''; return fetchStudy(); })
+      .catch(function (err) {
+        if (status) status.textContent = err.message || 'Falha na sessão.';
+        showError(err);
+      });
+  }
+
   // Atualização periódica (sem recarregar a página). Intervalo configurável por
   // `data-refresh-seconds` no <body>; padrão conservador de 60 s.
   function autoRefreshSeconds() {
@@ -1094,6 +1332,8 @@
       fetchAlerts();
       fetchTriage();
       fetchPriorities();
+      // A seção de Estudos NÃO é reconstruída no auto-refresh: preserva o formulário em uso
+      // e o relógio do cronômetro (que tem seu próprio intervalo).
     }, interval);
   }
 
@@ -1235,7 +1475,7 @@
   function init() {
     var doc = global.document;
     if (!doc) return;
-    var reload = function () { fetchData(); fetchMonitoring(); fetchAlerts(); fetchTriage(); fetchPriorities(); };
+    var reload = function () { fetchData(); fetchMonitoring(); fetchAlerts(); fetchTriage(); fetchPriorities(); fetchStudy(); };
     var retry = doc.getElementById('retry-button');
     if (retry) retry.addEventListener('click', reload);
     var prefsForm = doc.getElementById('preferences-form');
@@ -1243,11 +1483,25 @@
       event.preventDefault();
       savePreferences();
     });
+    var studyForm = doc.getElementById('study-form');
+    if (studyForm) studyForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var input = doc.getElementById('study-disciplina-nome');
+      if (!input || !input.value.trim()) return;
+      studyPost('/api/estudos/disciplinas', {nome: input.value.trim()})
+        .then(function () { input.value = ''; return fetchStudy(); }).catch(showError);
+    });
+    [['timer-start', 'start'], ['timer-pause', 'pause'], ['timer-resume', 'resume'],
+     ['timer-finish', 'finish'], ['timer-discard', 'discard']].forEach(function (pair) {
+      var btn = doc.getElementById(pair[0]);
+      if (btn) btn.addEventListener('click', function () { timerAction(pair[1]); });
+    });
     fetchData().then(focusContestFromHash).catch(function () {});
     fetchMonitoring();
     fetchAlerts();
     fetchTriage();
     fetchPriorities();
+    fetchStudy();
     startAutoRefresh();
     if (global.addEventListener) {
       global.addEventListener('hashchange', function () { focusContestFromHash(); });
@@ -1269,6 +1523,8 @@
     renderAlerts: renderAlerts,
     renderTriage: renderTriage,
     renderPriorities: renderPriorities,
+    renderStudy: renderStudy,
+    formatClock: formatClock,
     matchIdentity: matchIdentity,
     renderList: renderList,
     setState: setState,

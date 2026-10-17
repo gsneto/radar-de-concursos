@@ -49,7 +49,7 @@ class QueueTestBase(unittest.TestCase):
 class SchemaV5Test(QueueTestBase):
     def test_migrates_to_v5_with_queue_table(self):
         with closing(sqlite3.connect(self.db)) as conn:
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 9)
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 10)
             self.assertIsNotNone(conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='fila_confirmacao'").fetchone())
             self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
@@ -61,7 +61,7 @@ class SchemaV5Test(QueueTestBase):
             conn.commit()
         migrate_document_schema(self.db)
         with closing(sqlite3.connect(self.db)) as conn:
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 9)
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 10)
 
     def test_v6_adds_document_type_column(self):
         with closing(sqlite3.connect(self.db)) as conn:
@@ -75,7 +75,7 @@ class SchemaV5Test(QueueTestBase):
             conn.commit()
         migrate_document_schema(self.db)
         with closing(sqlite3.connect(self.db)) as conn:
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 9)
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 10)
             cols = {row[1] for row in conn.execute("PRAGMA table_info(documentos)")}
         self.assertIn("tipo_documental", cols)
 
