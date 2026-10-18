@@ -525,6 +525,26 @@ class PortfolioTest(Base):
         empty = portfolio.portfolio(self.db, prontidao="informacao_confirmada", now=NOON)
         self.assertEqual(empty["total"], 0)
 
+    def test_geografia_e_desempate_nao_filtro(self):
+        _, first = self.document("c1", text="Inscrições até 01/12/2026. Prova em Palmas/TO.")
+        self.proposal("c1", version_id=first, field="registration_end",
+                      value="2026-12-01", quote="Inscrições até 01/12/2026.")
+        self.proposal("c1", version_id=first, field="exam_location",
+                      value="Palmas/TO", quote="Prova em Palmas/TO.")
+        _, second = self.document("c2", text="Inscrições até 01/12/2026. Prova em Salvador/BA.")
+        self.proposal("c2", version_id=second, field="registration_end",
+                      value="2026-12-01", quote="Inscrições até 01/12/2026.")
+        self.proposal("c2", version_id=second, field="exam_location",
+                      value="Salvador/BA", quote="Prova em Salvador/BA.")
+        report = portfolio.portfolio(self.db, limit=10, now=NOON,
+                                     interest_states=["BA", "PE"])
+        # Ambas continuam visíveis; BA vem antes por desempate geográfico.
+        self.assertEqual(report["total"], 2)
+        self.assertEqual(report["itens"][0]["contest_id"], "c2")
+        self.assertIn("UF de interesse", " ".join(report["itens"][0]["prioridade"]["motivos"]))
+        self.assertIn("fora das UFs de interesse",
+                      " ".join(report["itens"][1]["prioridade"]["motivos"]))
+
     def test_filtro_uf_e_conflito(self):
         _, version = self.document(text="Prova em Salvador/BA.")
         self.proposal(version_id=version, field="exam_location",

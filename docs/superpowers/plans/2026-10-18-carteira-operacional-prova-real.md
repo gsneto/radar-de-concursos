@@ -62,7 +62,8 @@ Não há `prazo_precisa_revalidacao` porque todos os futuros não conflitantes f
 revalidados. Não há `informacao_confirmada` porque não há decisão humana na base — e a fase
 não fabricou nenhuma.
 
-**Destaques**: 12 itens em 8 concursos, no máximo 2 cargos por concurso. Critério: edital
+**Destaques**: 12 itens em 8 concursos, no máximo 2 cargos por concurso. A ordem
+desempata por relevância geográfica (UF de interesse), sem excluir oportunidades distantes. Critério: edital
 oficial + prazo futuro, SI expresso/categoria/correlato ou reserva indígena; rótulo que não é
 cargo fica fora. Motivo de inclusão exibido por item.
 
@@ -158,7 +159,7 @@ Achados corrigidos antes do commit:
 ## I. Testes
 
 - Inicial: **1.587 OK** (skipped=1).
-- Final: **1.636 OK** (skipped=1) — +49 em `tests/test_portfolio_f36.py`.
+- Final: **1.637 OK** (skipped=1) — +50 em `tests/test_portfolio_f36.py`.
 - Contrato `GET /api/concursos` v1 (18 campos): inalterado (teste de contrato verde).
 
 ## J. Integridade final

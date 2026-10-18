@@ -22,7 +22,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from radar import (coverage_states, deadline_calendar, decisive_fields,
-                   opportunities, role_identity)
+                   opportunities, preferences, role_identity)
 from contextlib import closing
 
 from radar.document_store import connect_documents, normalize_role
@@ -258,8 +258,12 @@ def _readiness(item, dec, deadlines, si):
     return "campos_decisivos_ausentes", reasons
 
 
-def _priority(item, deadlines, si, indigenous):
-    """Ordem explicável: urgência, formação, reserva, documento oficial, identidade."""
+def _priority(item, deadlines, si, indigenous, location=None, interest_states=None):
+    """Ordem explicável: urgência, formação, reserva, documento, identidade e geografia.
+
+    Geografia é desempate, nunca filtro: uma prova fora das UFs de interesse continua na
+    carteira e apenas perde prioridade para outra equivalente mais próxima.
+    """
     reasons = []
     active = [entry for entry in deadlines if entry["estado_temporal"] in ("futuro", "hoje")]
     urgency = min((URGENCY_ORDER.get(entry["urgencia"], 5) for entry in active), default=6)
@@ -282,7 +286,18 @@ def _priority(item, deadlines, si, indigenous):
     doc = item.get("documental") or {}
     official = 0 if doc.get("documentos_oficiais") else 1
     reconciled = 0 if item.get("role_reconciliado") else 1
-    return (urgency, -si_rank, -indig_rank, official, reconciled,
+    prova = ((location or {}).get("prova") or {})
+    uf = (prova.get("uf") or "").upper()
+    interest = {state.upper() for state in (interest_states or [])}
+    if uf and interest and uf in interest:
+        geo_rank = 0
+        reasons.append(f"local de prova em {uf} (UF de interesse)")
+    elif uf:
+        geo_rank = 1
+        reasons.append(f"local de prova em {uf} (fora das UFs de interesse)")
+    else:
+        geo_rank = 2
+    return (urgency, -si_rank, -indig_rank, official, reconciled, geo_rank,
             item.get("contest_id") or "", item.get("scope") or ""), reasons
 
 
@@ -352,12 +367,14 @@ def _contest_label(item, pages):
     return item.get("competition_id") or page or item.get("contest_title")
 
 
-def _view(item, dec, calendar_items, now_dt, pages=None):
+def _view(item, dec, calendar_items, now_dt, pages=None, interest_states=None):
     deadlines = _deadlines_for(calendar_items, item["contest_id"], item.get("scope"))
     si = _si_for_role(dec, item)
     indigenous = _indigenous_for(dec, item)
     readiness, readiness_reasons = _readiness(item, dec, deadlines, si)
-    order, priority_reasons = _priority(item, deadlines, si, indigenous)
+    order, priority_reasons = _priority(item, deadlines, si, indigenous,
+                                        (dec or {}).get("local"),
+                                        interest_states)
     return {
         "contest_id": item["contest_id"],
         "competition_id": item.get("competition_id"),
@@ -399,7 +416,7 @@ def _view(item, dec, calendar_items, now_dt, pages=None):
 
 def portfolio(db_path, *, prontidao=None, prazo=None, si=None, indigena=None,
               documental=None, uf=None, conflito=None, search=None, contest_id=None,
-              role_id=None, limit=50, offset=0, now=None) -> dict:
+              role_id=None, interest_states=None, limit=50, offset=0, now=None) -> dict:
     """Carteira operacional com prontidão, prioridade explicada e próxima ação."""
     limit = int(limit)
     offset = int(offset)
@@ -414,6 +431,9 @@ def portfolio(db_path, *, prontidao=None, prazo=None, si=None, indigena=None,
     if documental and documental not in coverage_states.STATE_LABELS:
         raise ValueError("estado documental inválido")
     now_dt = _now(now)
+    interest = (interest_states
+                if interest_states is not None
+                else preferences.DEFAULTS["interest_states"])
     dec = decisive_fields.decisive_report(db_path, limit=100000)
     dec_by = {entry["contest_id"]: entry for entry in dec["itens"]}
     calendar_items = _all_calendar(db_path, now_dt)
@@ -424,7 +444,8 @@ def portfolio(db_path, *, prontidao=None, prazo=None, si=None, indigena=None,
             continue
         if role_id and raw.get("role_id") != role_id:
             continue
-        view = _view(raw, dec_by.get(raw["contest_id"]), calendar_items, now_dt, pages)
+        view = _view(raw, dec_by.get(raw["contest_id"]), calendar_items, now_dt, pages,
+                     interest)
         if prontidao and view["prontidao"]["estado"] != prontidao:
             continue
         if documental and (view["documental"] or {}).get("estado") != documental:
@@ -510,7 +531,7 @@ def _inclusion_reasons(view):
     return reasons
 
 
-def portfolio_highlights(db_path, *, limit=12, now=None) -> dict:
+def portfolio_highlights(db_path, *, limit=12, interest_states=None, now=None) -> dict:
     """Carteira inicial: subconjunto controlado com edital oficial e sinal decisivo.
 
     A seleção é determinística e diversa por concurso: no máximo dois cargos do mesmo
@@ -520,13 +541,17 @@ def portfolio_highlights(db_path, *, limit=12, now=None) -> dict:
     if limit < 1 or limit > 50:
         raise ValueError("limite fora da faixa")
     now_dt = _now(now)
+    interest = (interest_states
+                if interest_states is not None
+                else preferences.DEFAULTS["interest_states"])
     dec = decisive_fields.decisive_report(db_path, limit=100000)
     dec_by = {entry["contest_id"]: entry for entry in dec["itens"]}
     calendar_items = _all_calendar(db_path, now_dt)
     pages = _contest_pages(db_path)
     candidates = []
     for raw in _all_opportunities(db_path, now_dt):
-        view = _view(raw, dec_by.get(raw["contest_id"]), calendar_items, now_dt, pages)
+        view = _view(raw, dec_by.get(raw["contest_id"]), calendar_items, now_dt, pages,
+                     interest)
         reasons = _inclusion_reasons(view)
         if not reasons:
             continue

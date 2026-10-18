@@ -95,7 +95,8 @@ passados vem antes da identidade porque não há candidatura ativa.
 ### 5. Prioridade é uma tupla explicada, não uma pontuação opaca
 
 Ordem: urgência do prazo → compatibilidade com SI (expressa > categoria > correlata) →
-reserva indígena (apenas no escopo do concurso) → documento oficial → identidade reconciliada.
+reserva indígena (apenas no escopo do concurso) → documento oficial → identidade reconciliada
+→ relevância geográfica (desempate, nunca filtro).
 Cada item lista os motivos em texto. Não há número único escondendo diferenças.
 
 ### 6. SI é do cargo, nunca do concurso
