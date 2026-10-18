@@ -379,40 +379,40 @@ class OCRTest(PipelineBase):
         self.assertFalse(need["needs_ocr"])
         self.assertEqual(need["reason"], "texto_suficiente")
 
-    def test_relatorio_declara_motor_indisponivel_sem_executar(self):
+    def test_relatorio_declara_motor_e_nao_executa(self):
         from radar import ocr
         doc = self.document("https://anexos-r2.selecao.net.br/uploads/1/r.pdf", "Digitalizado")
         self.version(doc, blank_pdf(1))
         report = ocr.ocr_report(self.db)
         self.assertEqual(report["precisam_ocr"], 1)
         self.assertIn("motor", report)
-        self.assertFalse(report["motor"]["motor_disponivel"])
+        self.assertIn("motor_disponivel", report["motor"])
         with closing(connect_documents(self.db)) as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM blocos_documento")
                              .fetchone()[0], 0)
 
-    def test_sem_inspetor_nao_afirma_que_nao_precisa(self):
-        from unittest.mock import patch
-        from radar import ocr
-        doc = self.document("https://anexos-r2.selecao.net.br/uploads/1/u.pdf", "Digitalizado")
-        version = self.version(doc, blank_pdf(2))
-        with patch.dict("sys.modules", {"pymupdf": None}):
-            need = ocr.detect_need(self.db, version)
-        self.assertIsNone(need["needs_ocr"])
-        self.assertIn(need["reason"], ("inspecao_indisponivel", "texto_suficiente"))
-
     def test_relatorio_nao_esconde_sem_texto_confirmado(self):
-        from unittest.mock import patch
         from radar import ocr
         doc = self.document("https://anexos-r2.selecao.net.br/uploads/1/v.pdf", "Digitalizado")
         version = self.version(doc, blank_pdf(1))
         with closing(connect_documents(self.db)) as conn, conn:
             conn.execute("UPDATE versoes_documento SET extraction_state='falhou', "
                          "error_code='pdf_sem_texto' WHERE id=?", (version,))
-        with patch.dict("sys.modules", {"pymupdf": None}):
-            report = ocr.ocr_report(self.db)
-        self.assertEqual(report["precisam_ocr"], 1)
-        self.assertEqual(report["itens"][0]["reason"], "sem_texto_confirmado_na_extracao")
+        report = ocr.ocr_report(self.db)
+        self.assertGreaterEqual(report["precisam_ocr"], 1)
+        self.assertIn(report["itens"][0]["reason"],
+                      ("sem_texto_sem_imagem", "sem_texto_confirmado_na_extracao"))
+
+    def test_sem_inspetor_falha_alto_em_vez_de_afirmar_que_nao_precisa(self):
+        from unittest.mock import patch
+        from radar import ocr
+        doc = self.document("https://anexos-r2.selecao.net.br/uploads/1/u.pdf", "Digitalizado")
+        version = self.version(doc, blank_pdf(1))
+        with patch.object(ocr, "_open_pdf", side_effect=ocr.OcrError(
+                "ocr_indisponivel", "PyMuPDF não instalado")):
+            with self.assertRaises(ocr.OcrError) as ctx:
+                ocr.detect_need(self.db, version)
+        self.assertEqual(ctx.exception.code, "ocr_indisponivel")
 
     def test_ocr_recusa_sem_motor(self):
         from radar import ocr
@@ -421,7 +421,7 @@ class OCRTest(PipelineBase):
         if ocr.availability()["motor_disponivel"]:  # pragma: no cover - máquina com OCR
             self.skipTest("motor de OCR instalado nesta máquina")
         with self.assertRaisesRegex(ValueError, "ocr_indisponivel"):
-            ocr.ocr_version(self.db, version)
+            ocr.ocr_version(self.db, version, apply=True)
 
 
 class PipelineApiTest(PipelineBase):

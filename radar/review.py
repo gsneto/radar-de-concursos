@@ -42,6 +42,11 @@ STATE_LABELS = {
 }
 
 # Campos cuja revisão muda a decisão prática do candidato.
+# Campos que legitimamente têm vários valores no mesmo escopo (por cargo/localidade):
+# não são "conflito escalar". `vagas_total_publicado` é o total de **cada linha** do quadro.
+MULTI_VALUE_FIELDS = {"vagas_total_publicado", "conteudo_secao", "conteudo_disciplina",
+                      "conteudo_topico", "conteudo_subtopico", "accepted_courses"}
+
 DECISIVE_FIELDS = (
     "immediate_vacancies", "indigenous_vacancies", "indigenous_reserve_vacancies",
     "education", "si_compatibility", "exam_location", "registration_end", "exemption_end",
@@ -57,6 +62,10 @@ FACTOR_POINTS = {
     "conflito": 2,
     "evidencia_curta": 1,
     "documento_mais_recente": 1,
+    # Fase 31: erro em vaga indígena cria falsa oportunidade; formação decide elegibilidade.
+    "vaga_indigena": 4,
+    "formacao_si": 3,
+    "duplicata": 1,
     "trecho_fraco": -2,
     "sem_pagina": -1,
 }
@@ -68,6 +77,9 @@ FACTOR_LABELS = {
     "conflito": "Há valores divergentes para o mesmo campo",
     "evidencia_curta": "Trecho curto: revisão rápida",
     "documento_mais_recente": "Documento mais recente do conflito",
+    "vaga_indigena": "Vaga reservada a indígena: erro cria falsa oportunidade",
+    "formacao_si": "Formação/aceitação de Sistemas de Informação: decide elegibilidade",
+    "duplicata": "Proposta em grupo de duplicidade textual",
     "trecho_fraco": "Trecho muito curto: evidência fraca",
     "sem_pagina": "Evidência sem número de página",
 }
@@ -146,7 +158,8 @@ def _rows(conn) -> list[dict]:
                              WHERE v2.contest_id=p.contest_id
                                AND v2.role_id IS p.role_id
                                AND v2.field_name=p.field_name
-                             ORDER BY v2.selected_at DESC, v2.rowid DESC LIMIT 1)) AS selected
+                             ORDER BY v2.selected_at DESC, v2.rowid DESC LIMIT 1)) AS selected,
+               e.block_id
         FROM propostas_campo p
         JOIN evidencias e ON e.id=p.evidence_id
         JOIN versoes_documento v ON v.id=e.version_id
@@ -169,6 +182,7 @@ def _rows(conn) -> list[dict]:
             "issuer": row[22], "published_at": row[23], "tipo_documental": row[24],
             "kind": row[25], "competition_id": row[26],
             "last_decision": row[27], "last_review_at": row[28], "selected": bool(row[29]),
+            "block_id": row[30],
         })
     return rows
 
@@ -200,6 +214,8 @@ def _conflicts(rows) -> dict[tuple, list[dict]]:
     for row in rows:
         if not _is_open(row):
             continue
+        if row["field_name"] in MULTI_VALUE_FIELDS:
+            continue  # vários valores por cargo/localidade: não é conflito escalar
         key = (row["contest_id"], row["role_id"], row["field_name"])
         groups.setdefault(key, []).append(row)
     conflicts = {}
@@ -210,7 +226,11 @@ def _conflicts(rows) -> dict[tuple, list[dict]]:
     return conflicts
 
 
-def _priority(row, *, editais, deadlines, conflicts, today) -> tuple[int, list[dict]]:
+INDIGENOUS_FIELDS = ("indigenous_vacancies", "indigenous_reserve_vacancies")
+FORMATION_FIELDS = ("education", "accepted_courses", "si_compatibility")
+
+
+def _priority(row, *, editais, deadlines, conflicts, duplicates, today) -> tuple[int, list[dict]]:
     factors = []
 
     def add(name, motivo=None):
@@ -224,6 +244,12 @@ def _priority(row, *, editais, deadlines, conflicts, today) -> tuple[int, list[d
         add("prazo_proximo", f"prazo documentado em {deadline.isoformat()}")
     if row["field_name"] in DECISIVE_FIELDS:
         add("campo_decisivo", f"campo decisivo: {row['field_name']}")
+    if row["field_name"] in INDIGENOUS_FIELDS:
+        add("vaga_indigena", f"vaga reservada a indígena: {row['field_name']}")
+    if row["field_name"] in FORMATION_FIELDS:
+        add("formacao_si", f"formação/elegibilidade: {row['field_name']}")
+    if row["proposal_id"] in duplicates:
+        add("duplicata", "mesma evidência/valor aparece mais de uma vez")
     group = conflicts.get((row["contest_id"], row["role_id"], row["field_name"]))
     if group:
         add("conflito", f"{len({i['value_json'] for i in group})} valores distintos no mesmo campo")
@@ -281,6 +307,96 @@ def _matches(row, *, state, conflict, filters, conflicts) -> bool:
     return True
 
 
+def _duplicate_members(rows) -> set:
+    """Ids de propostas cuja (escopo, campo, valor, bloco, citação) aparece mais de uma vez."""
+    groups = {}
+    for row in rows:
+        key = (row["contest_id"], row["role_id"], row["field_name"], row["value_json"],
+               row["block_id"], row["quote"], row["start_offset"], row["end_offset"])
+        groups.setdefault(key, []).append(row["proposal_id"])
+    members = set()
+    for ids in groups.values():
+        if len(ids) > 1:
+            members.update(ids)
+    return members
+
+
+def duplicate_groups(db_path, *, contest_id=None, field_name=None, limit=50) -> dict:
+    """Grupos de propostas com a **mesma evidência e o mesmo valor** (duplicidade textual).
+
+    Distingue duplicidade de conflito: aqui o valor é igual; conflito é valor diferente.
+    Nada é apagado — a decisão (rejeitar a redundante) é humana e append-only.
+    """
+    limit = int(limit)
+    if limit < 1 or limit > 200:
+        raise ValueError("limite fora da faixa")
+    with closing(connect_documents(db_path)) as conn:
+        if not is_readable_schema(conn):
+            raise ValueError("migração documental pendente")
+        rows = _rows(conn)
+    groups = {}
+    for row in rows:
+        if contest_id and row["contest_id"] != contest_id:
+            continue
+        if field_name and row["field_name"] != field_name:
+            continue
+        key = (row["contest_id"], row["role_id"], row["field_name"], row["value_json"],
+               row["block_id"], row["quote"], row["start_offset"], row["end_offset"])
+        groups.setdefault(key, []).append(row)
+    # Mesmo valor em **spans diferentes** é repetição legítima (sumário x corpo, tabela
+    # repetida): não é duplicidade e não deve ser consolidada.
+    by_value = {}
+    for row in rows:
+        if contest_id and row["contest_id"] != contest_id:
+            continue
+        if field_name and row["field_name"] != field_name:
+            continue
+        by_value.setdefault((row["contest_id"], row["role_id"], row["field_name"],
+                             row["value_json"]), set()).add(
+            (row["block_id"], row["start_offset"], row["end_offset"]))
+    legítimas = sum(1 for spans in by_value.values() if len(spans) > 1)
+
+    items = []
+    for key, members in groups.items():
+        if len(members) < 2:
+            continue
+        # Representante: preferir proposta ainda aberta (rejeitada não é bom ponto de partida).
+        ordered = sorted(members, key=lambda m: (
+            0 if _state(m["last_decision"], m["selected"]) in OPEN_STATES else 1,
+            m["extracted_at"] or "", m["proposal_id"]))
+        first = ordered[0]
+        members = ordered
+        items.append({
+            "contest_id": first["contest_id"],
+            "role_id": first["role_id"],
+            "field_name": first["field_name"],
+            "value": _value_of(first["value_json"]),
+            "tipo": "duplicidade_textual",
+            "motivo": "mesma evidência (bloco e citação) e mesmo valor",
+            "representante": members[0]["proposal_id"],
+            "membros": [{
+                "proposal_id": member["proposal_id"],
+                "state": _state(member["last_decision"], member["selected"]),
+                "document_id": member["document_id"],
+                "document_title": member["document_title"],
+                "page_number": member["page_number"],
+                "quote": (member["quote"] or "")[:160],
+                "extracted_at": member["extracted_at"],
+                "extraction_method": member["extraction_method"],
+            } for member in members],
+        })
+    items.sort(key=lambda item: (-len(item["membros"]), item["field_name"]))
+    return {"version": REVIEW_VERSION, "total": len(items),
+            "propostas_envolvidas": sum(len(item["membros"]) for item in items),
+            "excedentes": sum(len(item["membros"]) - 1 for item in items),
+            "repeticao_legitima": legítimas,
+            "itens": items[:limit],
+            "limitacao": ("Duplicidade textual (mesmo trecho e mesmo valor) não é conflito. "
+                          "Mesmo valor em trechos diferentes é repetição legítima "
+                          "(sumário/corpo) e não deve ser consolidada. Nada é apagado: "
+                          "rejeitar a redundante é decisão humana.")}
+
+
 def review_queue(db_path, *, contest_id=None, role_id=None, field_name=None, document_id=None,
                  source=None, state="pendente", conflict=None, min_priority=None,
                  since=None, until=None, reviewed_since=None, reviewed_until=None,
@@ -311,6 +427,7 @@ def review_queue(db_path, *, contest_id=None, role_id=None, field_name=None, doc
         editais = _official_editais(conn)
     conflicts = _conflicts(rows)
     deadlines = _deadlines(rows)
+    duplicates = _duplicate_members(rows)
 
     selected = []
     for row in rows:
@@ -318,7 +435,7 @@ def review_queue(db_path, *, contest_id=None, role_id=None, field_name=None, doc
                         conflicts=conflicts):
             continue
         score, factors = _priority(row, editais=editais, deadlines=deadlines,
-                                   conflicts=conflicts, today=today)
+                                   conflicts=conflicts, duplicates=duplicates, today=today)
         if min_priority is not None and score < int(min_priority):
             continue
         selected.append((score, factors, row))

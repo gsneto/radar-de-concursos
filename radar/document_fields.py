@@ -220,6 +220,11 @@ def extract_field_proposals(blocks: list[dict], version_id: str, contest_id: str
     if role_id is None:
         proposals.extend(_table_proposals(blocks, contest_id, role_id))
         proposals.extend(_pdf_table_proposals(blocks, contest_id, role_id))
+        # Quadro com total agregado (ex.: IBFC): publica apenas `vagas_total_publicado`,
+        # sem distribuir por modalidade e sem tocar em vagas indígenas.
+        from radar import vacancy_aggregate
+        proposals.extend(vacancy_aggregate.parse_aggregate_table(
+            blocks, contest_id, label_prefix=LABEL_PREFIX))
         # Estratégia específica para o layout de quadro de vagas da banca Quadrix.
         from radar import quadrix_tables
         proposals.extend(quadrix_tables.parse_quadrix_proposals(
@@ -237,6 +242,20 @@ def extract_field_proposals(blocks: list[dict], version_id: str, contest_id: str
             # Sem Anexo II nem seção numerada: tenta requisitos declarados por rótulo (multibanca).
             proposals.extend(edital_requirements.extract_declared_education(
                 blocks, contest_id, label_prefix=LABEL_PREFIX))
+        # Requisito em texto corrido ("Requisito: ...") com cargo no cabeçalho anterior.
+        # Roda sempre: o formato inline coexiste com Anexo II em alguns editais.
+        from radar import inline_requirements
+        inline = inline_requirements.extract_inline_requirements(
+            blocks, contest_id, label_prefix=LABEL_PREFIX)
+        # Dedup por evidência (campo + valor + trecho/offsets), não por valor isolado:
+        # o mesmo valor em outro cargo/trecho é informação distinta.
+        known = {(p["field_name"], p["value_json"], p["evidence"].get("quote"),
+                  p["evidence"].get("start_offset"), p["evidence"].get("end_offset"))
+                 for p in proposals}
+        proposals.extend(p for p in inline
+                         if (p["field_name"], p["value_json"], p["evidence"].get("quote"),
+                             p["evidence"].get("start_offset"),
+                             p["evidence"].get("end_offset")) not in known)
         proposals.extend(edital_requirements.extract_exemption_dates(blocks, contest_id))
         # Conteúdo programático (Fase 22): seções de programa, com evidência por item.
         from radar import program_content

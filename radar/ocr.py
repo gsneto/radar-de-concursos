@@ -1,60 +1,169 @@
-"""Detecção de PDFs que precisam de OCR e disponibilidade real do motor.
+"""OCR opcional e controlado para PDFs sem camada de texto.
 
-Nada aqui executa OCR por padrão. O objetivo é **medir** a necessidade e expor o motivo:
+Diagnóstico que orienta este módulo (Fase 31):
 
-- ``sem_texto_sem_imagem``: página sem texto e sem imagem — texto desenhado como vetores
-  (o caso do "Edital nº 11", com milhares de pequenos caminhos);
-- ``pagina_imagem``: página coberta por imagem (digitalização clássica);
-- ``texto_parcial``: há texto, mas em quantidade suspeita para o tamanho da página.
+- o PDF do "Edital nº 11" não tem **nenhuma fonte** e nenhum operador de texto: 2.635
+  caminhos preenchidos por página (``producer = Microsoft: Print To PDF``). É texto
+  convertido em contornos vetoriais, não digitalização (0 imagens) e não corrupção;
+- nenhum extrator de texto recupera isso: só rasterizar + reconhecer.
 
-Motivo para não rodar OCR automaticamente (pesquisa em 2026-10-17):
+Motores (ambos locais; nenhum dado sai da máquina):
 
-- OCR é ~1000x mais lento que extração de texto e consome CPU/memória;
-- Tesseract não é dependência do projeto e não está instalado nesta máquina;
-- OCRmyPDF é MPL-2.0, mas exige Ghostscript (AGPLv3) e Tesseract — decisão de licença e
-  instalação que não deve ser tomada em silêncio;
-- a documentação do PyMuPDF recomenda justamente detectar (imagem, ausência de texto,
-  milhares de vetores) antes de acionar OCR.
+- ``windows_ocr``: API nativa do Windows (``Windows.Media.Ocr``) via PowerShell 5.1.
+  Verificado nesta máquina em 2026-10-17: modelo **pt-BR** presente, ~0,6 s/página.
+  Zero dependência nova e zero custo de licença adicional (capacidade do SO).
+- ``tesseract``: usado se o binário e o modelo ``por`` existirem. Requer instalação de
+  sistema (não feita aqui).
 
-Enquanto o motor não existir, o documento fica classificado como ``pdf_sem_texto`` — nunca
-como "sem conteúdo".
+Nada é executado por padrão. O OCR grava uma **camada derivada** (blocos + propostas
+marcadas) e nunca substitui o PDF original. Texto reconhecido **não** confirma campo.
 """
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
+import json
 import shutil
+import subprocess
+import tempfile
+import time
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
 from radar.document_store import connect_documents, is_readable_schema
 
-OCR_VERSION = "ocr_v1"
+OCR_VERSION = "ocr_v2"
 MIN_CHARS_PER_PAGE = 40
 MANY_DRAWINGS = 500
+
+# Limites de segurança (por chamada, não por documento).
+MAX_PAGES_PER_CALL = 20
+MAX_DPI = 400
+DEFAULT_DPI = 300
+PAGE_TIMEOUT_SECONDS = 120
+MAX_RENDER_BYTES = 40 * 1024 * 1024
+OCR_METHOD_PREFIX = "ocr:"
+OCR_SCOPE_REASON = ("texto reconhecido por OCR — conferir no documento original antes de "
+                    "usar como evidência")
+
+# Script PowerShell 5.1 (WinRT). Lê o PNG, reconhece e grava UTF-8 num arquivo.
+_WINDOWS_OCR_SCRIPT = r"""
+param([string]$ImagePath, [string]$OutputPath, [string]$Language = "pt-BR")
+$ErrorActionPreference = "Stop"
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+$asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
+    $_.Name -eq "AsTask" -and $_.GetParameters().Count -eq 1 -and
+    $_.GetParameters()[0].ParameterType.Name -eq "IAsyncOperation``1" })[0]
+function Await($op, $type) {
+    $method = $asTaskGeneric.MakeGenericMethod($type)
+    $task = $method.Invoke($null, @($op))
+    $task.Wait(-1) | Out-Null
+    $task.Result
+}
+[Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
+[Windows.Globalization.Language, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
+[Windows.Graphics.Imaging.BitmapDecoder, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
+[Windows.Storage.StorageFile, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
+$lang = [Windows.Globalization.Language]::new($Language)
+$engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage($lang)
+if ($null -eq $engine) { Write-Output "MODELO_AUSENTE"; exit 3 }
+$file = Await ([Windows.Storage.StorageFile]::GetFileFromPathAsync($ImagePath)) ([Windows.Storage.StorageFile])
+$stream = Await ($file.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Windows.Storage.Streams.IRandomAccessStream])
+$decoder = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
+$bitmap = Await ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
+$result = Await ($engine.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult])
+$lines = @()
+foreach ($line in $result.Lines) { $lines += $line.Text }
+[System.IO.File]::WriteAllText($OutputPath, ($lines -join "`n"), (New-Object System.Text.UTF8Encoding($false)))
+Write-Output "OK"
+"""
+
+
+class OcrError(ValueError):
+    """Falha de OCR com código estável."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _windows_powershell() -> str | None:
+    """PowerShell 5.1 (``powershell.exe``): o pwsh 7 não carrega WinRT aqui."""
+    return shutil.which("powershell") or shutil.which("powershell.exe")
+
+
+def windows_languages(timeout: int = 30) -> list[str]:
+    """Idiomas de OCR instalados no Windows (lista vazia se indisponível)."""
+    shell = _windows_powershell()
+    if not shell:
+        return []
+    script = (
+        "Add-Type -AssemblyName System.Runtime.WindowsRuntime;"
+        "[Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null;"
+        "[Windows.Media.Ocr.OcrEngine]::AvailableRecognizerLanguages | ForEach-Object { $_.LanguageTag }"
+    )
+    try:
+        completed = subprocess.run(
+            [shell, "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True, timeout=timeout)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    text = completed.stdout.decode("utf-8", "replace")
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def tesseract_languages(timeout: int = 20) -> list[str]:
+    binary = shutil.which("tesseract")
+    if not binary:
+        return []
+    try:
+        completed = subprocess.run([binary, "--list-langs"], capture_output=True,
+                                   timeout=timeout)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    text = completed.stdout.decode("utf-8", "replace")
+    return [line.strip() for line in text.splitlines()[1:] if line.strip()]
+
+
 def availability() -> dict:
-    """Disponibilidade real do motor de OCR nesta máquina (sem instalar nada)."""
-    tesseract = shutil.which("tesseract")
-    pymupdf = importlib.util.find_spec("pymupdf") is not None or \
-        importlib.util.find_spec("fitz") is not None
-    pytesseract = importlib.util.find_spec("pytesseract") is not None
-    ocrmypdf = importlib.util.find_spec("ocrmypdf") is not None
+    """Disponibilidade real dos motores nesta máquina (sem instalar nada)."""
+    pymupdf = (importlib.util.find_spec("pymupdf") is not None
+               or importlib.util.find_spec("fitz") is not None)
+    shell = _windows_powershell()
+    windows_langs = windows_languages() if shell else []
+    tesseract_bin = shutil.which("tesseract")
+    tesseract_langs = tesseract_languages() if tesseract_bin else []
+    engines = {}
+    if shell:
+        engines["windows_ocr"] = {
+            "disponivel": "pt-BR" in windows_langs,
+            "idiomas": windows_langs,
+            "motivo": None if "pt-BR" in windows_langs else "modelo pt-BR ausente",
+        }
+    if tesseract_bin:
+        engines["tesseract"] = {
+            "disponivel": "por" in tesseract_langs,
+            "idiomas": tesseract_langs,
+            "motivo": None if "por" in tesseract_langs else "modelo por ausente",
+        }
+    motor = next((name for name, info in engines.items() if info["disponivel"]), None)
     return {
         "version": OCR_VERSION,
-        "tesseract_binario": bool(tesseract),
         "pymupdf": bool(pymupdf),
-        "pytesseract": bool(pytesseract),
-        "ocrmypdf": bool(ocrmypdf),
-        "motor_disponivel": bool(tesseract and pymupdf),
-        "limitacao": ("OCR não é executado sem motor instalado. Instalar Tesseract é decisão "
-                      "de sistema (licença e manutenção), não automática."),
+        "engines": engines,
+        "motor_escolhido": motor,
+        "motor_disponivel": bool(pymupdf and motor),
+        "limites": {"paginas_por_chamada": MAX_PAGES_PER_CALL, "dpi_maximo": MAX_DPI,
+                    "timeout_por_pagina_s": PAGE_TIMEOUT_SECONDS},
+        "limitacao": ("OCR é opcional e nunca automático. Sem motor disponível, o documento "
+                      "permanece pdf_sem_texto — não é conteúdo inexistente. O texto "
+                      "reconhecido é camada derivada, nunca confirmação de campo."),
     }
 
 
@@ -66,57 +175,36 @@ def _artifact(db_path, digest: str, relative_path: str) -> Path:
     return artifact
 
 
-def detect_need(db_path, version_id: str) -> dict:
-    """Classifica a necessidade de OCR de uma versão PDF (somente leitura)."""
+def _open_pdf(db_path, version_id: str):
+    try:
+        import pymupdf
+    except ImportError as error:  # pragma: no cover - ambiente sem PyMuPDF
+        raise OcrError("ocr_indisponivel", "PyMuPDF não instalado (necessário para rasterizar)") from error
     with closing(connect_documents(db_path)) as conn:
         if not is_readable_schema(conn):
             raise ValueError("migração documental pendente")
         row = conn.execute(
             "SELECT v.sha256, v.local_path, v.content_type, v.byte_size, d.title, "
             "v.extraction_state, v.error_code FROM versoes_documento v "
-            "JOIN documentos d ON d.id=v.document_id WHERE v.id=?",
-            (version_id,)).fetchone()
+            "JOIN documentos d ON d.id=v.document_id WHERE v.id=?", (version_id,)).fetchone()
     if not row:
         raise ValueError("versão inexistente")
     digest, relative_path, content_type, size, title, state, error_code = row
-    result = {"version": OCR_VERSION, "version_id": version_id, "title": title,
-              "content_type": content_type, "byte_size": size,
-              "extraction_state": state, "error_code": error_code,
-              "needs_ocr": False, "reason": None, "pages": None}
     if (content_type or "").split(";", 1)[0].lower() != "application/pdf":
-        result["reason"] = "nao_e_pdf"
-        return result
-    try:
-        import pymupdf
-    except ImportError:  # pragma: no cover - ambiente sem PyMuPDF
-        # Sem inspetor: não afirmar "não precisa". Conta páginas/texto com pypdf (dependência
-        # declarada) e marca a inspeção como indisponível.
-        try:
-            from io import BytesIO
-
-            from pypdf import PdfReader
-            reader = PdfReader(BytesIO(_artifact(db_path, digest, relative_path).read_bytes()))
-            pages = len(reader.pages)
-            text_chars = sum(len((page.extract_text() or "").strip())
-                             for page in reader.pages)
-        except Exception:
-            result["needs_ocr"] = None
-            result["reason"] = "inspecao_indisponivel"
-            return result
-        result["pages"] = pages
-        result["text_chars"] = text_chars
-        result["inspected_with"] = "pypdf"
-        result["needs_ocr"] = None
-        result["reason"] = ("inspecao_indisponivel" if text_chars < pages * MIN_CHARS_PER_PAGE
-                            else "texto_suficiente")
-        return result
+        raise OcrError("ocr_nao_e_pdf", "somente PDF pode passar por OCR")
     artifact = _artifact(db_path, digest, relative_path)
-    try:
-        document = pymupdf.open(stream=artifact.read_bytes(), filetype="pdf")
-    except Exception:
-        result["needs_ocr"] = None
-        result["reason"] = "inspecao_indisponivel"
-        return result
+    data = artifact.read_bytes()
+    if hashlib.sha256(data).hexdigest() != digest:
+        raise ValueError("hash de artefato divergente")
+    document = pymupdf.open(stream=data, filetype="pdf")
+    return {"document": document, "title": title, "sha256": digest, "bytes": size,
+            "state": state, "error_code": error_code}
+
+
+def detect_need(db_path, version_id: str) -> dict:
+    """Classifica a necessidade de OCR de uma versão PDF (somente leitura)."""
+    opened = _open_pdf(db_path, version_id)
+    document = opened["document"]
     try:
         pages = document.page_count
         text_chars = 0
@@ -127,17 +215,20 @@ def detect_need(db_path, version_id: str) -> dict:
             text_chars += len(page.get_text().strip())
             drawings += len(page.get_drawings())
             images += len(page.get_images(full=True))
+        fonts = sum(len(document[index].get_fonts(full=True)) for index in range(pages))
     finally:
         document.close()
-    result["pages"] = pages
-    result["text_chars"] = text_chars
-    result["drawings"] = drawings
-    result["images"] = images
+    result = {"version": OCR_VERSION, "version_id": version_id, "title": opened["title"],
+              "pages": pages, "text_chars": text_chars, "drawings": drawings,
+              "images": images, "fonts": fonts,
+              "extraction_state": opened["state"], "error_code": opened["error_code"],
+              "needs_ocr": False, "reason": None}
     if text_chars >= pages * MIN_CHARS_PER_PAGE:
         result["reason"] = "texto_suficiente"
         return result
     result["needs_ocr"] = True
-    if drawings >= MANY_DRAWINGS and not images:
+    if fonts == 0 and drawings >= MANY_DRAWINGS and not images:
+        # Texto convertido em contornos: não é digitalização, não é corrupção.
         result["reason"] = "texto_vetorial_sem_camada_de_texto"
     elif images:
         result["reason"] = "pagina_imagem"
@@ -149,7 +240,7 @@ def detect_need(db_path, version_id: str) -> dict:
 
 
 def ocr_report(db_path, *, limit=100) -> dict:
-    """Versões que precisam de OCR, com o motivo e a disponibilidade do motor."""
+    """Versões que precisam de OCR, com motivo e disponibilidade do motor."""
     limit = int(limit)
     if limit < 1 or limit > 1000:
         raise ValueError("limite fora da faixa")
@@ -166,15 +257,14 @@ def ocr_report(db_path, *, limit=100) -> dict:
     for version_id, error_code in rows:
         try:
             item = detect_need(db_path, version_id)
+        except OcrError as error:
+            erros.append({"version_id": version_id, "erro": error.code})
+            continue
         except Exception as error:  # PDF corrompido não derruba o relatório
             erros.append({"version_id": version_id, "erro": type(error).__name__})
             continue
         if item.get("needs_ocr") is None:
             nao_inspecionados += 1
-        if item.get("needs_ocr") is None and error_code == "pdf_sem_texto":
-            # A extração já provou a ausência de texto: não esconder o caso por falta de inspetor.
-            item["needs_ocr"] = True
-            item["reason"] = "sem_texto_confirmado_na_extracao"
         items.append(item)
     needing = [item for item in items if item.get("needs_ocr") is True]
     by_reason = {}
@@ -184,41 +274,212 @@ def ocr_report(db_path, *, limit=100) -> dict:
     return {"version": OCR_VERSION, "generated_at": _now(), "inspecionados": len(items),
             "nao_inspecionados": nao_inspecionados,
             "precisam_ocr": len(needing), "por_motivo": by_reason,
-            "erros_inspecao": erros,
-            "motor": engine, "itens": needing,
-            "limitacao": ("Nenhum OCR é executado nesta fase. Sem motor instalado, o "
-                          "documento permanece como pdf_sem_texto — não como inexistente. "
-                          "necessidade de OCR não inspecionada nunca vira 'não precisa'.")}
+            "erros_inspecao": erros, "motor": engine, "itens": needing,
+            "limitacao": ("Nenhum OCR é executado por este relatório. Sem motor, o documento "
+                          "permanece pdf_sem_texto — não como inexistente.")}
 
 
-def ocr_version(db_path, version_id: str) -> dict:
-    """Executa OCR **somente** se o motor estiver instalado; caso contrário, recusa."""
-    engine = availability()
-    if not engine["motor_disponivel"]:
-        raise ValueError("ocr_indisponivel: instale Tesseract e PyMuPDF para habilitar")
-    import pymupdf
-    need = detect_need(db_path, version_id)
-    if not need["needs_ocr"]:
-        return {"version": OCR_VERSION, "version_id": version_id, "ocr": False,
-                "reason": need["reason"]}
-    with closing(connect_documents(db_path)) as conn:
-        row = conn.execute("SELECT sha256, local_path FROM versoes_documento WHERE id=?",
-                           (version_id,)).fetchone()
-    artifact = _artifact(db_path, row[0], row[1])
-    document = pymupdf.open(stream=artifact.read_bytes(), filetype="pdf")
-    blocks = []
+def _render_page(document, index: int, dpi: int, target: Path) -> tuple[int, int]:
+    page = document[index]
+    # Pré-checagem de área: recusar antes de alocar memória por uma página anômala.
+    rect = page.rect
+    estimated = abs(rect.width * rect.height) * (dpi / 72.0) ** 2 * 3
+    if estimated > MAX_RENDER_BYTES:
+        raise OcrError("ocr_pagina_grande",
+                       f"página renderizada excederia {MAX_RENDER_BYTES} bytes")
+    pixmap = page.get_pixmap(dpi=dpi)
+    pixmap.save(str(target))
+    if not target.exists():
+        raise OcrError("ocr_falhou", "rasterização não produziu imagem")
+    return pixmap.width, pixmap.height
+
+
+def _ocr_windows(image: Path, output: Path, language: str,
+                 timeout: int) -> tuple[str, int]:
+    shell = _windows_powershell()
+    if not shell:
+        raise OcrError("ocr_indisponivel", "PowerShell 5.1 indisponível")
+    with tempfile.NamedTemporaryFile("w", suffix=".ps1", delete=False,
+                                     encoding="utf-8") as handle:
+        handle.write(_WINDOWS_OCR_SCRIPT)
+        script = Path(handle.name)
+    started = time.monotonic()
     try:
-        for index in range(document.page_count):
-            page = document[index]
-            textpage = page.get_textpage_ocr(language="por", dpi=300)
-            text = " ".join((page.get_text(textpage=textpage) or "").split())
-            if text:
-                blocks.append({"page_number": index + 1, "locator": f"página {index + 1}",
-                               "start_offset": 0, "end_offset": len(text), "text": text})
+        completed = subprocess.run(
+            [shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+             "-File", str(script), "-ImagePath", str(image), "-OutputPath", str(output),
+             "-Language", language],
+            capture_output=True, timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        raise OcrError("ocr_timeout", "OCR excedeu o tempo limite") from error
+    finally:
+        script.unlink(missing_ok=True)
+    elapsed_ms = int((time.monotonic() - started) * 1000)
+    stdout = completed.stdout.decode("utf-8", "replace").strip()
+    if completed.returncode != 0:
+        if "MODELO_AUSENTE" in stdout:
+            raise OcrError("ocr_modelo_ausente", f"modelo {language} ausente no Windows OCR")
+        detail = completed.stderr.decode("utf-8", "replace")[:200]
+        raise OcrError("ocr_falhou", f"Windows OCR falhou: {detail}")
+    if not output.exists():
+        raise OcrError("ocr_falhou", "Windows OCR não produziu saída")
+    text = output.read_text(encoding="utf-8-sig", errors="replace")
+    return text, elapsed_ms
+
+
+def _ocr_tesseract(image: Path, language: str, timeout: int) -> tuple[str, int]:
+    binary = shutil.which("tesseract")
+    if not binary:
+        raise OcrError("ocr_indisponivel", "Tesseract não instalado")
+    started = time.monotonic()
+    try:
+        completed = subprocess.run([binary, str(image), "stdout", "-l", language],
+                                   capture_output=True, timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        raise OcrError("ocr_timeout", "OCR excedeu o tempo limite") from error
+    if completed.returncode != 0:
+        raise OcrError("ocr_falhou", "Tesseract falhou")
+    text = completed.stdout.decode("utf-8", "replace")
+    return text, int((time.monotonic() - started) * 1000)
+
+
+def _recognize(engine: str, image: Path, language: str, timeout: int) -> tuple[str, int]:
+    if engine == "windows_ocr":
+        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False,
+                                         encoding="utf-8") as handle:
+            output = Path(handle.name)
+        try:
+            return _ocr_windows(image, output, language, timeout)
+        finally:
+            output.unlink(missing_ok=True)
+    if engine == "tesseract":
+        return _ocr_tesseract(image, language, timeout)
+    raise OcrError("ocr_indisponivel", f"motor desconhecido: {engine}")
+
+
+def _resolve_engine(engine: str | None) -> tuple[str, str, dict]:
+    info = availability()
+    if not info["pymupdf"]:
+        raise OcrError("ocr_indisponivel", "PyMuPDF não instalado (rasterização)")
+    if engine:
+        chosen = info["engines"].get(engine)
+        if not chosen:
+            raise OcrError("ocr_indisponivel", f"motor não disponível: {engine}")
+        if not chosen["disponivel"]:
+            raise OcrError("ocr_modelo_ausente", chosen["motivo"] or "modelo ausente")
+        language = "pt-BR" if engine == "windows_ocr" else "por"
+        return engine, language, info
+    motor = info["motor_escolhido"]
+    if not motor:
+        raise OcrError("ocr_indisponivel",
+                       "nenhum motor com modelo português disponível")
+    language = "pt-BR" if motor == "windows_ocr" else "por"
+    return motor, language, info
+
+
+def ocr_version(db_path, version_id: str, *, engine: str | None = None,
+                pages: list[int] | None = None, dpi: int = DEFAULT_DPI,
+                apply: bool = False, timeout: int = PAGE_TIMEOUT_SECONDS,
+                now: str | None = None) -> dict:
+    """Executa (ou simula) OCR de páginas selecionadas de uma versão.
+
+    O PDF original nunca é alterado. Com ``apply=False`` devolve apenas o plano.
+    """
+    dpi = int(dpi)
+    if dpi < 72 or dpi > MAX_DPI:
+        raise OcrError("ocr_parametro_invalido", f"dpi fora da faixa 72..{MAX_DPI}")
+    timeout = int(timeout)
+    if timeout < 5 or timeout > 600:
+        raise OcrError("ocr_parametro_invalido", "timeout fora da faixa 5..600")
+
+    opened = _open_pdf(db_path, version_id)
+    document = opened["document"]
+    try:
+        total = document.page_count
+        selected = sorted({int(number) for number in (pages or range(1, min(total, MAX_PAGES_PER_CALL) + 1))})
+        if not selected:
+            raise OcrError("ocr_parametro_invalido", "nenhuma página selecionada")
+        if any(number < 1 or number > total for number in selected):
+            raise OcrError("ocr_parametro_invalido", f"página fora do documento (1..{total})")
+        if len(selected) > MAX_PAGES_PER_CALL:
+            raise OcrError("ocr_limite_paginas",
+                           f"máximo de {MAX_PAGES_PER_CALL} páginas por chamada")
+
+        with closing(connect_documents(db_path)) as conn:
+            existing = conn.execute(
+                "SELECT COUNT(*) FROM blocos_documento WHERE version_id=?",
+                (version_id,)).fetchone()[0]
+        if apply and existing:
+            # `record_analysis` recusa versão já analisada: falhar ANTES de rasterizar e
+            # reconhecer evita custo inútil. Uma chamada de OCR por versão.
+            raise OcrError("ocr_versao_ja_analisada",
+                           "versão já possui blocos; OCR é uma chamada por versão")
+
+        if not apply:
+            info = availability()
+            return {"version": OCR_VERSION, "version_id": version_id,
+                    "title": opened["title"], "sha256": opened["sha256"],
+                    "total_pages": total, "pages": selected, "dpi": dpi,
+                    "motor": info["motor_escolhido"],
+                    "motor_disponivel": info["motor_disponivel"],
+                    "apply": False, "would_ocr": info["motor_disponivel"],
+                    "limitacao": ("Simulação: nenhuma imagem é gerada e nenhum bloco é "
+                                  "gravado. O PDF original permanece intacto.")}
+
+        motor, language, info = _resolve_engine(engine)
+        started = time.monotonic()
+        blocks, page_metrics = [], []
+        with tempfile.TemporaryDirectory(prefix="radar-ocr-") as folder:
+            for number in selected:
+                image = Path(folder) / f"page-{number}.png"
+                width, height = _render_page(document, number - 1, dpi, image)
+                if image.stat().st_size > MAX_RENDER_BYTES:
+                    raise OcrError("ocr_arquivo_grande", "imagem renderizada excede o limite")
+                text, elapsed_ms = _recognize(motor, image, language, timeout)
+                normalized = " ".join(text.split())
+                page_metrics.append({"page": number, "chars": len(normalized),
+                                     "ms": elapsed_ms, "width": width, "height": height})
+                if normalized:
+                    blocks.append({"page_number": number, "locator": f"página {number}",
+                                   "start_offset": 0, "end_offset": len(normalized),
+                                   "text": normalized})
     finally:
         document.close()
+
+    duration_ms = int((time.monotonic() - started) * 1000)
     if not blocks:
-        raise ValueError("ocr_sem_texto: motor não reconheceu texto")
-    return {"version": OCR_VERSION, "version_id": version_id, "ocr": True,
-            "blocks": len(blocks), "pages": need["pages"],
-            "reason": need["reason"], "motor": engine}
+        raise OcrError("ocr_sem_texto", "motor não reconheceu texto nas páginas selecionadas")
+
+    proposals = []
+    if apply:
+        from radar.document_fields import extract_field_proposals
+        with closing(connect_documents(db_path)) as conn:
+            row = conn.execute("SELECT contest_id, role_id FROM documentos d "
+                               "JOIN versoes_documento v ON v.document_id=d.id "
+                               "WHERE v.id=?", (version_id,)).fetchone()
+        contest_id, role_id = row
+        raw = extract_field_proposals(blocks, version_id, contest_id, role_id)
+        for proposal in raw:
+            proposal["extraction_method"] = OCR_METHOD_PREFIX + proposal["extraction_method"]
+            existing = proposal.get("ambiguity_reason")
+            proposal["ambiguity_reason"] = (
+                f"{OCR_SCOPE_REASON}; {existing}" if existing else OCR_SCOPE_REASON)
+            proposals.append(proposal)
+        note = json.dumps({
+            "extractor_version": OCR_VERSION, "engine": motor, "language": language,
+            "dpi": dpi, "pages": selected, "total_pages": total,
+            "duration_ms": duration_ms, "chars": sum(m["chars"] for m in page_metrics),
+            "page_metrics": page_metrics, "derived_layer": True,
+            "source_sha256": opened["sha256"],
+        }, ensure_ascii=False)
+        from radar.document_store import record_analysis
+        record_analysis(db_path, version_id, blocks, proposals, note=note)
+
+    return {"version": OCR_VERSION, "version_id": version_id, "title": opened["title"],
+            "sha256": opened["sha256"], "total_pages": total, "pages": selected,
+            "dpi": dpi, "engine": motor, "language": language, "apply": True,
+            "blocks": len(blocks), "proposals": len(proposals),
+            "chars": sum(m["chars"] for m in page_metrics), "duration_ms": duration_ms,
+            "page_metrics": page_metrics,
+            "limitacao": ("Camada derivada: o PDF original não foi alterado e o texto "
+                          "reconhecido não confirma nenhum campo.")}

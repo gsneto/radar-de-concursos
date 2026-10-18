@@ -84,6 +84,7 @@
   // rastreabilidade. Campos desconhecidos caem no próprio nome original.
   var FIELD_LABEL = {
     immediate_vacancies: 'Vagas imediatas',
+    vagas_total_publicado: 'Total publicado (agregado)',
     reserve_vacancies: 'Cadastro de reserva',
     indigenous_vacancies: 'Vagas indígenas (imediatas)',
     indigenous_reserve_vacancies: 'Vagas indígenas (cadastro de reserva)',
@@ -2365,6 +2366,66 @@
     if (node) node.textContent = message || '';
   }
 
+  function dupsStatus(message) {
+    var doc = global.document;
+    var node = doc && doc.getElementById('dups-status');
+    if (node) node.textContent = message || '';
+  }
+
+  function renderDuplicates(document, payload) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    wrap.appendChild(el(document, 'p', 'prep__basis',
+      payload.total + ' grupo(s) de duplicidade · ' + payload.excedentes +
+      ' proposta(s) excedente(s) · ' + (payload.repeticao_legitima || 0) +
+      ' repetição(ões) legítima(s) em trechos diferentes'));
+    if (!payload.itens || !payload.itens.length) {
+      wrap.appendChild(el(document, 'p', 'muted', 'Nenhuma duplicidade textual.'));
+    }
+    (payload.itens || []).forEach(function (group) {
+      var card = el(document, 'article', 'study-disc');
+      card.appendChild(el(document, 'h4', 'study-disc__title',
+        group.field_name + ' = ' + String(group.value).slice(0, 60)));
+      card.appendChild(el(document, 'p', 'prep__basis',
+        group.tipo + ' · ' + group.motivo + ' · representante ' +
+        String(group.representante).slice(0, 8)));
+      var members = el(document, 'ul', 'study__revisions');
+      group.membros.forEach(function (member) {
+        members.appendChild(el(document, 'li', 'study__revision',
+          String(member.proposal_id).slice(0, 8) + ' · ' + member.state + ' · p' +
+          (member.page_number === null ? '?' : member.page_number) + ' · ' +
+          (member.document_title || 'documento') + ' · ' +
+          (member.quote || '').slice(0, 60)));
+      });
+      card.appendChild(members);
+      var open = el(document, 'button', 'button button--ghost', 'Abrir representante');
+      open.type = 'button';
+      open.addEventListener('click', function () { openProposal(group.representante); });
+      card.appendChild(open);
+      wrap.appendChild(card);
+    });
+    wrap.appendChild(el(document, 'p', 'muted', payload.limitacao || ''));
+    return wrap;
+  }
+
+  function fetchDuplicates() {
+    var doc = global.document;
+    if (!doc || !doc.getElementById('dups-panel')) return Promise.resolve();
+    dupsStatus('Atualizando…');
+    return global.fetch('/api/revisao/duplicidades?limit=50',
+                        {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        var node = doc.getElementById('dups-panel');
+        clearContainer(node);
+        node.appendChild(renderDuplicates(doc, payload));
+        dupsStatus('');
+      })
+      .catch(function (error) { dupsStatus('Duplicidades indisponíveis (' + error.message + ').'); });
+  }
+
   function renderSources(document, payload) {
     var wrap = el(document, 'div', 'coverage__inner');
     var catalogo = payload.catalogo || {};
@@ -3279,6 +3340,8 @@
     if (sourcesRefresh) sourcesRefresh.addEventListener('click', fetchSources);
     var pipelineRefresh = doc.getElementById('pipeline-refresh');
     if (pipelineRefresh) pipelineRefresh.addEventListener('click', fetchPipeline);
+    var dupsRefresh = doc.getElementById('dups-refresh');
+    if (dupsRefresh) dupsRefresh.addEventListener('click', fetchDuplicates);
     var coverageRefresh = doc.getElementById('coverage-refresh');
     if (coverageRefresh) coverageRefresh.addEventListener('click', function () { fetchCoverage(); });
     fetchData().then(focusContestFromHash).catch(function () {});
@@ -3296,6 +3359,7 @@
     fetchAssociations();
     fetchSources();
     fetchPipeline();
+    fetchDuplicates();
     restoreBatch();
     startAutoRefresh();
     if (global.addEventListener) {
@@ -3339,6 +3403,8 @@
     fetchSources: fetchSources,
     renderPipeline: renderPipeline,
     fetchPipeline: fetchPipeline,
+    renderDuplicates: renderDuplicates,
+    fetchDuplicates: fetchDuplicates,
     fetchCoverage: fetchCoverage,
     readFileAsBase64: readFileAsBase64,
     formatClock: formatClock,

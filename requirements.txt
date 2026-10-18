@@ -1,1 +1,5 @@
 pypdf==6.18.1
+
+# Rasterização para OCR opcional (Fase 30/31). PyMuPDF é AGPL-3.0 ou comercial;
+# o Radar usa localmente, sem distribuir o binário nem oferecer serviço de rede.
+pymupdf==1.28.2

@@ -547,6 +547,20 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 return
             from radar import pipeline
             self._serve_study(pipeline.pipeline_summary)
+        elif path == "/api/revisao/duplicidades":
+            query = parse_qs(parts.query)
+            if set(query) - {"limit", "contest_id", "field"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["50"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            from radar import review
+            self._serve_study(review.duplicate_groups,
+                              contest_id=query.get("contest_id", [None])[0],
+                              field_name=query.get("field", [None])[0], limit=limit)
         elif path == "/api/pipeline/ocr":
             query = parse_qs(parts.query)
             if set(query) - {"limit"}:

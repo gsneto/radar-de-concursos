@@ -34,7 +34,37 @@ def normalize(text) -> str:
     return " ".join(ascii_text.upper().split())
 
 
+# Modalidades de reserva/acesso: um cabeçalho que nomeia 2+ delas está publicando um
+# **agregado**, não uma coluna única de vagas imediatas.
+_MODALITY_TOKENS = ("AMPLA", "NEGROS", "NEGRA", "PCD", "DEFICIENCIA", "INDIGENA",
+                    "INDIGENAS", "QUILOMBOLA", "COTAS")
+
+
+def _is_aggregate_header(header_cell: str) -> bool:
+    """Cabeçalho que publica um **total** já somando modalidades.
+
+    Ex.: ``TOTAL DE VAGAS (AMPLA, NEGROS E PCD)``, ``VAGAS TOTAIS (AMPLA, NEGROS E PCD)``,
+    ``QUANTIDADE DE VAGAS (AMPLA, NEGROS, PCD E INDÍGENAS)``. Mapear qualquer uma delas para
+    vagas imediatas ou indígenas inventaria a distribuição — o erro que o projeto proíbe.
+    A decisão é pelos **tokens de modalidade**, não pela palavra "TOTAL" (que aparece como
+    "TOTAIS" e às vezes não aparece).
+    """
+    norm = normalize(header_cell)
+    # Colunas separadas por modalidade são legítimas ("AMPLA", "INDIGENAS"…): o que
+    # caracteriza agregado é a **lista entre parênteses** ou a palavra total.
+    parenthetical = re.search(r"\(([^)]{3,160})\)", header_cell)
+    if parenthetical:
+        inside = normalize(parenthetical.group(1))
+        modalities = {token for token in _MODALITY_TOKENS if token in inside}
+        if len(modalities) >= 2:
+            return True
+    modalities = {token for token in _MODALITY_TOKENS if token in norm}
+    return bool(modalities) and ("TOTAL" in norm or "TOTAIS" in norm)
+
+
 def _field_for(header_cell: str) -> str | None:
+    if _is_aggregate_header(header_cell):
+        return None  # total agregado: tratado por `vacancy_aggregate`
     if any(token in header_cell for token in _INDIGENA_TOKENS):
         return "indigenous_vacancies"
     # "CR" só como palavra isolada (evita casar CRECHE, INSCRIÇÕES, CRONOGRAMA).

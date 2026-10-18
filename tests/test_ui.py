@@ -236,6 +236,15 @@ class TestAppStatic(unittest.TestCase):
         for token in (".prep__panel", ".prep__stats", ".prep__basis"):
             self.assertIn(token, css, "styles.css deve apresentar %r" % token)
 
+    def test_renders_duplicates_panel(self):
+        js = read(APP_PATH)
+        for token in ("renderDuplicates", "fetchDuplicates", "/api/revisao/duplicidades",
+                      "dups-panel", "repetição(ões) legítima(s)", "Abrir representante"):
+            self.assertIn(token, js, "app.js deve apresentar %r" % token)
+        html = read(os.path.join(WEB, "index.html"))
+        for token in ('id="dups-panel"', 'id="dups-refresh"', "Duplicidades textuais"):
+            self.assertIn(token, html)
+
     def test_renders_pipeline_panel(self):
         js = read(APP_PATH)
         for token in ("renderPipeline", "fetchPipeline", "/api/pipeline",

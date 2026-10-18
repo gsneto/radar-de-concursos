@@ -39,9 +39,16 @@ def stored_blocks(conn, version_id: str) -> list[dict]:
             "WHERE version_id=? ORDER BY page_number,start_offset,id", (version_id,))]
 
 
+EXTRACTOR_VERSION = "reprocess_v2"
+
+
 def propose_for_version(conn, version_id: str) -> list[dict]:
-    """Propostas dos extratores atuais sobre os blocos armazenados (sem gravar nada)."""
-    from radar import exam_location, program_content
+    """Propostas dos extratores atuais sobre os blocos armazenados (sem gravar nada).
+
+    A versão do conjunto de extratores fica registrada no relatório: mudança de
+    comportamento é rastreável sem reescrever evidência antiga.
+    """
+    from radar import exam_location, inline_requirements, program_content, vacancy_aggregate
     from radar.document_fields import LABEL_PREFIX
 
     row = conn.execute(
@@ -56,6 +63,12 @@ def propose_for_version(conn, version_id: str) -> list[dict]:
     proposals = program_content.extract_program_content(
         blocks, contest_id, label_prefix=LABEL_PREFIX)
     proposals.extend(exam_location.extract_exam_location(
+        blocks, contest_id, label_prefix=LABEL_PREFIX))
+    # Fase 31: quadro de vagas com total agregado (nunca distribui por modalidade).
+    proposals.extend(vacancy_aggregate.parse_aggregate_table(
+        blocks, contest_id, label_prefix=LABEL_PREFIX))
+    # Fase 31: requisito em texto corrido ("Requisito: ...").
+    proposals.extend(inline_requirements.extract_inline_requirements(
         blocks, contest_id, label_prefix=LABEL_PREFIX))
     return proposals
 
@@ -77,9 +90,9 @@ def reprocess_version(db_path, version_id: str, *, dry_run=True) -> dict:
             raise ValueError("migração documental pendente")
         proposals = propose_for_version(conn, version_id)
         if not proposals:
-            return {"version": REPROCESS_VERSION, "dry_run": bool(dry_run),
-                    "version_id": version_id, "geradas": 0, "novas": 0, "ignoradas": 0,
-                    "invalidas": 0, "campos": {}}
+            return {"extractor_version": EXTRACTOR_VERSION, "version": REPROCESS_VERSION, "extractor_version": EXTRACTOR_VERSION,
+                    "dry_run": bool(dry_run), "version_id": version_id, "geradas": 0,
+                    "novas": 0, "ignoradas": 0, "invalidas": 0, "campos": {}}
         contest_id = conn.execute(
             "SELECT contest_id FROM documentos d JOIN versoes_documento v ON v.document_id=d.id "
             "WHERE v.id=?", (version_id,)).fetchone()[0]
@@ -203,6 +216,6 @@ def reprocess_editais(db_path, *, dry_run=True, contest_ids=None, limit=None) ->
         reports.append({"contest_id": contest_id, "version_id": version_id,
                         "title": title, "novas": result["novas"],
                         "ignoradas": result["ignoradas"], "invalidas": result["invalidas"]})
-    return {"version": REPROCESS_VERSION, "dry_run": bool(dry_run),
+    return {"extractor_version": EXTRACTOR_VERSION, "version": REPROCESS_VERSION, "dry_run": bool(dry_run),
             "concursos": len(targets), "propostas_novas": total_novas, "campos": campos,
             "detalhe": reports}

@@ -788,6 +788,23 @@ def _cmd_ocr_pendentes(args: argparse.Namespace) -> None:
                      ensure_ascii=False, default=str))
 
 
+def _cmd_revisao_duplicados(args: argparse.Namespace) -> None:
+    from radar import review
+    print(json.dumps(review.duplicate_groups(
+        args.db, contest_id=args.contest_id, field_name=args.field, limit=args.limit),
+        ensure_ascii=False, default=str))
+
+
+def _cmd_ocr_executar(args: argparse.Namespace) -> None:
+    from radar import ocr
+    pages = None
+    if args.pages:
+        pages = [int(part) for part in args.pages.replace(" ", "").split(",") if part]
+    print(json.dumps(ocr.ocr_version(
+        args.db, args.version_id, engine=args.engine, pages=pages, dpi=args.dpi,
+        apply=args.apply, timeout=args.timeout), ensure_ascii=False, default=str))
+
+
 def build_parser() -> argparse.ArgumentParser:
     from radar.preferences import PRIORITIES
     parser = argparse.ArgumentParser(prog="python -m radar")
@@ -1229,6 +1246,25 @@ def build_parser() -> argparse.ArgumentParser:
     pipe_docs.add_argument('--limit', type=int, default=200)
     pipe_docs.add_argument('--pending', action='store_true')
     pipe_docs.set_defaults(func=_cmd_pipeline_documentos)
+
+    ocr_run = subparsers.add_parser('ocr-executar',
+                                    help='OCR controlado de páginas (dry-run por padrão)')
+    ocr_run.add_argument('--db', required=True)
+    ocr_run.add_argument('--version-id', required=True)
+    ocr_run.add_argument('--pages', help='ex.: 1,2 (padrão: até 20 primeiras)')
+    ocr_run.add_argument('--dpi', type=int, default=300)
+    ocr_run.add_argument('--engine', choices=('windows_ocr', 'tesseract'))
+    ocr_run.add_argument('--timeout', type=int, default=120)
+    ocr_run.add_argument('--apply', action='store_true')
+    ocr_run.set_defaults(func=_cmd_ocr_executar)
+
+    rev_dup = subparsers.add_parser('revisao-duplicados',
+                                    help='grupos de duplicidade textual (comparação)')
+    rev_dup.add_argument('--db', required=True)
+    rev_dup.add_argument('--contest-id')
+    rev_dup.add_argument('--field')
+    rev_dup.add_argument('--limit', type=int, default=50)
+    rev_dup.set_defaults(func=_cmd_revisao_duplicados)
 
     ocr_pend = subparsers.add_parser('ocr-pendentes',
                                      help='PDFs que precisam de OCR (não executa OCR)')

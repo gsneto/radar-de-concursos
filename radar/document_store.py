@@ -1339,6 +1339,9 @@ def link_amendment(db_path, amendment_document_id: str, original_document_id: st
 
 _FIELDS = {"education", "accepted_courses", "si_compatibility", "immediate_vacancies",
             "reserve_vacancies", "indigenous_vacancies", "indigenous_reserve_vacancies",
+            # Fase 31: total publicado pelo edital quando ele NÃO abre por modalidade.
+            # É um número agregado; nunca substitui vagas imediatas nem indígenas.
+            "vagas_total_publicado",
             "registration_start", "registration_end", "exam_date", "exam_location",
             "exam_municipio", "exam_uf", "work_location", "work_municipio", "work_uf",
             "exemption_start", "exemption_end", "exemption_result_preliminary",
@@ -1346,7 +1349,7 @@ _FIELDS = {"education", "accepted_courses", "si_compatibility", "immediate_vacan
             # Conteúdo programático (Fase 22): níveis hierárquicos da seção de programa.
             "conteudo_secao", "conteudo_disciplina", "conteudo_topico", "conteudo_subtopico"}
 _COUNTS = {"immediate_vacancies", "reserve_vacancies", "indigenous_vacancies",
-           "indigenous_reserve_vacancies"}
+           "indigenous_reserve_vacancies", "vagas_total_publicado"}
 # Campos de conteúdo programático (multi-item; não entram na detecção de conflito escalar).
 _CONTENT_FIELDS = {"conteudo_secao", "conteudo_disciplina", "conteudo_topico", "conteudo_subtopico"}
 _DATES = {"registration_start", "registration_end", "exam_date", "exemption_start",
