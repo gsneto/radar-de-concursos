@@ -775,6 +775,34 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                               group=query.get("group", [None])[0],
                               state=query.get("state", [None])[0],
                               urgency=query.get("urgency", [None])[0])
+        elif path == "/api/prazos/auditoria":
+            query = parse_qs(parts.query)
+            allowed = {"limit", "offset", "contest_id", "group", "cause"}
+            if set(query) - allowed:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["50"])[0])
+                offset = int(query.get("offset", ["0"])[0])
+            except ValueError:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import deadline_audit
+            self._serve_study(deadline_audit.audit_conflicts, limit=limit, offset=offset,
+                              contest_id=query.get("contest_id", [None])[0],
+                              group=query.get("group", [None])[0],
+                              cause=query.get("cause", [None])[0])
+        elif path == "/api/prazos/caso":
+            query = parse_qs(parts.query)
+            if set(query) - {"contest_id", "group", "escopo"} \
+                    or "contest_id" not in query or "group" not in query:
+                self._bad_request("contest_id e group obrigatórios")
+                return
+            from radar import deadline_audit
+            self._serve_study(deadline_audit.case_file,
+                              contest_id=query["contest_id"][0],
+                              group=query["group"][0],
+                              escopo=query.get("escopo", [None])[0])
         elif path == "/api/prazos/revalidacao":
             query = parse_qs(parts.query)
             if set(query) - {"limit"}:
@@ -1361,6 +1389,25 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                               expected_previous_id=body.get("previous_id"),
                               dry_run=body.get("dry_run", True) is not False)
             return
+        if path == "/api/prazos/verificar-documento":
+            if parts.query:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import deadline_revalidation
+            body = self._read_json()
+            if body is None:
+                return
+            version_id = body.get("version_id")
+            if not isinstance(version_id, str) or not version_id.strip():
+                self._bad_request("version_id obrigatório")
+                return
+            dry_run = body.get("dry_run", True) is not False
+            self._serve_study(deadline_revalidation.verify_version, version_id,
+                              contest_id=body.get("contest_id"),
+                              grupo=body.get("group"), escopo=body.get("escopo"),
+                              apply=not dry_run,
+                              checked_by=body.get("checked_by") or "operador local")
+            return
         if path == "/api/prazos/revalidacao":
             if parts.query:
                 self._bad_request("parâmetros inválidos")
@@ -1834,7 +1881,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                       "/api/estudos/perfil", "/api/estudos/lacuna", "/api/estudos/importar",
                       "/api/estudos/flashcards", "/api/estudos/questoes",
                       "/api/estudos/tentativas", "/api/estudos/simulados",
-                      "/api/reconciliacao", "/api/prazos/revalidacao")
+                      "/api/reconciliacao", "/api/prazos/revalidacao",
+                      "/api/prazos/verificar-documento")
         allow = "GET, POST" if path in post_paths else "GET"
         if path == "/api/estudos/perfil":
             allow = "GET, POST, DELETE"

@@ -4465,6 +4465,181 @@
       });
   }
 
+  // --- Ficha do prazo (Fase 37) ---
+
+  function openDeadlineCase(item) {
+    var doc = global.document;
+    if (!doc) return Promise.resolve();
+    var node = doc.getElementById('prazo-caso');
+    if (!node) return Promise.resolve();
+    triagemStatus('prazo-status', 'Abrindo ficha do prazo…');
+    var parts = ['contest_id=' + encodeURIComponent(item.contest_id),
+                 'group=' + encodeURIComponent(item.grupo)];
+    if (item.escopo) parts.push('escopo=' + encodeURIComponent(item.escopo));
+    return global.fetch('/api/prazos/caso?' + parts.join('&'),
+                        {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        clearContainer(node);
+        node.appendChild(renderDeadlineCase(doc, payload));
+        node.hidden = false;
+        triagemStatus('prazo-status', '');
+        if (node.scrollIntoView) node.scrollIntoView({block: 'start'});
+      })
+      .catch(function (error) {
+        triagemStatus('prazo-status', 'Falha ao abrir ficha (' + error.message + ').');
+      });
+  }
+
+  var EVENT_VARIANT = {inscricao: 'candidato', isencao: 'candidato',
+                       prova: 'conflito', recurso: 'candidato', outro: 'ausente'};
+
+  function renderDeadlineCase(document, payload) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    var head = el(document, 'div', 'mesa__session');
+    head.appendChild(el(document, 'strong', '',
+      payload.grupo_label + ' · concurso ' + String(payload.contest_id).slice(0, 8)));
+    head.appendChild(el(document, 'span', 'mesa__badge mesa__badge--' +
+      (payload.causa === 'divergencia_real' ? 'conflito'
+       : payload.causa === 'evento_diferente' ? 'candidato' : 'ausente'),
+      payload.causa_label));
+    wrap.appendChild(head);
+    wrap.appendChild(el(document, 'p', 'prep__basis', payload.explicacao));
+    wrap.appendChild(el(document, 'p', 'mesa__meta',
+      'Evento esperado: ' + payload.evento_esperado_label +
+      (payload.escopo ? ' · escopo ' + payload.escopo : '') +
+      ' · propostas abertas: ' + payload.abertas +
+      ' · rejeitadas: ' + payload.rejeitadas));
+    wrap.appendChild(el(document, 'p', 'mesa__meta',
+      'Valores sustentados: ' + (payload.valores_sustentados.length
+        ? payload.valores_sustentados.join(', ') : 'nenhum') +
+      ' · verificados pelo extrator: ' + ((payload.valores_verificados || []).length
+        ? payload.valores_verificados.join(', ') : 'nenhum') +
+      ' · não classificados: ' + ((payload.valores_nao_classificados || []).length
+        ? payload.valores_nao_classificados.join(', ') : 'nenhum')));
+    if ((payload.causas || []).length > 1) {
+      wrap.appendChild(el(document, 'p', 'mesa__meta',
+        'Causas combinadas: ' + payload.causas.join(' · ')));
+    }
+    if (payload.verificacao_manual) {
+      wrap.appendChild(el(document, 'p', 'muted',
+        'Há campo sem extrator dedicado: a auditoria não confirma nem refuta o valor.'));
+    }
+
+    var table = el(document, 'table', 'mesa__table');
+    table.appendChild(el(document, 'caption', '',
+      'Fonte inalterada não confirma prazo. Nenhum valor é escolhido automaticamente.'));
+    var headRow = el(document, 'tr');
+    ['Campo', 'Valor', 'Evento do trecho', 'Situação', 'Extrator atual', 'Documento',
+     'SHA-256', '']
+      .forEach(function (label) { headRow.appendChild(el(document, 'th', '', label)); });
+    var thead = el(document, 'thead');
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+    var tbody = el(document, 'tbody');
+    (payload.candidatos || []).forEach(function (candidate) {
+      var row = el(document, 'tr');
+      row.appendChild(el(document, 'td', 'mesa__meta', candidate.field_name));
+      row.appendChild(el(document, 'td', '', String(candidate.value)));
+      var eventCell = el(document, 'td');
+      eventCell.appendChild(el(document, 'span', 'mesa__badge mesa__badge--' +
+        (EVENT_VARIANT[candidate.event] || 'ausente'), candidate.event_label));
+      row.appendChild(eventCell);
+      row.appendChild(el(document, 'td', 'mesa__meta',
+        candidate.is_open
+          ? 'aberta' + (candidate.last_decision ? ' · ' + candidate.last_decision : '')
+          : 'rejeitada' + (candidate.last_decision ? ' · ' + candidate.last_decision : '')));
+      row.appendChild(el(document, 'td', 'mesa__meta',
+        candidate.reproducibility_label +
+        (candidate.reproducibility_detail ? ' · ' + candidate.reproducibility_detail : '')));
+      row.appendChild(el(document, 'td', 'mesa__meta',
+        (candidate.document_title || '') + ' · ' +
+        (candidate.tipo_documental || '') + ' · p' +
+        (candidate.page_number === null ? '—' : candidate.page_number)));
+      row.appendChild(el(document, 'td', 'mesa__meta',
+        String(candidate.sha256 || '').slice(0, 12)));
+      var evidence = el(document, 'td');
+      var open = el(document, 'button', 'mesa__row-button', 'Ver trecho');
+      open.type = 'button';
+      open.addEventListener('click', function () {
+        var box = el(document, 'div');
+        box.appendChild(el(document, 'p', 'mesa__meta',
+          'página ' + candidate.page_number + ' · offset ' +
+          candidate.start_offset + '–' + candidate.end_offset));
+        if (candidate.context_before) {
+          box.appendChild(el(document, 'blockquote', 'mesa__quote',
+            '…' + candidate.context_before.slice(-240)));
+        }
+        box.appendChild(el(document, 'blockquote', 'mesa__quote', candidate.quote));
+        if (candidate.context_after) {
+          box.appendChild(el(document, 'blockquote', 'mesa__quote',
+            candidate.context_after.slice(0, 240) + '…'));
+        }
+        if (candidate.official_url) {
+          box.appendChild(el(document, 'p', 'mesa__meta', candidate.official_url));
+        }
+        evidence.appendChild(box);
+      });
+      evidence.appendChild(open);
+      row.appendChild(evidence);
+      tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    var scroll = el(document, 'div', 'mesa__scroll');
+    scroll.appendChild(table);
+    wrap.appendChild(scroll);
+
+    var verifications = payload.verificacoes || [];
+    wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Verificação do documento'));
+    if (!verifications.length) {
+      wrap.appendChild(el(document, 'p', 'muted',
+        'Nenhuma verificação registrada para estas versões.'));
+    } else {
+      var list = el(document, 'ul', 'mesa__list');
+      verifications.forEach(function (entry) {
+        list.appendChild(el(document, 'li', 'mesa__meta',
+          entry.result + ' · ' + entry.checked_at + ' · HTTP ' +
+          (entry.http_status === null ? '—' : entry.http_status) +
+          ' · armazenado ' + String(entry.stored_sha256 || '').slice(0, 12) +
+          ' · observado ' + String(entry.observed_sha256 || '').slice(0, 12)));
+      });
+      wrap.appendChild(list);
+      wrap.appendChild(el(document, 'p', 'muted',
+        'Documento idêntico ao da coleta não valida a interpretação do prazo.'));
+    }
+
+    wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Proposta de correção'));
+    var proposal = payload.proposta_correcao || {};
+    wrap.appendChild(el(document, 'p', 'prep__basis', proposal.acao || ''));
+    var reject = proposal.propostas_para_rejeitar || [];
+    wrap.appendChild(el(document, 'p', 'mesa__meta',
+      'Propostas para rejeitar (evento diferente, decisão humana): ' +
+      (reject.length ? reject.length + ' proposta(s)' : 'nenhuma')));
+    if (reject.length) {
+      var rejectList = el(document, 'ul', 'mesa__list');
+      (payload.candidatos || []).forEach(function (candidate) {
+        if (reject.indexOf(candidate.proposal_id) === -1) return;
+        rejectList.appendChild(el(document, 'li', 'mesa__meta',
+          candidate.field_name + ' = ' + candidate.value + ' · ' +
+          candidate.event_label + ' · p' + candidate.page_number + ' · ' +
+          (candidate.document_title || '')));
+      });
+      wrap.appendChild(rejectList);
+    }
+    var unreproduced = proposal.propostas_sem_reproducao || [];
+    if (unreproduced.length) {
+      wrap.appendChild(el(document, 'p', 'mesa__meta',
+        'Propostas de evento correto que o extrator atual não reproduz: ' +
+        unreproduced.length + ' (conferir antes de decidir)'));
+    }
+    wrap.appendChild(el(document, 'p', 'muted', proposal.nota || ''));
+    wrap.appendChild(el(document, 'p', 'muted', payload.limitacao || ''));
+    return wrap;
+  }
+
   // --- Carteira operacional e revalidação de prazos (Fase 36) ---
 
   var CARTEIRA_STATE = {offset: 0, limit: 25};
@@ -5267,12 +5442,24 @@
 
   function renderDeadlines(document, payload) {
     var wrap = el(document, 'div', 'coverage__inner');
+    var dimensions = [
+      ['Situação temporal', payload.por_temporal],
+      ['Revalidação', payload.por_revalidacao],
+      ['Conflito', payload.por_conflito],
+      ['Revisão humana', payload.por_revisao]
+    ];
     wrap.appendChild(el(document, 'p', 'prep__basis',
       payload.total + ' prazo(s) · referência ' + (payload.referencia || {}).hoje_local +
-      ' (' + (payload.referencia || {}).fuso + ') · ' +
-      Object.keys(payload.por_estado || {}).map(function (key) {
-        return key + ': ' + payload.por_estado[key];
-      }).join(' · ')));
+      ' (' + (payload.referencia || {}).fuso + ')'));
+    dimensions.forEach(function (pair) {
+      var counts = pair[1] || {};
+      wrap.appendChild(el(document, 'p', 'mesa__meta',
+        pair[0] + ': ' + Object.keys(counts).map(function (key) {
+          return key + ' ' + counts[key];
+        }).join(' · ') + ' (soma ' + Object.keys(counts).reduce(function (sum, key) {
+          return sum + counts[key];
+        }, 0) + ')'));
+    });
     if (!payload.itens.length) {
       wrap.appendChild(el(document, 'p', 'muted', 'Nenhum prazo para os filtros.'));
       return wrap;
@@ -5325,6 +5512,10 @@
       if (item.trecho) {
         actionCell.appendChild(el(document, 'blockquote', 'mesa__quote', item.trecho));
       }
+      var sheet = el(document, 'button', 'button button--ghost', 'Ficha');
+      sheet.type = 'button';
+      sheet.addEventListener('click', function () { openDeadlineCase(item); });
+      actionCell.appendChild(sheet);
       row.appendChild(actionCell);
       tbody.appendChild(row);
     });
@@ -5358,6 +5549,8 @@
       })
       .then(function (payload) {
         var node = doc.getElementById('prazo-panel');
+        var stale = doc.getElementById('prazo-caso');
+        if (stale) { clearContainer(stale); stale.hidden = true; }
         clearContainer(node);
         node.appendChild(renderDeadlines(doc, payload));
         triagemStatus('prazo-status', payload.total + ' prazo(s).');

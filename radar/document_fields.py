@@ -39,6 +39,109 @@ def label_from_ambiguity(reason: str | None) -> str | None:
     return None
 
 
+# Marcadores por evento. A ordem não decide: vence o marcador mais próximo do trecho.
+# "inscrição" só conta como evento quando não é qualificador de outro ("taxa de inscrição",
+# "valor da inscrição", "inscritos"): nesses casos o evento é a isenção/pagamento.
+_EVENT_PATTERNS = (
+    ("isencao", re.compile(r"isen[çc]|isent", re.I)),
+    ("recurso", re.compile(r"recurso", re.I)),
+    ("prova", re.compile(r"provas?\b", re.I)),
+    ("inscricao", re.compile(r"inscri[çc][ãa]o|inscri[çc][õo]es", re.I)),
+)
+_INSCRICAO_QUALIFIER = re.compile(
+    r"(?:taxa|valor|pagamento|comprovante|guia|boleto|emiss[ãa]o)\s+d[aeo]s?\s+$", re.I)
+
+# Duas camadas de contexto, da mais estreita para a mais ampla:
+# 1. janela curta — o sujeito que rege o período está logo antes da primeira data;
+# 2. frase — cobre frases longas ("inscrições ... de 27 de fevereiro ... até 10 de abril")
+#    sem alcançar a frase vizinha, que é o que trocava o evento.
+_EVENT_WINDOW = 160
+_SENTENCE_BREAK = re.compile(r"(?<=[.;!?])\s+|\n+")
+
+
+def event_window(text: str, start: int, limit: int = _EVENT_WINDOW) -> str:
+    """Trecho imediatamente anterior ao início da citação."""
+    return text[max(0, start - limit):start]
+
+
+def _sentence_prefix(text: str, start: int) -> str:
+    """Frase imediatamente anterior, sem limite artificial de tamanho.
+
+    Um teto fixo cortava o início de frases longas e fazia o marcador desaparecer, o que
+    rejeitava período de inscrição legítimo.
+    """
+    prefix = text[:start]
+    cut = 0
+    for match in _SENTENCE_BREAK.finditer(prefix):
+        cut = match.end()
+    return prefix[cut:]
+
+
+def _nearest_marker(window: str):
+    best = None
+    for event, pattern in _EVENT_PATTERNS:
+        for match in pattern.finditer(window):
+            if event == "inscricao" and _INSCRICAO_QUALIFIER.search(window[:match.start()]):
+                continue
+            if best is None or match.start() > best[1]:
+                best = (event, match.start(), match.group(0))
+    return (best[0], best[2]) if best else None
+
+
+def _events_in(window: str) -> set[str]:
+    events = set()
+    for event, pattern in _EVENT_PATTERNS:
+        for match in pattern.finditer(window):
+            if event == "inscricao" and _INSCRICAO_QUALIFIER.search(window[:match.start()]):
+                continue
+            events.add(event)
+            break
+    return events
+
+
+def event_marker(text: str, start: int, quote: str | None = None,
+                 strict: bool = True) -> tuple[str, str | None]:
+    """Evento do trecho.
+
+    Ordem: (1) se a própria citação nomeia um único evento ("Inscrições até ...",
+    "... prova discursiva"), esse evento vale; (2) senão, marcador mais próximo na janela
+    curta anterior; (3) senão, a frase — e só quando ela tem um único evento.
+    Ambíguo não vira atribuição: a resposta é ``outro``.
+    """
+    if quote:
+        inside = _events_in(quote.lower())
+        if len(inside) == 1:
+            event = inside.pop()
+            for candidate, pattern in _EVENT_PATTERNS:
+                if candidate != event:
+                    continue
+                found = pattern.search(quote.lower())
+                if found:
+                    return event, found.group(0)
+    short = event_window(text, start).lower()
+    # Ambiguidade só conta no trecho imediatamente antes da data: se dois eventos
+    # aparecem na mesma oração ("a isenção e as inscrições ... no período"), o extrator
+    # não atribui (`strict`). O diagnóstico pode usar o marcador mais próximo e sinalizar
+    # a ambiguidade, sem transformar isso em decisão.
+    if strict and len(_events_in(short[-80:])) > 1:
+        return "outro", None
+    found = _nearest_marker(short)
+    if found:
+        return found
+    prefix = _sentence_prefix(text, start).lower()
+    events = _events_in(prefix)
+    if len(events) == 1:
+        return _nearest_marker(prefix) or ("outro", None)
+    return "outro", None
+
+
+def event_ambiguous(text: str, start: int, quote: str | None = None) -> bool:
+    """O trecho imediatamente anterior mistura eventos?"""
+    if quote and len(_events_in(quote.lower())) == 1:
+        return False
+    return len(_events_in(event_window(text, start).lower()[-80:])) > 1
+
+
 def _registration_dates(block_text: str):
     """Devolve pares (field_name, value, quote, start, end) para datas de inscrição reconhecidas."""
     found = []
@@ -63,12 +166,11 @@ def _registration_dates(block_text: str):
         found.append(('registration_start', start.isoformat(), match.group(), match.start(), match.end()))
         found.append(('registration_end', end.isoformat(), match.group(), match.start(), match.end()))
     for match in _TEXT_PERIOD.finditer(block_text):
-        # _TEXT_PERIOD não tem âncora própria: exige contexto de inscrição próximo e não
-        # pode capturar período de isenção/recurso (que também usa "dia X ... dia Y").
-        context = block_text[max(0, match.start() - 240):match.start()].lower()
-        last_inscricao = max(context.rfind("inscri"), context.rfind("inscrição"))
-        last_isencao = max(context.rfind("isen"), context.rfind("isenc"))
-        if last_inscricao < 0 or last_isencao > last_inscricao:
+        # _TEXT_PERIOD não tem âncora própria: exige que a **frase** fale de inscrição.
+        # Período de isenção e data de prova também usam "dia X ... dia Y" e não podem
+        # virar prazo de inscrição só porque a página menciona "inscrição" em outra frase.
+        event, _marker = event_marker(block_text, match.start())
+        if event != "inscricao":
             continue
         try:
             start = date(int(match.group(3)), int(_MONTHS[match.group(2).lower()]), int(match.group(1)))

@@ -519,8 +519,12 @@ def _inclusion_reasons(view):
     if active:
         soonest = min(active, key=lambda entry: entry["dias_restantes"]
                       if entry["dias_restantes"] is not None else 99999)
-        reasons.append(f"prazo futuro de {soonest['grupo_label'].lower()} "
-                       f"({soonest['valor']})")
+        if soonest.get("valor") is None:
+            reasons.append(f"{soonest['grupo_label'].lower()} em conflito documental "
+                           "(sem valor único)")
+        else:
+            reasons.append(f"prazo futuro de {soonest['grupo_label'].lower()} "
+                           f"({soonest['valor']})")
     si_state = (view.get("si") or {}).get("estado")
     if si_state in HIGHLIGHT_SI:
         reasons.append(SI_LABELS.get(si_state, "compatibilidade com SI"))

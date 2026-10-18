@@ -220,6 +220,15 @@ def _item_view(item, today: date, revalidation, source) -> dict:
         "precisa_revisao_humana": state in ("conflito_documental", "data_ilegivel",
                                            "nao_localizado", "alterado_por_retificacao"),
         "proxima_acao": ACTION_BY_STATE[state],
+        # Dimensões independentes: cada uma soma o total sozinha. `estado_operacional`
+        # acima é derivado delas para orientar a ação, não uma categoria temporal.
+        "dimensoes": {
+            "temporal": item["estado"],
+            "revalidacao": (revalidation or {}).get("result") or "sem_verificacao",
+            "conflito": "conflito" if item["conflito"] else "sem_conflito",
+            "revisao": ((item.get("decisao") or {}).get("decision")
+                        or "sem_decisao"),
+        },
     }
 
 
@@ -277,20 +286,52 @@ def calendar(db_path, *, contest_id=None, group=None, state=None, urgency=None,
         item["contest_id"], item["grupo"], item["escopo_rotulo"] or ""))
     total = len(items)
     by_state, by_group, by_urgency = {}, {}, {}
+    by_temporal, by_revalidation, by_conflict, by_review = {}, {}, {}, {}
     for item in items:
         by_state[item["estado_operacional"]] = by_state.get(item["estado_operacional"], 0) + 1
         by_group[item["grupo"]] = by_group.get(item["grupo"], 0) + 1
         by_urgency[item["urgencia"]] = by_urgency.get(item["urgencia"], 0) + 1
+        dims = item["dimensoes"]
+        by_temporal[dims["temporal"]] = by_temporal.get(dims["temporal"], 0) + 1
+        by_revalidation[dims["revalidacao"]] = by_revalidation.get(dims["revalidacao"], 0) + 1
+        by_conflict[dims["conflito"]] = by_conflict.get(dims["conflito"], 0) + 1
+        by_review[dims["revisao"]] = by_review.get(dims["revisao"], 0) + 1
     return {
         "version": CALENDAR_VERSION, "generated_at": now_dt.isoformat(),
         "referencia": {"hoje_local": today.isoformat(), "fuso": "America/Recife",
                        "agora_utc": now_dt.astimezone(timezone.utc).isoformat()},
-        "total": total, "por_estado": by_state, "por_grupo": by_group,
-        "por_urgencia": by_urgency,
+        "total": total,
+        # Cada dimensão é exclusiva e soma `total` sozinha.
+        "por_temporal": by_temporal,
+        "por_revalidacao": by_revalidation,
+        "por_conflito": by_conflict,
+        "por_revisao": by_review,
+        # `por_situacao` é derivado (ação); `por_estado` fica como alias compatível.
+        "por_situacao": by_state, "por_estado": by_state,
+        "por_grupo": by_group, "por_urgencia": by_urgency,
+        "denominador": {
+            "unidade": "prazo (concurso × grupo × escopo de cargo)",
+            "universo": ("todo grupo de prazo com ao menos uma proposta no concurso; "
+                         "inclui passados e sem data"),
+            "filtros": {"contest_id": contest_id, "group": group, "state": state,
+                        "urgency": urgency},
+            "referencia": {"hoje_local": today.isoformat(), "fuso": "America/Recife"},
+            "rejeitados": ("proposta rejeitada não sustenta valor; o grupo continua "
+                           "contado e aparece como `sem_data` quando nada resta"),
+            "dimensoes": {
+                "temporal": "futuro | hoje | expirado | data_invalida | sem_data",
+                "revalidacao": ("fonte_inalterada | fonte_alterada | fonte_indisponivel | "
+                                "sem_permissao | erro | sem_verificacao"),
+                "conflito": "conflito | sem_conflito",
+                "revisao": "decisão humana vigente por proposta ou sem_decisao",
+                "situacao": "estado derivado, para orientar a próxima ação",
+            },
+        },
         "limit": limit, "offset": offset, "has_more": offset + limit < total,
         "itens": items[offset:offset + limit],
         "limitacao": ("Candidato futuro não é inscrição aberta. Conflito não escolhe valor. "
-                      "Documento oficial inalterado não confirma prazo. Nada é alterado "
+                      "Documento oficial inalterado não confirma prazo. Situação operacional "
+                      "é derivada; as dimensões são independentes. Nada é alterado "
                       "automaticamente."),
     }
 

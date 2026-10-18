@@ -964,6 +964,28 @@ def _cmd_prazos_calendario(args: argparse.Namespace) -> None:
         ensure_ascii=False, default=str))
 
 
+def _cmd_prazos_auditoria(args: argparse.Namespace) -> None:
+    from radar import deadline_audit
+    print(json.dumps(deadline_audit.audit_conflicts(
+        args.db, contest_id=args.contest_id, group=args.group, cause=args.cause,
+        limit=args.limit, offset=args.offset), ensure_ascii=False, default=str))
+
+
+def _cmd_prazos_caso(args: argparse.Namespace) -> None:
+    from radar import deadline_audit
+    print(json.dumps(deadline_audit.case_file(
+        args.db, contest_id=args.contest_id, group=args.group, escopo=args.escopo),
+        ensure_ascii=False, default=str))
+
+
+def _cmd_prazos_verificar_documento(args: argparse.Namespace) -> None:
+    from radar import deadline_revalidation
+    print(json.dumps(deadline_revalidation.verify_version(
+        args.db, args.version_id, contest_id=args.contest_id, grupo=args.group,
+        escopo=args.escopo, apply=args.apply, checked_by=args.checked_by),
+        ensure_ascii=False, default=str))
+
+
 def _cmd_prazos_revalidar(args: argparse.Namespace) -> None:
     from radar import deadline_revalidation
     if not args.apply:
@@ -1668,6 +1690,35 @@ def build_parser() -> argparse.ArgumentParser:
     prazos_cal.add_argument('--limit', type=int, default=100)
     prazos_cal.add_argument('--offset', type=int, default=0)
     prazos_cal.set_defaults(func=_cmd_prazos_calendario)
+
+    prazos_audit = subparsers.add_parser('prazos-auditoria',
+                                         help='audita a causa dos conflitos de prazo')
+    prazos_audit.add_argument('--db', required=True)
+    prazos_audit.add_argument('--contest-id')
+    prazos_audit.add_argument('--group')
+    prazos_audit.add_argument('--cause')
+    prazos_audit.add_argument('--limit', type=int, default=50)
+    prazos_audit.add_argument('--offset', type=int, default=0)
+    prazos_audit.set_defaults(func=_cmd_prazos_auditoria)
+
+    prazos_caso = subparsers.add_parser('prazos-caso',
+                                        help='ficha de decisao de um prazo')
+    prazos_caso.add_argument('--db', required=True)
+    prazos_caso.add_argument('--contest-id', required=True)
+    prazos_caso.add_argument('--group', required=True)
+    prazos_caso.add_argument('--escopo')
+    prazos_caso.set_defaults(func=_cmd_prazos_caso)
+
+    prazos_ver = subparsers.add_parser('prazos-verificar-documento',
+                                       help='verifica uma versao especifica (dry-run padrao)')
+    prazos_ver.add_argument('--db', required=True)
+    prazos_ver.add_argument('--version-id', required=True)
+    prazos_ver.add_argument('--contest-id')
+    prazos_ver.add_argument('--group')
+    prazos_ver.add_argument('--escopo')
+    prazos_ver.add_argument('--checked-by', default='operador local')
+    prazos_ver.add_argument('--apply', action='store_true')
+    prazos_ver.set_defaults(func=_cmd_prazos_verificar_documento)
 
     prazos_reval = subparsers.add_parser('prazos-revalidar',
                                          help='verifica prazos na fonte (dry-run por padrao)')

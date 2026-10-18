@@ -220,6 +220,18 @@ Decisões de identidade são **append-only** e exigem humano: `confirmada`, `rej
 
 API `GET /api/reconciliacao`, `/api/reconciliacao/historico`, `/api/conflitos-revisao`, `/api/prazos`, `/api/documentos/nominais-destino`, `POST /api/reconciliacao`; CLI `reconciliacao`, `reconciliacao-historico`, `reconciliacao-decidir`, `reconciliacao-criar-cargo`, `conflitos-revisao`, `prazos`, `documentos-nominais-destino`. Ver [`docs/superpowers/specs/2026-10-18-reconciliacao-identidades-design.md`](docs/superpowers/specs/2026-10-18-reconciliacao-identidades-design.md).
 
+## Auditoria de prazos e ficha de decisão
+
+Cada prazo do calendário tem uma **ficha** (`GET /api/prazos/caso`, `prazos-caso`, botão "Ficha"): todos os candidatos com trecho, contexto anterior e posterior, página, offsets, versão, sha256 e URL; o **evento** a que o trecho se refere (inscrição, isenção, prova, recurso); se o extrator atual ainda reproduz o valor; as verificações de documento registradas; e uma **proposta de correção explicitamente não executada**.
+
+A causa do conflito é derivada e explicada (`GET /api/prazos/auditoria`): `evento_diferente` (o trecho trata de isenção ou prova), `divergencia_real` (dois valores válidos), `extracao_obsoleta`, `evidencia_deslocada`, `coerente` ou `indeterminado`. A auditoria **não escolhe valor**: mostra `valores_sustentados`, `valores_verificados` e `valores_nao_classificados`, e a decisão continua humana no fluxo de revisão.
+
+As contagens do calendário são **por dimensão independente**, cada uma somando o total: `por_temporal` (futuro/hoje/expirado/data_invalida/sem_data), `por_revalidacao`, `por_conflito` e `por_revisao`. `por_situacao` é um estado derivado para orientar a ação, e o bloco `denominador` declara unidade, universo, filtros e o tratamento de propostas rejeitadas. Assim `fonte_inalterada` não é um estado temporal nem confirmação de prazo.
+
+O contexto de extração passou a ser a **oração**, não a página: janela curta antes da data e, se necessário, a frase — evitando que "A isenção … no período … por meio de inscrição" vire prazo de inscrição, ou que a data da prova seja lida como fim de inscrições.
+
+Ver [`docs/superpowers/specs/2026-10-18-auditoria-prazos-design.md`](docs/superpowers/specs/2026-10-18-auditoria-prazos-design.md).
+
 ## Carteira operacional e prazos atuais
 
 A seção **Carteira de oportunidades** (`#carteira`) responde o que fazer agora, sem transformar candidato em fato. São **285 oportunidades** (concurso × cargo/rótulo) com uma **prontidão determinística**: `oportunidade_historica` (todos os prazos passaram), `identidade_cargo_pendente`, `conflito_documental_pendente`, `prazo_precisa_revalidacao`, `campos_decisivos_ausentes`, `candidatos_prontos_para_revisao`, `edital_oficial_necessario`, `documentacao_insuficiente` e `informacao_confirmada` (só com decisão humana). Cada linha mostra o motivo, a urgência, a compatibilidade com Sistemas de Informação, a reserva indígena, o local de prova e a próxima ação.

@@ -528,3 +528,16 @@ Comandos de retomada, na raiz do projeto: `git status --short --branch`; `python
 - **Revisao independente**: corrigidos (1) conflito com terceiro valor expondo valor unico, (2) dossie herdando SI de outro cargo, (3) indigena usado como prioridade de cargo, (4) redirecionamento HTTP fora do host, (5) filtro `sem_data` invalido, (6) link abrindo JSON, (7) badge de revalidacao como confirmado, (8) indice v21, (9) fuso de `deadline_review`.
 - **Prova real**: UI verificada em Chromium (285 oportunidades, 12 destaques em 8 concursos, 110 prazos, dossie com 13 secoes); botao de revalidacao testado em copia isolada. Base real permanece com **0 revisoes, 0 valores vigentes e 0 reconciliacoes**.
 - **Testes**: **1.637 testes, OK** (50 novos; 1 pulado quando ha motor de OCR). Schema v21, `integrity ok`, FK vazia.
+
+### Fase 37 — Auditoria de prazos, contagens e ficha de decisao (2026-10-18)
+
+- **Caso 4f495c42 (TJSC)**: conflito explicado. As 3 leituras de fim sao: 26/11/2026 (inscricao, reproduzida em 3 passagens), 21/10/2026 (janela de isencao) e 18/04/2027 (data da prova). O inicio de 19/10/2026 e sustentado por texto literal de inscricao; nao confirmado e nao prova inscricao aberta. Documento verificado: `fonte_inalterada`, sha256 identico, host e politica permitidos.
+- **Demais conflitos**: 15 itens (9 expirados, 6 futuros) em 9 concursos; 10 com causa `evento_diferente` e 5 com `divergencia_real` (1e5cafb4, 784d730a e f4235e23 x3); ddb0dac5 combina evento diferente com dois valores sustentados. Nenhum resolvido por recencia.
+- **Contagens reconciliadas**: o 101 do relatorio anterior vinha de somar 10 revalidados + 6 conflitos *futuros* + 71 + 14; o total de conflitos e 15. Agora cada dimensao (temporal, revalidacao, conflito, revisao) soma 110 sozinha, com bloco `denominador` explicito.
+- **Contexto de extracao**: janela curta (160) + frase, com classificacao de evento compartilhada entre extrator e auditoria; corrige o caso em que "inscricao" de outra frase contaminava data de prova/isenção. Dados existentes intactos.
+- **Auditoria** (`radar/deadline_audit.py`): ficha por candidato (evento, reprodutibilidade, contexto, hash, URL), causa derivada, proposta de correcao nao executada, contagens por causa.
+- **Verificacao de versao** (`verify_version`): permite verificar documento de prazo em conflito, com `dry_run` sem rede e apenas metadados.
+- **Superficie**: 3 rotas aditivas, 3 comandos CLI, cabecalho com dimensoes e painel de ficha do prazo.
+- **Auditorias de apoio**: 11 revalidacoes (todas `fonte_inalterada`, 0 decisoes); 12 destaques em 8 concursos; SI 3 explicitos / 5 categoria / 53 correlatos / 80 outras / 144 sem leitura, separados por escopo; indigena 0 imediato, 103 reserva, 168 mencao, 14 nao mencionado; 287 nominais (131 metadados, 156 retirar), crescimento explicado pelo ciclo.
+- **Base**: sem migracao (v21); nenhuma revisao, valor vigente ou reconciliacao criada; 1 revalidacao nova. Ciclo nao rodou durante a fase.
+- **Testes**: **1.668 testes, OK** (31 novos; 1 pulado quando ha motor de OCR).

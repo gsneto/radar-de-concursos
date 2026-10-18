@@ -23,7 +23,7 @@ from contextlib import closing
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from radar import deadline_calendar, source_policy
+from radar import deadline_calendar, deadline_review, source_policy
 from radar.document_store import connect_documents, is_readable_schema
 
 REVALIDATION_VERSION = "deadline_revalidation_v1"
@@ -195,6 +195,109 @@ def execute(db_path, *, limit=5, apply=False, now=None, fetcher=None,
                       "mudou). Não confirma prazo, não altera propostas e não substitui "
                       "decisão humana."),
     }
+
+
+def verify_version(db_path, version_id: str, *, contest_id: str | None = None,
+                   grupo: str | None = None, escopo=None, apply=False, now=None,
+                   fetcher=None, checked_by="operador local") -> dict:
+    """Verifica **uma versão específica**, inclusive de prazo em conflito.
+
+    Serve ao caso auditado: a revalidação normal só olha prazos futuros sem conflito, mas
+    um conflito também precisa saber se o documento armazenado ainda é o servido hoje.
+    Compara sha256 e registra metadados; nunca escolhe valor nem altera propostas.
+    """
+    if not isinstance(checked_by, str) or not checked_by.strip():
+        raise ValueError("responsável obrigatório")
+    now_dt = _now(now)
+    checked_at = now_dt.isoformat()
+    fetch = fetcher or _default_fetcher
+    with closing(connect_documents(db_path)) as conn:
+        if not is_readable_schema(conn):
+            raise ValueError("migração documental pendente")
+        row = conn.execute(
+            """SELECT v.id, v.sha256, v.document_id, d.contest_id, d.official_url,
+                      d.title, d.issuer, d.tipo_documental
+               FROM versoes_documento v JOIN documentos d ON d.id=v.document_id
+               WHERE v.id=?""", (version_id,)).fetchone()
+        if not row:
+            raise ValueError("versão inexistente")
+        version, stored_sha, document_id, doc_contest, url, title, issuer, tipo = row
+        if contest_id and doc_contest and contest_id != doc_contest:
+            raise ValueError("concurso não corresponde à versão")
+        contest = contest_id or doc_contest
+        if not contest:
+            raise ValueError("versão sem concurso associado")
+        if grupo is None:
+            # Deriva o grupo do próprio prazo para que a verificação apareça na ficha.
+            for candidate, fields in deadline_review.DEADLINE_GROUPS.items():
+                placeholders = ",".join("?" for _ in fields)
+                found = conn.execute(
+                    f"SELECT 1 FROM propostas_campo WHERE contest_id=? "
+                    f"AND field_name IN ({placeholders}) LIMIT 1",
+                    [contest, *fields]).fetchone()
+                if found:
+                    grupo = candidate
+                    break
+    if grupo is not None and grupo not in deadline_review.DEADLINE_GROUPS \
+            and grupo != "documento":
+        raise ValueError("grupo de prazo inválido")
+    target = {"contest_id": contest, "grupo": grupo or "documento", "escopo": escopo,
+              "valor": None, "documento_id": document_id, "versao": version,
+              "official_url": url, "sha256": stored_sha}
+    source = deadline_calendar._source_info(url, issuer,
+                                           deadline_calendar.coverage_states._source_map())
+    policy = (source or {}).get("policy") or {}
+    outcome = {"version_id": version, "document_id": document_id, "documento": title,
+               "tipo_documental": tipo, "contest_id": contest,
+               "official_url": url, "sha256_armazenado": stored_sha,
+               "politica": {"source_id": (source or {}).get("id"),
+                            "permission": policy.get("permission"),
+                            "allowed": bool(policy.get("allowed")),
+                            "reason": policy.get("reason")}}
+    if not apply:
+        # Mesmo contrato de execute: simulação não consulta a rede.
+        outcome.update(result=None, http_status=None, sha256_observado=None,
+                       note="simulação: nenhuma consulta externa foi feita")
+        outcome["dry_run"] = True
+        outcome["checked_at"] = checked_at
+        outcome["limitacao"] = ("Simulação: nada é consultado nem gravado.")
+        return outcome
+    if not policy.get("allowed"):
+        outcome.update(result="sem_permissao", http_status=None, sha256_observado=None,
+                       note=policy.get("reason") or "política não autoriza a verificação")
+    else:
+        try:
+            status, payload = fetch(url)
+            observed = hashlib.sha256(payload).hexdigest()
+            same = observed == stored_sha
+            outcome.update(
+                result="fonte_inalterada" if same else "fonte_alterada",
+                http_status=status, sha256_observado=observed,
+                note=("documento servido hoje é idêntico ao armazenado; isso não confirma "
+                      "a interpretação do prazo" if same else
+                      "documento servido hoje difere do armazenado; a nova versão cabe ao "
+                      "ciclo de monitoramento"))
+        except urllib.error.HTTPError as error:
+            outcome.update(result="fonte_indisponivel", http_status=error.code,
+                           sha256_observado=None,
+                           note=f"HTTP {error.code} ao buscar o documento oficial")
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as error:
+            outcome.update(result="fonte_indisponivel", http_status=None,
+                           sha256_observado=None,
+                           note=f"fonte indisponível: {type(error).__name__}")
+        except Exception as error:  # pragma: no cover
+            outcome.update(result="erro", http_status=None, sha256_observado=None,
+                           note=f"erro ao verificar: {type(error).__name__}")
+    outcome["record_id"] = _record(
+        db_path, target, result=outcome["result"], checked_at=checked_at,
+        http_status=outcome.get("http_status"),
+        observed_sha=outcome.get("sha256_observado"), note=outcome.get("note"),
+        checked_by=checked_by.strip())
+    outcome["dry_run"] = not apply
+    outcome["checked_at"] = checked_at
+    outcome["limitacao"] = ("Verificação de documento não confirma prazo: confirma apenas se "
+                            "os bytes servidos hoje são os mesmos da coleta.")
+    return outcome
 
 
 def history(db_path, *, contest_id=None, grupo=None, limit=50, offset=0) -> dict:
