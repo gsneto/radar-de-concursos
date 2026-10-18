@@ -575,6 +575,53 @@ _V19_COLUMNS = {
 }
 
 
+# Fase 35: a decisao de reconciliacao de cargo passa a ter estado explicito e historico.
+# Antes so existia "confirmado" (uma linha por vinculo), o que impedia registrar rejeicao,
+# ambiguidade e reabertura sem inventar um cargo. A tabela e reconstruida preservando todas
+# as linhas: role_id passa a aceitar NULL (rejeicao/ambiguidade) e cada decisao aponta para
+# a anterior em ``previous_id``. Nada e apagado; a decisao vigente e a mais recente.
+_V20_COLUMNS = {
+    "reconciliacoes_cargo": {"id", "contest_id", "label", "role_id", "reconciled_at",
+                             "reviewer", "reason", "state", "nature", "evidence_json",
+                             "previous_id"},
+}
+RECONCILIATION_STATES = ("confirmada", "rejeitada", "ambigua", "reaberta")
+
+
+def _apply_v20(conn) -> None:
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(reconciliacoes_cargo)")}
+    if not columns:
+        return
+    if _V20_COLUMNS["reconciliacoes_cargo"] <= columns:
+        return
+    conn.execute("ALTER TABLE reconciliacoes_cargo RENAME TO reconciliacoes_cargo_v19")
+    conn.execute("""CREATE TABLE reconciliacoes_cargo (
+        id TEXT PRIMARY KEY,
+        contest_id TEXT NOT NULL REFERENCES concursos_identidade(id),
+        label TEXT NOT NULL,
+        role_id TEXT REFERENCES cargos_identidade(id),
+        reconciled_at TEXT NOT NULL,
+        reviewer TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'confirmada'
+            CHECK(state IN ('confirmada','rejeitada','ambigua','reaberta')),
+        nature TEXT,
+        evidence_json TEXT,
+        previous_id TEXT REFERENCES reconciliacoes_cargo(id),
+        CHECK(state <> 'confirmada' OR role_id IS NOT NULL))""")
+    # Linhas antigas eram todas confirmacoes: o estado e inferido do dado, nao inventado.
+    conn.execute("""INSERT INTO reconciliacoes_cargo
+        (id,contest_id,label,role_id,reconciled_at,reviewer,reason,state)
+        SELECT id,contest_id,label,role_id,reconciled_at,reviewer,reason,'confirmada'
+        FROM reconciliacoes_cargo_v19""")
+    conn.execute("DROP TABLE reconciliacoes_cargo_v19")
+    # O índice v3 pertencia à tabela antiga e caiu com ela; recriar mantém o esquema válido.
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_reconciliacoes_contest "
+                 "ON reconciliacoes_cargo(contest_id,label)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_reconciliacoes_label "
+                 "ON reconciliacoes_cargo(contest_id,label,reconciled_at)")
+
+
 def _apply_v19(conn) -> None:
     columns = {row[1] for row in conn.execute("PRAGMA table_info(lote_revisao_itens)")}
     if not columns:
@@ -738,7 +785,7 @@ _V2_COLUMNS = {
 }
 
 # Versão corrente do esquema documental (v2 base + reconciliação/hash + monitoramento + fila).
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 20
 
 # Versões que as rotas de leitura aceitam sem migrar (v2..v13 + atual).
 _READABLE_VERSIONS = (2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17,
@@ -1024,7 +1071,7 @@ def migrate_document_schema(db_path) -> None:
         conn.execute("BEGIN IMMEDIATE")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version not in (0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-                           SCHEMA_VERSION):
+                           19, SCHEMA_VERSION):
             raise ValueError(f"versão de esquema não suportada: {version}")
         _v3_extra = dict(
             versoes_documento=_V2_COLUMNS["versoes_documento"] | {"comparison_sha256"},
@@ -1057,9 +1104,11 @@ def migrate_document_schema(db_path) -> None:
             for _table, _columns in _V18_COLUMNS.items():
                 _v16_columns[_table] = _columns
             _v16_columns["lote_revisao_itens"] = _V19_COLUMNS["lote_revisao_itens"]
+            _v16_columns["reconciliacoes_cargo"] = _V20_COLUMNS["reconciliacoes_cargo"]
             # v18/v19 são da fase corrente: garante tabela/coluna antes de validar (idempotente).
             _apply_v18(conn)
             _apply_v19(conn)
+            _apply_v20(conn)
             _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL + _V12_DDL + _V14_DDL + _V15_DDL + _V16_DDL + _V18_DDL,
                              _v16_columns, f"v{SCHEMA_VERSION}")
             _seed_alert_watermarks(conn)
@@ -1123,6 +1172,15 @@ def migrate_document_schema(db_path) -> None:
                 # v18 já tem todas as tabelas; só falta a coluna da Fase 34 (aplicada abaixo).
                 _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL + _V12_DDL + _V14_DDL + _V15_DDL + _V16_DDL + _V18_DDL,
                                  dict(_v15_extra, **_V16_COLUMNS, **_V18_COLUMNS), "v18")
+            elif version == 19:
+                # v19 difere de v20 apenas no estado da reconciliacao (aplicado abaixo).
+                _v19_columns = dict(_v15_extra, **_V16_COLUMNS, **_V18_COLUMNS)
+                _v19_columns["lote_revisao_itens"] = _V19_COLUMNS["lote_revisao_itens"]
+                _validate_schema(
+                    conn,
+                    _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL
+                    + _V11_DDL + _V12_DDL + _V14_DDL + _V15_DDL + _V16_DDL + _V18_DDL,
+                    _v19_columns, "v19")
             else:
                 for statement in _DDL:
                     conn.execute(statement)
@@ -1143,6 +1201,7 @@ def migrate_document_schema(db_path) -> None:
             _apply_v17(conn)
             _apply_v18(conn)
             _apply_v19(conn)
+            _apply_v20(conn)
             _seed_alert_watermarks(conn)
             conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         _ensure_alert_indexes(conn)
@@ -1960,25 +2019,33 @@ def get_competition_details(db_path, contest_id: str) -> dict | None:
                                   extraction_method=extraction_method, ambiguity_reason=ambiguity_reason,
                                   state=state, extracted_at=extracted_at, evidence=evidence, reviews=reviews))
         reconciliations = {}
+        bindings = {}
         if conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='reconciliacoes_cargo'").fetchone():
-            for label, role_id, at, reviewer, reason in conn.execute(
-                """SELECT label,role_id,reconciled_at,reviewer,reason FROM reconciliacoes_cargo
+            for label, role_id, state, at, reviewer, reason in conn.execute(
+                """SELECT label,role_id,state,reconciled_at,reviewer,reason
+                FROM reconciliacoes_cargo
                 WHERE contest_id=? ORDER BY reconciled_at,id""", (contest_id,)
             ):
                 reconciliations[label] = {"label": label, "role_id": role_id,
-                                          "reconciled_at": at, "reviewer": reviewer, "reason": reason}
+                                          "state": state, "reconciled_at": at,
+                                          "reviewer": reviewer, "reason": reason}
+                # Só confirmação vigente vincula; rejeição/ambiguidade/reabertura não.
+                if state == "confirmada" and role_id:
+                    bindings[label] = role_id
+                else:
+                    bindings.pop(label, None)
         for item in proposals:
             label = label_from_ambiguity(item["ambiguity_reason"])
-            item["reconciled_role_id"] = reconciliations[label]["role_id"] if label in reconciliations else None
+            item["reconciled_role_id"] = bindings.get(label) if label is not None else None
 
         def _scope(item):
             label = label_from_ambiguity(item["ambiguity_reason"])
             if item["role_id"] is not None:
                 return ("role", item["role_id"], None)
             if label is not None:
-                reconciled = reconciliations.get(label)
-                if reconciled:
-                    return ("role", reconciled["role_id"], None)
+                bound = bindings.get(label)
+                if bound:
+                    return ("role", bound, None)
                 return ("label", None, label)
             return ("contest", None, None)
 

@@ -206,6 +206,20 @@ A **linha do tempo** mostra o que o ciclo agendado mudou desde uma referência, 
 
 API `GET /api/oportunidades`, `/api/oportunidades/<id>`, `/api/revisao/evidencia/<id>`, `/api/documentos/nominais`, `/api/linha-do-tempo`; CLI `oportunidades`, `oportunidade`, `evidencia`, `documentos-nominais`, `linha-do-tempo`. Ver [`docs/superpowers/specs/2026-10-17-mesa-revisao-dossies-design.md`](docs/superpowers/specs/2026-10-17-mesa-revisao-dossies-design.md).
 
+## Identidades de cargo, conflitos e prazos
+
+A seção **Identidades, conflitos e prazos** (`#identidades`) resolve o que a mesa deixou explícito: **246 rótulos de cargo em 28 concursos**, dos quais **85 não são cargos** (conteúdo programático, local de prova, escolaridade declarada). O rótulo é classificado por **marcador textual** em sete naturezas (`cargo_literal`, `cargo_com_codigo`, `abreviacao`, `especialidade`, `codigo_sem_nome`, `generico_sem_cargo`, `nao_e_cargo`), e a sugestão de identidade é **estrutural e auditável** — nome idêntico (+40), nome idêntico sem código (+35), código oficial (+40), prefixo de nome (+25), especialidade (+15) — só dentro do mesmo concurso, no máximo cinco candidatos, com empate rebaixado a **ambíguo**. A pontuação é chamada de "pontuação estrutural", nunca de probabilidade.
+
+Decisões de identidade são **append-only** e exigem humano: `confirmada`, `rejeitada`, `ambigua`, `reaberta`, com autor, justificativa, evidência, vínculo com a decisão anterior e `expected_previous_id` contra decisão concorrente. Mudar o vínculo de uma confirmação exige `reaberta` antes. `dry_run` é o padrão em API e CLI. Duplicatas de identidade (36 rótulos) são **sinalizadas, não fundidas**; criar identidade a partir de rótulo só é permitido para naturezas que são cargo.
+
+**Conflitos reais** ganham causa antes de vencedor: `retificacao_posterior` (13), `mesmo_documento_valores_distintos` (13), `documentos_diferentes_sem_ordem` (10), `escopo_diferente` (8), `cargos_diferentes_sem_identificacao` (5) e `documentos_com_data_distinta` (4), com prioridade 1..4, motivos e próxima ação. Retificação que não menciona o campo **não altera** o valor.
+
+**Prazos** são candidatos temporais, não vigência: oito grupos (`inscricao_inicio/fim`, `isencao_inicio/fim`, `recurso_isencao`, `resultado_isencao_preliminar/final`, `data_prova`), cinco estados (`futuro`, `hoje`, `expirado`, `data_invalida`, `sem_data`), somente documentos autoritativos sustentam prazo, e cada item traz documento, versão, página, trecho, hash, publicação, coleta e decisão anterior. Data futura não comprova aplicabilidade; ausência de documento autoritativo aparece como `sem_data` com próxima ação.
+
+**Destino de documentos nominais** é **simulação**: `retirar_da_fila_operacional` (156, já têm conteúdo), `manter_metadados_na_fila` (35, só metadados), `reconciliar_identidade` e `revisar_politica_antes_de_agir`. Nada é arquivado, apagado ou movido, e nenhum conteúdo nominal é baixado para exibição.
+
+API `GET /api/reconciliacao`, `/api/reconciliacao/historico`, `/api/conflitos-revisao`, `/api/prazos`, `/api/documentos/nominais-destino`, `POST /api/reconciliacao`; CLI `reconciliacao`, `reconciliacao-historico`, `reconciliacao-decidir`, `reconciliacao-criar-cargo`, `conflitos-revisao`, `prazos`, `documentos-nominais-destino`. Ver [`docs/superpowers/specs/2026-10-18-reconciliacao-identidades-design.md`](docs/superpowers/specs/2026-10-18-reconciliacao-identidades-design.md).
+
 ## Revisão humana e confirmação
 
 A seção **Revisão humana** (`#review-panel`) transforma as propostas extraídas em uma fila de trabalho priorizada, paginada e auditável. Cada item mostra valor proposto, valor vigente, evidência literal (documento, versão, página, trecho e link), conflitos com outras propostas e os **fatores que elevaram ou reduziram a prioridade** — a pontuação é determinística e explicada, nunca opaca. Filtros: campo, estado, conflito, prioridade mínima, documento, fonte, período do documento e data da última revisão.

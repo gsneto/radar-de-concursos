@@ -3522,8 +3522,28 @@
     if (mesaSessionOpen) mesaSessionOpen.addEventListener('click', openMesaSession);
     var nominaisRefresh = doc.getElementById('nominais-refresh');
     if (nominaisRefresh) nominaisRefresh.addEventListener('click', fetchNominais);
+    var nominaisDestRefresh = doc.getElementById('nominais-destino-refresh');
+    if (nominaisDestRefresh) {
+      nominaisDestRefresh.addEventListener('click', fetchNominalDestinations);
+    }
     var timelineRefresh = doc.getElementById('timeline-refresh');
     if (timelineRefresh) timelineRefresh.addEventListener('click', fetchTimeline);
+    var recForm = doc.getElementById('rec-filters');
+    if (recForm) recForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      triagemState.recOffset = 0;
+      fetchReconciliation();
+    });
+    var confForm = doc.getElementById('conf-filters');
+    if (confForm) confForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      fetchConflicts();
+    });
+    var prazoForm = doc.getElementById('prazo-filters');
+    if (prazoForm) prazoForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      fetchDeadlines();
+    });
     var dupsRefresh = doc.getElementById('dups-refresh');
     if (dupsRefresh) dupsRefresh.addEventListener('click', fetchDuplicates);
     var coverageRefresh = doc.getElementById('coverage-refresh');
@@ -3547,7 +3567,11 @@
     mesaRestoreFilters();
     fetchMesa();
     fetchNominais();
+    fetchNominalDestinations();
     fetchTimeline();
+    fetchReconciliation();
+    fetchConflicts();
+    fetchDeadlines();
     restoreMesaSession();
     fetchDuplicates();
     restoreBatch();
@@ -4431,6 +4455,558 @@
       });
   }
 
+  // --- Reconciliação, conflitos e prazos (Fase 35) ---
+
+  var REC_STATE_VARIANT = {
+    exata: 'candidato',
+    alias: 'candidato',
+    provavel: 'candidato',
+    ambigua: 'ambiguo',
+    duplicata_de_identidade: 'conflito',
+    evidencia_insuficiente: 'ausente',
+    nao_e_cargo: 'ausente',
+    confirmada: 'confirmado',
+    rejeitada: 'ausente'
+  };
+
+  var triagemState = {recOffset: 0, recLimit: 25, recItems: [], recSelected: null};
+
+  function triagemStatus(id, message) {
+    var doc = global.document;
+    var node = doc && doc.getElementById(id);
+    if (node) node.textContent = message || '';
+  }
+
+  function triagemValue(id) {
+    var doc = global.document;
+    var node = doc && doc.getElementById(id);
+    return node && node.value ? node.value.trim() : '';
+  }
+
+  function renderReconciliation(document, payload) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    var page = Math.floor(payload.offset / payload.limit) + 1;
+    wrap.appendChild(el(document, 'p', 'prep__basis',
+      payload.total + ' rótulo(s) · página ' + page +
+      ' · referência ' + (payload.generated_at || '').slice(0, 19).replace('T', ' ')));
+    if (!payload.itens.length) {
+      wrap.appendChild(el(document, 'p', 'muted', 'Nenhum rótulo para os filtros.'));
+      return wrap;
+    }
+    var table = el(document, 'table', 'mesa__table');
+    table.appendChild(el(document, 'caption', '',
+      'Natureza vem do texto do rótulo. Sugestão não é identidade confirmada.'));
+    var head = el(document, 'tr');
+    ['Rótulo', 'Natureza', 'Estado', 'Propostas', 'Candidato', 'Ação proposta']
+      .forEach(function (label) { head.appendChild(el(document, 'th', '', label)); });
+    var thead = el(document, 'thead');
+    thead.appendChild(head);
+    table.appendChild(thead);
+    var tbody = el(document, 'tbody');
+    payload.itens.forEach(function (item) {
+      var row = el(document, 'tr');
+      var labelCell = el(document, 'td');
+      var button = el(document, 'button', 'mesa__row-button', item.label);
+      button.type = 'button';
+      button.addEventListener('click', function () { openReconciliation(item); });
+      labelCell.appendChild(button);
+      labelCell.appendChild(el(document, 'div', 'mesa__meta',
+        shortId(item.contest_id) + ' · ' + item.pages.length + ' página(s)'));
+      row.appendChild(labelCell);
+      row.appendChild(el(document, 'td', 'mesa__meta', item.nature_label));
+      var stateCell = el(document, 'td');
+      stateCell.appendChild(el(document, 'span', 'mesa__badge mesa__badge--' +
+        (REC_STATE_VARIANT[item.state] || 'ausente'), item.state_label));
+      row.appendChild(stateCell);
+      row.appendChild(el(document, 'td', 'num', String(item.proposals)));
+      var top = item.suggestions.length ? item.suggestions[0] : null;
+      var candidate = (item.state === 'confirmada' && item.decision_role_name)
+        ? item.decision_role_name + ' (confirmado)'
+        : (top ? (top.role_name + ' (' + top.pontuacao + ')') : '—');
+      row.appendChild(el(document, 'td', 'mesa__meta', candidate));
+      row.appendChild(el(document, 'td', 'mesa__meta',
+        item.acao_label || item.acao_proposta));
+      tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    var scroll = el(document, 'div', 'mesa__scroll');
+    scroll.appendChild(table);
+    wrap.appendChild(scroll);
+    var nav = el(document, 'div', 'prefs');
+    var previous = el(document, 'button', 'button button--ghost', 'Anterior');
+    previous.type = 'button';
+    previous.disabled = payload.offset <= 0;
+    previous.addEventListener('click', function () {
+      triagemState.recOffset = Math.max(0, triagemState.recOffset - triagemState.recLimit);
+      fetchReconciliation();
+    });
+    var next = el(document, 'button', 'button button--ghost', 'Próxima');
+    next.type = 'button';
+    next.disabled = !payload.has_more;
+    next.addEventListener('click', function () {
+      triagemState.recOffset += triagemState.recLimit;
+      fetchReconciliation();
+    });
+    nav.appendChild(previous);
+    nav.appendChild(next);
+    wrap.appendChild(nav);
+    wrap.appendChild(el(document, 'p', 'muted', payload.limitacao || ''));
+    return wrap;
+  }
+
+  function renderReconciliationDetail(document, item, history) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    var head = el(document, 'div', 'mesa__session');
+    head.appendChild(el(document, 'strong', '', item.label));
+    head.appendChild(el(document, 'span', 'mesa__badge mesa__badge--' +
+      (REC_STATE_VARIANT[item.state] || 'ausente'), item.state_label));
+    head.appendChild(el(document, 'span', 'mesa__meta',
+      item.nature_label + ' · ' + item.proposals + ' proposta(s)'));
+    if (item.decision_role_name) {
+      head.appendChild(el(document, 'span', 'mesa__meta',
+        'Cargo confirmado: ' + item.decision_role_name));
+    }
+    wrap.appendChild(head);
+
+    var evidence = item.first_evidence || {};
+    var meta = el(document, 'ul', 'mesa__list');
+    [
+      ['Documento', evidence.document_title],
+      ['Tipo', evidence.tipo_documental],
+      ['Publicado', evidence.published_at],
+      ['Página', evidence.page_number === null ? 'sem página' : String(evidence.page_number)],
+      ['Versão', evidence.version_id ? shortId(evidence.version_id) : null]
+    ].forEach(function (pair) {
+      if (!pair[1]) return;
+      meta.appendChild(el(document, 'li', 'mesa__meta', pair[0] + ': ' + pair[1]));
+    });
+    wrap.appendChild(meta);
+    if (evidence.quote) {
+      wrap.appendChild(el(document, 'blockquote', 'mesa__quote', evidence.quote));
+    }
+
+    wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Sugestões de correspondência'));
+    var suggestions = el(document, 'ul', 'mesa__list');
+    (item.suggestions || []).forEach(function (suggestion) {
+      var li = el(document, 'li');
+      li.appendChild(el(document, 'strong', '', suggestion.role_name));
+      li.appendChild(el(document, 'span', 'mesa__meta',
+        ' · ' + (suggestion.code ? 'código ' + suggestion.code + ' · ' : '') +
+        'pontuação estrutural ' + suggestion.pontuacao + ' · ' + suggestion.state));
+      var factors = el(document, 'ul', 'mesa__list');
+      suggestion.fatores.forEach(function (factor) {
+        factors.appendChild(el(document, 'li', 'mesa__meta',
+          factor.fator + ' (+' + factor.pontos + '): ' + factor.motivo));
+      });
+      li.appendChild(factors);
+      var choose = el(document, 'button', 'button button--ghost',
+        'Usar esta identidade');
+      choose.type = 'button';
+      choose.addEventListener('click', function () {
+        decideReconciliation(item, 'confirmada', suggestion.role_id, suggestion);
+      });
+      li.appendChild(choose);
+      suggestions.appendChild(li);
+    });
+    if (!suggestions.firstChild) {
+      suggestions.appendChild(el(document, 'li', 'muted', 'Nenhum candidato estrutural.'));
+    }
+    wrap.appendChild(suggestions);
+
+    var form = el(document, 'div', 'prefs');
+    var reviewer = el(document, 'input', '');
+    reviewer.type = 'text';
+    reviewer.id = 'rec-reviewer';
+    reviewer.placeholder = 'Responsável';
+    form.appendChild(reviewer);
+    var reason = el(document, 'input', '');
+    reason.type = 'text';
+    reason.id = 'rec-reason';
+    reason.placeholder = 'Justificativa (obrigatória)';
+    form.appendChild(reason);
+    wrap.appendChild(form);
+
+    var actions = el(document, 'div', 'prefs');
+    [['rejeitada', 'Rejeitar correspondência'], ['ambigua', 'Manter ambíguo'],
+     ['reaberta', 'Reabrir']].forEach(function (pair) {
+      var button = el(document, 'button', 'button button--ghost', pair[1]);
+      button.type = 'button';
+      button.addEventListener('click', function () {
+        decideReconciliation(item, pair[0], null, null);
+      });
+      actions.appendChild(button);
+    });
+    wrap.appendChild(actions);
+
+    wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Histórico de decisões'));
+    var historyList = el(document, 'ul', 'mesa__list');
+    (history.decisoes || []).forEach(function (decision) {
+      historyList.appendChild(el(document, 'li', 'mesa__meta',
+        decision.state + ' · ' + decision.reviewer + ' · ' + decision.decided_at +
+        ' · ' + decision.reason +
+        (decision.role_name ? ' · cargo: ' + decision.role_name : '')));
+    });
+    if (!historyList.firstChild) {
+      historyList.appendChild(el(document, 'li', 'muted', 'Nenhuma decisão registrada.'));
+    }
+    wrap.appendChild(historyList);
+    wrap.appendChild(el(document, 'p', 'muted',
+      'Confirmar identidade não confirma vagas, requisitos nem prazos. ' +
+      'A decisão é registrada com autor, justificativa e vínculo com a anterior.'));
+    return wrap;
+  }
+
+  function openReconciliation(item) {
+    var doc = global.document;
+    if (!doc) return Promise.resolve();
+    triagemState.recSelected = item;
+    triagemStatus('rec-status', 'Abrindo rótulo…');
+    var url = '/api/reconciliacao/historico?contest_id=' + encodeURIComponent(item.contest_id) +
+      '&label=' + encodeURIComponent(item.label);
+    return global.fetch(url, {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (history) {
+        var node = doc.getElementById('rec-detail');
+        clearContainer(node);
+        node.hidden = false;
+        node.appendChild(renderReconciliationDetail(doc, item, history));
+        triagemStatus('rec-status', '');
+      })
+      .catch(function (error) {
+        triagemStatus('rec-status', 'Rótulo indisponível (' + error.message + ').');
+      });
+  }
+
+  function decideReconciliation(item, state, roleId, suggestion) {
+    var doc = global.document;
+    var reviewer = triagemValue('rec-reviewer');
+    var reason = triagemValue('rec-reason');
+    if (!reviewer) {
+      triagemStatus('rec-status', 'Informe o responsável.');
+      return;
+    }
+    if (!reason) {
+      triagemStatus('rec-status', 'Justificativa obrigatória.');
+      return;
+    }
+    var body = {contest_id: item.contest_id, label: item.label, state: state,
+                reviewer: reviewer, reason: reason, dry_run: false,
+                previous_id: (item.decision && item.decision.decision_id) || null};
+    if (roleId) body.role_id = roleId;
+    if (suggestion) body.evidence = {sugestao: suggestion.role_name,
+                                     fatores: suggestion.fatores,
+                                     pontuacao: suggestion.pontuacao};
+    triagemStatus('rec-status', 'Registrando decisão…');
+    studyPost('/api/reconciliacao', body)
+      .then(function () {
+        return fetchReconciliation().then(function () {
+          var updated = (triagemState.recItems || []).filter(function (candidate) {
+            return candidate.contest_id === item.contest_id && candidate.label === item.label;
+          })[0];
+          if (updated) {
+            return openReconciliation(updated).then(function () {
+              triagemStatus('rec-status', 'Decisão registrada.');
+            });
+          }
+          triagemStatus('rec-status', 'Decisão registrada.');
+        });
+      })
+      .catch(function (error) {
+        triagemStatus('rec-status', 'Falha: ' + error.message);
+      });
+  }
+
+  function fetchReconciliation() {
+    var doc = global.document;
+    if (!doc || !doc.getElementById('rec-panel')) return Promise.resolve();
+    triagemStatus('rec-status', 'Atualizando…');
+    var parts = ['limit=' + triagemState.recLimit, 'offset=' + triagemState.recOffset];
+    if (triagemValue('rec-nature')) {
+      parts.push('nature=' + encodeURIComponent(triagemValue('rec-nature')));
+    }
+    if (triagemValue('rec-state')) {
+      parts.push('state=' + encodeURIComponent(triagemValue('rec-state')));
+    }
+    return global.fetch('/api/reconciliacao?' + parts.join('&'),
+                        {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        triagemState.recItems = payload.itens;
+        var node = doc.getElementById('rec-panel');
+        clearContainer(node);
+        node.appendChild(renderReconciliation(doc, payload));
+        triagemStatus('rec-status', payload.total + ' rótulo(s).');
+      })
+      .catch(function (error) {
+        triagemStatus('rec-status', 'Indisponível (' + error.message + ').');
+      });
+  }
+
+  function renderConflictGroups(document, payload) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    wrap.appendChild(el(document, 'p', 'prep__basis',
+      payload.total + ' grupo(s) · ' +
+      Object.keys(payload.por_causa || {}).map(function (key) {
+        return key + ': ' + payload.por_causa[key];
+      }).join(' · ')));
+    if (!payload.itens.length) {
+      wrap.appendChild(el(document, 'p', 'muted', 'Nenhum conflito para os filtros.'));
+      return wrap;
+    }
+    var table = el(document, 'table', 'mesa__table');
+    var head = el(document, 'tr');
+    ['Prior.', 'Causa', 'Campo', 'Concurso', 'Escopo', 'Valores', 'Próxima ação']
+      .forEach(function (label) { head.appendChild(el(document, 'th', '', label)); });
+    var thead = el(document, 'thead');
+    thead.appendChild(head);
+    table.appendChild(thead);
+    var tbody = el(document, 'tbody');
+    payload.itens.forEach(function (item) {
+      var row = el(document, 'tr');
+      row.appendChild(el(document, 'td', 'num', String(item.prioridade)));
+      var causeCell = el(document, 'td');
+      causeCell.appendChild(el(document, 'span', 'mesa__badge mesa__badge--' +
+        (item.cause === 'escopo_diferente' || item.cause === 'variacao_de_extracao' ||
+         item.cause === 'cargos_diferentes_sem_identificacao' ? 'ausente' : 'conflito'),
+        item.cause_label));
+      row.appendChild(causeCell);
+      row.appendChild(el(document, 'td', '', item.field_name));
+      row.appendChild(el(document, 'td', 'mesa__meta', shortId(item.contest_id)));
+      row.appendChild(el(document, 'td', 'mesa__meta',
+        String(item.scope || '(sem cargo)').replace('label:', '').slice(0, 40)));
+      row.appendChild(el(document, 'td', 'num', String(item.valores_distintos)));
+      var actionCell = el(document, 'td');
+      actionCell.appendChild(el(document, 'div', 'mesa__meta', item.proxima_acao));
+      var detail = el(document, 'button', 'mesa__row-button', 'Ver propostas');
+      detail.type = 'button';
+      detail.addEventListener('click', function () {
+        showConflictDetail(item);
+      });
+      actionCell.appendChild(detail);
+      row.appendChild(actionCell);
+      tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    var scroll = el(document, 'div', 'mesa__scroll');
+    scroll.appendChild(table);
+    wrap.appendChild(scroll);
+    wrap.appendChild(el(document, 'p', 'muted', payload.limitacao || ''));
+    return wrap;
+  }
+
+  function showConflictDetail(item) {
+    var doc = global.document;
+    var node = doc.getElementById('conf-panel');
+    // Cada abertura substitui o detalhe anterior; empilhar painéis confunde a leitura.
+    var existing = doc.getElementById('conf-detail');
+    if (existing) existing.remove();
+    var box = el(document, 'div', 'coverage__inner');
+    box.id = 'conf-detail';
+    box.appendChild(el(document, 'h4', 'study__subtitle',
+      item.field_name + ' · ' + item.cause_label));
+    var list = el(document, 'ul', 'mesa__list');
+    item.propostas.forEach(function (proposal) {
+      var li = el(document, 'li');
+      li.appendChild(el(document, 'strong', '', String(proposal.value)));
+      li.appendChild(el(document, 'div', 'mesa__meta',
+        (proposal.document_title || 'documento') + ' · ' + (proposal.tipo_documental || '') +
+        ' · ' + (proposal.published_at || 'sem data') +
+        ' · p' + (proposal.page_number === null ? '—' : proposal.page_number) +
+        ' · ' + proposal.state));
+      if (proposal.quote) li.appendChild(el(document, 'blockquote', 'mesa__quote',
+        proposal.quote));
+      var open = el(document, 'button', 'mesa__row-button', 'Ver evidência');
+      open.type = 'button';
+      open.addEventListener('click', function () {
+        openEvidence(proposal.proposal_id);
+      });
+      li.appendChild(open);
+      list.appendChild(li);
+    });
+    box.appendChild(list);
+    if (item.vigente_documento) {
+      box.appendChild(el(document, 'p', 'prep__basis',
+        'Candidato a vigente (documento posterior): ' + item.vigente_documento +
+        ' — confirmação é humana.'));
+    }
+    node.appendChild(box);
+    if (node.scrollIntoView) node.scrollIntoView({behavior: 'smooth', block: 'start'});
+  }
+
+  function fetchConflicts() {
+    var doc = global.document;
+    if (!doc || !doc.getElementById('conf-panel')) return Promise.resolve();
+    triagemStatus('conf-status', 'Atualizando…');
+    var parts = ['limit=500', 'offset=0'];
+    if (triagemValue('conf-cause')) {
+      parts.push('cause=' + encodeURIComponent(triagemValue('conf-cause')));
+    }
+    if (triagemValue('conf-priority')) parts.push('priority=' + triagemValue('conf-priority'));
+    return global.fetch('/api/conflitos-revisao?' + parts.join('&'),
+                        {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        var node = doc.getElementById('conf-panel');
+        clearContainer(node);
+        node.appendChild(renderConflictGroups(doc, payload));
+        triagemStatus('conf-status', payload.total + ' grupo(s).');
+      })
+      .catch(function (error) {
+        triagemStatus('conf-status', 'Indisponível (' + error.message + ').');
+      });
+  }
+
+  function renderDeadlines(document, payload) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    wrap.appendChild(el(document, 'p', 'prep__basis',
+      payload.total + ' prazo(s) · referência ' + (payload.referencia || {}).agora +
+      ' · ' + Object.keys(payload.por_estado || {}).map(function (key) {
+        return key + ': ' + payload.por_estado[key];
+      }).join(' · ')));
+    if (!payload.itens.length) {
+      wrap.appendChild(el(document, 'p', 'muted', 'Nenhum prazo para os filtros.'));
+      return wrap;
+    }
+    var table = el(document, 'table', 'mesa__table');
+    var head = el(document, 'tr');
+    ['Prazo', 'Valor', 'Situação', 'Documento', 'Retificação', 'Conflito', 'Próxima ação']
+      .forEach(function (label) { head.appendChild(el(document, 'th', '', label)); });
+    var thead = el(document, 'thead');
+    thead.appendChild(head);
+    table.appendChild(thead);
+    var tbody = el(document, 'tbody');
+    payload.itens.forEach(function (item) {
+      var row = el(document, 'tr');
+      row.appendChild(el(document, 'td', '', item.grupo_label));
+      row.appendChild(el(document, 'td', '', String(item.valor === null ? '—' : item.valor)));
+      var stateCell = el(document, 'td');
+      var variant = item.estado === 'expirado' ? 'ausente'
+        : item.estado === 'futuro' || item.estado === 'hoje' ? 'candidato' : 'ausente';
+      stateCell.appendChild(el(document, 'span', 'mesa__badge mesa__badge--' + variant,
+        item.estado_label));
+      row.appendChild(stateCell);
+      row.appendChild(el(document, 'td', 'mesa__meta',
+        (item.documento || '—') + ' · p' + (item.pagina === null ? '—' : item.pagina)));
+      row.appendChild(el(document, 'td', 'mesa__meta',
+        item.retificacao
+          ? (item.retificacao.altera_o_prazo ? 'altera o prazo'
+             : item.retificacao.mencoes_ao_campo ? 'menciona, sem alterar'
+             : 'não menciona este prazo')
+          : '—'));
+      row.appendChild(el(document, 'td', 'num', item.conflito
+        ? String(item.conflito.valores) : '—'));
+      var actionCell = el(document, 'td');
+      actionCell.appendChild(el(document, 'div', 'mesa__meta', item.proxima_acao));
+      if (item.trecho) {
+        actionCell.appendChild(el(document, 'blockquote', 'mesa__quote', item.trecho));
+      }
+      row.appendChild(actionCell);
+      tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    var scroll = el(document, 'div', 'mesa__scroll');
+    scroll.appendChild(table);
+    wrap.appendChild(scroll);
+    wrap.appendChild(el(document, 'p', 'muted', payload.limitacao || ''));
+    return wrap;
+  }
+
+  function fetchDeadlines() {
+    var doc = global.document;
+    if (!doc || !doc.getElementById('prazo-panel')) return Promise.resolve();
+    triagemStatus('prazo-status', 'Atualizando…');
+    var parts = ['limit=500', 'offset=0'];
+    if (triagemValue('prazo-group')) {
+      parts.push('group=' + encodeURIComponent(triagemValue('prazo-group')));
+    }
+    if (triagemValue('prazo-state')) {
+      parts.push('state=' + encodeURIComponent(triagemValue('prazo-state')));
+    }
+    return global.fetch('/api/prazos?' + parts.join('&'),
+                        {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        var node = doc.getElementById('prazo-panel');
+        clearContainer(node);
+        node.appendChild(renderDeadlines(doc, payload));
+        triagemStatus('prazo-status', payload.total + ' prazo(s).');
+      })
+      .catch(function (error) {
+        triagemStatus('prazo-status', 'Indisponível (' + error.message + ').');
+      });
+  }
+
+  function renderNominalDestinations(document, payload) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    wrap.appendChild(el(document, 'p', 'prep__basis',
+      payload.total + ' documento(s) · modo ' + payload.modo + ' · ' +
+      Object.keys(payload.por_destino || {}).map(function (key) {
+        return key + ': ' + payload.por_destino[key];
+      }).join(' · ')));
+    var table = el(document, 'table', 'mesa__table');
+    var head = el(document, 'tr');
+    ['Documento', 'Fonte', 'Destino proposto', 'Justificativa', 'Consequência']
+      .forEach(function (label) { head.appendChild(el(document, 'th', '', label)); });
+    var thead = el(document, 'thead');
+    thead.appendChild(head);
+    table.appendChild(thead);
+    var tbody = el(document, 'tbody');
+    (payload.itens || []).forEach(function (item) {
+      var row = el(document, 'tr');
+      var titleCell = el(document, 'td');
+      titleCell.appendChild(el(document, 'span', '', item.title));
+      if (isHttpsUrl(item.official_url)) {
+        var link = el(document, 'a', 'link', ' abrir');
+        link.href = item.official_url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        titleCell.appendChild(link);
+      }
+      row.appendChild(titleCell);
+      row.appendChild(el(document, 'td', 'mesa__meta', item.source_id || 'fora do catálogo'));
+      row.appendChild(el(document, 'td', 'mesa__meta', item.destino_label));
+      row.appendChild(el(document, 'td', 'mesa__meta', item.justificativa));
+      row.appendChild(el(document, 'td', 'mesa__meta', item.consequencia));
+      tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    var scroll = el(document, 'div', 'mesa__scroll');
+    scroll.appendChild(table);
+    wrap.appendChild(scroll);
+    wrap.appendChild(el(document, 'p', 'muted', payload.limitacao || ''));
+    return wrap;
+  }
+
+  function fetchNominalDestinations() {
+    var doc = global.document;
+    if (!doc || !doc.getElementById('nominais-panel')) return Promise.resolve();
+    return global.fetch('/api/documentos/nominais-destino?limit=200',
+                        {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        var node = doc.getElementById('nominais-destino-panel');
+        if (!node) return;
+        clearContainer(node);
+        node.appendChild(renderNominalDestinations(doc, payload));
+      })
+      .catch(function () { /* painel opcional: falha não quebra a triagem */ });
+  }
+
   var Radar = {
     UNKNOWN: UNKNOWN,
     isMissing: isMissing,
@@ -4481,6 +5057,16 @@
     fetchNominais: fetchNominais,
     renderTimeline: renderTimeline,
     fetchTimeline: fetchTimeline,
+    renderReconciliation: renderReconciliation,
+    fetchReconciliation: fetchReconciliation,
+    openReconciliation: openReconciliation,
+    decideReconciliation: decideReconciliation,
+    renderConflictGroups: renderConflictGroups,
+    fetchConflicts: fetchConflicts,
+    renderDeadlines: renderDeadlines,
+    fetchDeadlines: fetchDeadlines,
+    renderNominalDestinations: renderNominalDestinations,
+    fetchNominalDestinations: fetchNominalDestinations,
     mesaFilters: mesaFilters,
     mesaSaveFilters: mesaSaveFilters,
     mesaRestoreFilters: mesaRestoreFilters,

@@ -216,10 +216,16 @@ def _reconciled_map(conn) -> dict:
     apareceria em dois escopos (rótulo e identidade) e um conflito real ficaria invisível.
     """
     mapping = {}
-    for contest_id, label, role_id in conn.execute(
-            "SELECT contest_id, label, role_id FROM reconciliacoes_cargo"
-            " ORDER BY reconciled_at, id"):
-        mapping[(contest_id, label)] = role_id
+    # A decisão vigente é a mais recente; só confirmação vincula identidade. Rejeição,
+    # ambiguidade e reabertura deixam o rótulo sem cargo — sem inventar correspondência.
+    latest = {}
+    for contest_id, label, role_id, state in conn.execute(
+            "SELECT contest_id, label, role_id, state FROM reconciliacoes_cargo"
+            " ORDER BY reconciled_at, rowid"):
+        latest[(contest_id, label)] = (role_id, state)
+    for key, (role_id, state) in latest.items():
+        if state == "confirmada" and role_id:
+            mapping[key] = role_id
     return mapping
 
 
@@ -851,10 +857,12 @@ def select_current_value(db_path, proposal_id: str, reviewer: str, reason: str, 
             label = label_from_ambiguity(ambiguity_reason)
             if label:
                 reconciled = conn.execute(
-                    "SELECT role_id FROM reconciliacoes_cargo WHERE contest_id=? AND label=? "
+                    "SELECT role_id,state FROM reconciliacoes_cargo "
+                    "WHERE contest_id=? AND label=? "
                     "ORDER BY reconciled_at DESC,id DESC LIMIT 1",
                     (contest_id, label)).fetchone()
-                if reconciled:
+                # Só confirmação vigente vincula; rejeição/ambiguidade/reabertura não.
+                if reconciled and reconciled[1] == "confirmada" and reconciled[0]:
                     role_id = reconciled[0]
         prior = conn.execute(
             "SELECT id,proposal_id FROM valores_atuais WHERE contest_id=? AND role_id IS ? "

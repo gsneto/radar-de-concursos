@@ -57,22 +57,32 @@ def reconcile_role_label(db_path, contest_id: str, label: str, role_id: str,
         if not conn.execute('SELECT 1 FROM cargos_identidade WHERE id=? AND contest_id=?',
                             (role_id, contest_id)).fetchone():
             raise ValueError('cargo de outro concurso')
-        labels = {label_from_ambiguity(row[0]) for row in conn.execute(
-            'SELECT ambiguity_reason FROM propostas_campo WHERE contest_id=?', (contest_id,))}
-        labels.discard(None)
+        label = ' '.join(label.split())
+        labels = {' '.join(label_from_ambiguity(row[0]).split())
+                  for row in conn.execute(
+                      'SELECT ambiguity_reason FROM propostas_campo WHERE contest_id=?',
+                      (contest_id,))
+                  if label_from_ambiguity(row[0]) is not None}
         if label not in labels:
             raise ValueError('rótulo sem evidência documental neste concurso')
-        existing = conn.execute('''SELECT id,role_id FROM reconciliacoes_cargo
+        existing = conn.execute('''SELECT id,role_id,state FROM reconciliacoes_cargo
             WHERE contest_id=? AND label=? ORDER BY reconciled_at DESC,id DESC''',
             (contest_id, label)).fetchone()
         if existing:
+            # Só confirmação vigente vincula; rejeitada/ambigua/reaberta exigem reabertura.
+            if existing[2] != 'confirmada':
+                raise ValueError(
+                    f'decisão vigente é {existing[2]}; reabra antes de confirmar')
             if existing[1] != role_id:
                 raise ValueError('rótulo já reconciliado com outro cargo')
             return existing[0]
         reconciliation_id = str(uuid4())
-        conn.execute('INSERT INTO reconciliacoes_cargo VALUES (?,?,?,?,?,?,?)',
-                     (reconciliation_id, contest_id, label, role_id, _now(),
-                      reviewer.strip(), reason.strip()))
+        # Compatibilidade com a Fase 27: confirmação explícita, agora com estado nomeado.
+        conn.execute(
+            'INSERT INTO reconciliacoes_cargo (id,contest_id,label,role_id,reconciled_at,'
+            'reviewer,reason,state) VALUES (?,?,?,?,?,?,?,\'confirmada\')',
+            (reconciliation_id, contest_id, label, role_id, _now(),
+             reviewer.strip(), reason.strip()))
         return reconciliation_id
 
 

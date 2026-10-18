@@ -192,7 +192,8 @@ class SummaryTest(EnrichmentBase):
             role_id = conn.execute("SELECT id FROM cargos_identidade").fetchone()[0]
         with closing(connect_documents(self.db)) as conn, conn:
             conn.execute(
-                "INSERT INTO reconciliacoes_cargo VALUES (?,?,?,?,?,?,?)",
+                "INSERT INTO reconciliacoes_cargo (id,contest_id,label,role_id,"
+                "reconciled_at,reviewer,reason,state) VALUES (?,?,?,?,?,?,?,'confirmada')",
                 (str(uuid4()), "c1", LABEL + "Cargo A — continua na página seguinte",
                  role_id, NOW, "revisor", "conferido"))
         summary = enrichment.unresolved_role_summary(self.db)

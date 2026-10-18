@@ -299,6 +299,114 @@
            aria-label="Comparação de evidências" aria-live="polite" hidden></div>
     </section>
 
+    <section id="identidades" class="triagem" aria-labelledby="triagem-title">
+      <h2 id="triagem-title" class="results__title">Identidades, conflitos e prazos</h2>
+      <p class="prep__basis">
+        Três filas especializadas. <strong>Reconciliação</strong> liga o rótulo do documento a
+        uma identidade canônica do mesmo concurso — sugestão não é confirmação e confirmar o
+        cargo não confirma vagas, requisitos nem prazos. <strong>Conflitos</strong> mostram a
+        causa comprovada (retificação, variação de extração, escopo diferente, cargos
+        diferentes) antes de qualquer decisão. <strong>Prazos</strong> mostram a situação
+        temporal: data futura não comprova vigência e prazo passado permanece como histórico.
+      </p>
+
+      <h3 class="study__subtitle">Reconciliação de cargos</h3>
+      <form id="rec-filters" class="prefs">
+        <label class="prefs__field">Natureza
+          <select id="rec-nature">
+            <option value="">Todas</option>
+            <option value="cargo_literal">Cargo literal</option>
+            <option value="cargo_com_codigo">Código + nome</option>
+            <option value="abreviacao">Abreviação</option>
+            <option value="especialidade">Especialidade</option>
+            <option value="codigo_sem_nome">Apenas código</option>
+            <option value="nao_e_cargo">Não é cargo</option>
+          </select>
+        </label>
+        <label class="prefs__field">Estado
+          <select id="rec-state">
+            <option value="">Todos</option>
+            <option value="exata">Correspondência exata</option>
+            <option value="alias">Alias</option>
+            <option value="provavel">Provável</option>
+            <option value="ambigua">Ambígua</option>
+            <option value="duplicata_de_identidade">Identidade duplicada</option>
+            <option value="evidencia_insuficiente">Evidência insuficiente</option>
+            <option value="nao_e_cargo">Não é cargo</option>
+            <option value="confirmada">Confirmada por humano</option>
+            <option value="rejeitada">Rejeitada por humano</option>
+          </select>
+        </label>
+        <button type="submit" class="button">Aplicar</button>
+        <span id="rec-status" class="prefs__status" role="status" aria-live="polite"></span>
+      </form>
+      <div id="rec-panel" class="coverage__panel" role="region" aria-label="Reconciliação">
+        <p class="muted">Carregando rótulos.</p>
+      </div>
+      <div id="rec-detail" class="coverage__panel" role="region"
+           aria-label="Detalhe do rótulo" aria-live="polite" hidden></div>
+
+      <h3 class="study__subtitle">Conflitos reais</h3>
+      <form id="conf-filters" class="prefs">
+        <label class="prefs__field">Causa
+          <select id="conf-cause">
+            <option value="">Todas</option>
+            <option value="escopo_diferente">Escopo diferente</option>
+            <option value="cargos_diferentes_sem_identificacao">Cargos diferentes</option>
+            <option value="variacao_de_extracao">Variação de extração</option>
+            <option value="retificacao_posterior">Retificação posterior</option>
+            <option value="documentos_com_data_distinta">Documentos com data distinta</option>
+            <option value="documentos_diferentes_sem_ordem">Documentos sem ordem</option>
+            <option value="mesmo_documento_valores_distintos">Mesmo documento</option>
+          </select>
+        </label>
+        <label class="prefs__field">Prioridade
+          <select id="conf-priority">
+            <option value="">Todas</option>
+            <option value="1">1 — vagas indígenas</option>
+            <option value="2">2 — formação/SI</option>
+            <option value="3">3 — prazos</option>
+            <option value="4">4 — local de prova</option>
+          </select>
+        </label>
+        <button type="submit" class="button">Aplicar</button>
+        <span id="conf-status" class="prefs__status" role="status" aria-live="polite"></span>
+      </form>
+      <div id="conf-panel" class="coverage__panel" role="region" aria-label="Conflitos">
+        <p class="muted">Carregando conflitos.</p>
+      </div>
+
+      <h3 class="study__subtitle">Prazos</h3>
+      <form id="prazo-filters" class="prefs">
+        <label class="prefs__field">Grupo
+          <select id="prazo-group">
+            <option value="">Todos</option>
+            <option value="inscricao_inicio">Início das inscrições</option>
+            <option value="inscricao_fim">Fim das inscrições</option>
+            <option value="isencao_inicio">Início da isenção</option>
+            <option value="isencao_fim">Fim da isenção</option>
+            <option value="recurso_isencao">Recurso da isenção</option>
+            <option value="data_prova">Data da prova</option>
+          </select>
+        </label>
+        <label class="prefs__field">Situação
+          <select id="prazo-state">
+            <option value="">Todas</option>
+            <option value="futuro">Futuro</option>
+            <option value="hoje">Vence hoje</option>
+            <option value="expirado">Passado</option>
+            <option value="data_invalida">Data inválida</option>
+            <option value="sem_data">Sem data</option>
+          </select>
+        </label>
+        <button type="submit" class="button">Aplicar</button>
+        <span id="prazo-status" class="prefs__status" role="status" aria-live="polite"></span>
+      </form>
+      <div id="prazo-panel" class="coverage__panel" role="region" aria-label="Prazos">
+        <p class="muted">Carregando prazos.</p>
+      </div>
+    </section>
+
     <section class="nominais" aria-labelledby="nominais-title">
       <h2 id="nominais-title" class="results__title">Documentos nominais</h2>
       <p class="prep__basis">
@@ -313,6 +421,22 @@
       </div>
       <div id="nominais-panel" class="coverage__panel">
         <p class="muted">Carregando documentos nominais.</p>
+      </div>
+      <h3 class="study__subtitle">Destino proposto (simulação)</h3>
+      <p class="prep__basis">
+        Proposta individual de destino, com justificativa e consequência. Nada é arquivado,
+        apagado ou movido: o projeto ainda não tem arquivamento reversível com trilha de
+        auditoria, e aplicar exige autorização humana.
+      </p>
+      <div class="prefs">
+        <button id="nominais-destino-refresh" type="button" class="button button--ghost">
+          Atualizar
+        </button>
+        <span id="nominais-destino-status" class="prefs__status" role="status"
+              aria-live="polite"></span>
+      </div>
+      <div id="nominais-destino-panel" class="coverage__panel">
+        <p class="muted">Carregando destinos propostos.</p>
       </div>
     </section>
 

@@ -885,6 +885,59 @@ def _cmd_conflitos_versao(args: argparse.Namespace) -> None:
         args.db, contest_id=args.contest_id, limit=args.limit),
         ensure_ascii=False, default=str))
 
+def _cmd_reconciliacao(args: argparse.Namespace) -> None:
+    from radar import role_identity
+    print(json.dumps(role_identity.reconciliation_queue(
+        args.db, contest_id=args.contest_id, nature=args.nature, state=args.state,
+        min_candidates=args.min_candidates, limit=args.limit, offset=args.offset),
+        ensure_ascii=False, default=str))
+
+
+def _cmd_reconciliacao_historico(args: argparse.Namespace) -> None:
+    from radar import role_identity
+    print(json.dumps(role_identity.reconciliation_history(
+        args.db, contest_id=args.contest_id, label=args.label),
+        ensure_ascii=False, default=str))
+
+
+def _cmd_reconciliacao_decidir(args: argparse.Namespace) -> None:
+    from radar import role_identity
+    print(json.dumps(role_identity.decide_reconciliation(
+        args.db, contest_id=args.contest_id, label=args.label, state=args.state,
+        reviewer=args.reviewer, reason=args.reason, role_id=args.role_id,
+        nature=args.nature, expected_previous_id=args.previous_id,
+        dry_run=not args.apply), ensure_ascii=False, default=str))
+
+
+def _cmd_reconciliacao_criar_cargo(args: argparse.Namespace) -> None:
+    from radar import role_identity
+    print(json.dumps(role_identity.create_role_for_label(
+        args.db, contest_id=args.contest_id, label=args.label, reviewer=args.reviewer,
+        reason=args.reason, specialty=args.specialty, dry_run=not args.apply),
+        ensure_ascii=False, default=str))
+
+
+def _cmd_conflitos_revisao(args: argparse.Namespace) -> None:
+    from radar import conflict_review
+    print(json.dumps(conflict_review.conflict_groups(
+        args.db, contest_id=args.contest_id, field=args.field, cause=args.cause,
+        priority=args.priority, limit=args.limit, offset=args.offset),
+        ensure_ascii=False, default=str))
+
+
+def _cmd_prazos(args: argparse.Namespace) -> None:
+    from radar import deadline_review
+    print(json.dumps(deadline_review.deadline_report(
+        args.db, contest_id=args.contest_id, group=args.group, state=args.state,
+        limit=args.limit, offset=args.offset), ensure_ascii=False, default=str))
+
+
+def _cmd_nominais_destino(args: argparse.Namespace) -> None:
+    from radar import nominal_destination
+    print(json.dumps(nominal_destination.nominal_destinations(
+        args.db, contest_id=args.contest_id, destination=args.destination,
+        limit=args.limit, offset=args.offset), ensure_ascii=False, default=str))
+
 def _cmd_documentos_pendentes(args: argparse.Namespace) -> None:
     from radar import pipeline
     itens = pipeline.pending_versions(
@@ -1461,6 +1514,79 @@ def build_parser() -> argparse.ArgumentParser:
     doc_nom.add_argument('--limit', type=int, default=200)
     doc_nom.add_argument('--offset', type=int, default=0)
     doc_nom.set_defaults(func=_cmd_documentos_nominais)
+    rec_queue = subparsers.add_parser('reconciliacao',
+                                      help='fila de reconciliacao de cargos')
+    rec_queue.add_argument('--db', required=True)
+    rec_queue.add_argument('--contest-id')
+    rec_queue.add_argument('--nature')
+    rec_queue.add_argument('--state')
+    rec_queue.add_argument('--min-candidates', type=int, default=0)
+    rec_queue.add_argument('--limit', type=int, default=50)
+    rec_queue.add_argument('--offset', type=int, default=0)
+    rec_queue.set_defaults(func=_cmd_reconciliacao)
+
+    rec_hist = subparsers.add_parser('reconciliacao-historico',
+                                     help='historico de decisoes de um rotulo')
+    rec_hist.add_argument('--db', required=True)
+    rec_hist.add_argument('--contest-id', required=True)
+    rec_hist.add_argument('--label', required=True)
+    rec_hist.set_defaults(func=_cmd_reconciliacao_historico)
+
+    rec_dec = subparsers.add_parser('reconciliacao-decidir',
+                                    help='decide identidade de rotulo (dry-run por padrao)')
+    rec_dec.add_argument('--db', required=True)
+    rec_dec.add_argument('--contest-id', required=True)
+    rec_dec.add_argument('--label', required=True)
+    rec_dec.add_argument('--state', required=True,
+                         choices=('confirmada', 'rejeitada', 'ambigua', 'reaberta'))
+    rec_dec.add_argument('--role-id')
+    rec_dec.add_argument('--reviewer', required=True)
+    rec_dec.add_argument('--reason', required=True)
+    rec_dec.add_argument('--nature')
+    rec_dec.add_argument('--previous-id')
+    rec_dec.add_argument('--apply', action='store_true')
+    rec_dec.set_defaults(func=_cmd_reconciliacao_decidir)
+
+    rec_role = subparsers.add_parser('reconciliacao-criar-cargo',
+                                     help='cria identidade canonica a partir do rotulo')
+    rec_role.add_argument('--db', required=True)
+    rec_role.add_argument('--contest-id', required=True)
+    rec_role.add_argument('--label', required=True)
+    rec_role.add_argument('--specialty')
+    rec_role.add_argument('--reviewer', required=True)
+    rec_role.add_argument('--reason', required=True)
+    rec_role.add_argument('--apply', action='store_true')
+    rec_role.set_defaults(func=_cmd_reconciliacao_criar_cargo)
+
+    conf_rev = subparsers.add_parser('conflitos-revisao',
+                                     help='grupos de conflito classificados por causa')
+    conf_rev.add_argument('--db', required=True)
+    conf_rev.add_argument('--contest-id')
+    conf_rev.add_argument('--field')
+    conf_rev.add_argument('--cause')
+    conf_rev.add_argument('--priority', type=int)
+    conf_rev.add_argument('--limit', type=int, default=50)
+    conf_rev.add_argument('--offset', type=int, default=0)
+    conf_rev.set_defaults(func=_cmd_conflitos_revisao)
+
+    prazos = subparsers.add_parser('prazos', help='prazos candidatos com situacao temporal')
+    prazos.add_argument('--db', required=True)
+    prazos.add_argument('--contest-id')
+    prazos.add_argument('--group')
+    prazos.add_argument('--state')
+    prazos.add_argument('--limit', type=int, default=100)
+    prazos.add_argument('--offset', type=int, default=0)
+    prazos.set_defaults(func=_cmd_prazos)
+
+    nom_dest = subparsers.add_parser('documentos-nominais-destino',
+                                     help='proposta de destino dos nominais (simulacao)')
+    nom_dest.add_argument('--db', required=True)
+    nom_dest.add_argument('--contest-id')
+    nom_dest.add_argument('--destination')
+    nom_dest.add_argument('--limit', type=int, default=200)
+    nom_dest.add_argument('--offset', type=int, default=0)
+    nom_dest.set_defaults(func=_cmd_nominais_destino)
+
 
     ed_falta = subparsers.add_parser('editais-faltantes',
                                      help='certames com fonte oficial e sem documento')

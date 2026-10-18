@@ -642,6 +642,87 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             self._serve_study(opportunities.opportunity_dossier, contest_id,
                               role_id=(query.get("role_id") or [None])[0],
                               scope=(query.get("scope") or [None])[0])
+        elif path == "/api/reconciliacao":
+            query = parse_qs(parts.query)
+            allowed = {"limit", "offset", "contest_id", "nature", "state", "min_candidates"}
+            if set(query) - allowed:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["50"])[0])
+                offset = int(query.get("offset", ["0"])[0])
+                min_candidates = (int(query["min_candidates"][0])
+                                  if "min_candidates" in query else 0)
+            except ValueError:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import role_identity
+            self._serve_study(role_identity.reconciliation_queue, limit=limit, offset=offset,
+                              contest_id=query.get("contest_id", [None])[0],
+                              nature=query.get("nature", [None])[0],
+                              state=query.get("state", [None])[0],
+                              min_candidates=min_candidates)
+        elif path == "/api/reconciliacao/historico":
+            query = parse_qs(parts.query)
+            if set(query) - {"contest_id", "label"} or "contest_id" not in query \
+                    or "label" not in query:
+                self._bad_request("contest_id e label obrigatórios")
+                return
+            from radar import role_identity
+            self._serve_study(role_identity.reconciliation_history,
+                              contest_id=query["contest_id"][0], label=query["label"][0])
+        elif path == "/api/conflitos-revisao":
+            query = parse_qs(parts.query)
+            allowed = {"limit", "offset", "contest_id", "field", "cause", "priority"}
+            if set(query) - allowed:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["50"])[0])
+                offset = int(query.get("offset", ["0"])[0])
+                priority = (int(query["priority"][0]) if "priority" in query else None)
+            except ValueError:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import conflict_review
+            self._serve_study(conflict_review.conflict_groups, limit=limit, offset=offset,
+                              contest_id=query.get("contest_id", [None])[0],
+                              field=query.get("field", [None])[0],
+                              cause=query.get("cause", [None])[0], priority=priority)
+        elif path == "/api/prazos":
+            query = parse_qs(parts.query)
+            allowed = {"limit", "offset", "contest_id", "group", "state"}
+            if set(query) - allowed:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["100"])[0])
+                offset = int(query.get("offset", ["0"])[0])
+            except ValueError:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import deadline_review
+            self._serve_study(deadline_review.deadline_report, limit=limit, offset=offset,
+                              contest_id=query.get("contest_id", [None])[0],
+                              group=query.get("group", [None])[0],
+                              state=query.get("state", [None])[0])
+        elif path == "/api/documentos/nominais-destino":
+            query = parse_qs(parts.query)
+            allowed = {"limit", "offset", "contest_id", "destination"}
+            if set(query) - allowed:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["200"])[0])
+                offset = int(query.get("offset", ["0"])[0])
+            except ValueError:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import nominal_destination
+            self._serve_study(nominal_destination.nominal_destinations, limit=limit,
+                              offset=offset,
+                              contest_id=query.get("contest_id", [None])[0],
+                              destination=query.get("destination", [None])[0])
         elif path == "/api/cobertura/estados":
             query = parse_qs(parts.query)
             if set(query) - {"limit"}:
@@ -1166,6 +1247,23 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                               expected_evidence_sha256=body.get("evidence_sha256"),
                               lote_id=body.get("lote_id"))
             return
+        if path == "/api/reconciliacao":
+            if parts.query:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import role_identity
+            body = self._read_json()
+            if body is None:
+                return
+            self._serve_study(role_identity.decide_reconciliation,
+                              contest_id=body.get("contest_id"),
+                              label=body.get("label"), state=body.get("state"),
+                              reviewer=body.get("reviewer"), reason=body.get("reason"),
+                              role_id=body.get("role_id"), nature=body.get("nature"),
+                              evidence=body.get("evidence"),
+                              expected_previous_id=body.get("previous_id"),
+                              dry_run=body.get("dry_run", True) is not False)
+            return
         if path == "/api/revisao/selecionar":
             if parts.query:
                 self._bad_request("parâmetros inválidos")
@@ -1615,7 +1713,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                       "/api/estudos/progresso", "/api/estudos/sessoes", "/api/estudos/revisoes",
                       "/api/estudos/perfil", "/api/estudos/lacuna", "/api/estudos/importar",
                       "/api/estudos/flashcards", "/api/estudos/questoes",
-                      "/api/estudos/tentativas", "/api/estudos/simulados")
+                      "/api/estudos/tentativas", "/api/estudos/simulados",
+                      "/api/reconciliacao")
         allow = "GET, POST" if path in post_paths else "GET"
         if path == "/api/estudos/perfil":
             allow = "GET, POST, DELETE"

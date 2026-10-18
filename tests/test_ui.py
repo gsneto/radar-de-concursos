@@ -277,6 +277,22 @@ class TestAppStatic(unittest.TestCase):
                       ".mesa__badge--confirmado"):
             self.assertIn(token, css)
 
+    def test_renders_triagem_identidades_conflitos_prazos(self):
+        js = read(APP_PATH)
+        for token in ("renderReconciliation", "fetchReconciliation",
+                      "renderConflictGroups", "fetchConflicts", "renderDeadlines",
+                      "fetchDeadlines", "renderNominalDestinations",
+                      "/api/reconciliacao", "/api/conflitos-revisao", "/api/prazos",
+                      "/api/documentos/nominais-destino", "REC_STATE_VARIANT",
+                      "rec-panel", "conf-panel", "prazo-panel"):
+            self.assertIn(token, js, "app.js deve apresentar %r" % token)
+        html = read(os.path.join(WEB, "index.html"))
+        for token in ('id="rec-panel"', 'id="rec-filters"', 'id="conf-panel"',
+                      'id="conf-filters"', 'id="prazo-panel"', 'id="prazo-filters"',
+                      'id="rec-detail"', 'id="nominais-destino-panel"',
+                      "Reconciliação de cargos", "Conflitos reais", "Prazos"):
+            self.assertIn(token, html)
+
     def test_renders_official_coverage_and_decisive_fields(self):
         js = read(APP_PATH)
         for token in ("renderOfficialCoverage", "fetchOfficialCoverage",
