@@ -547,6 +547,38 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 return
             from radar import pipeline
             self._serve_study(pipeline.pipeline_summary)
+        elif path == "/api/pipeline/continuidade":
+            if parts.query:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import table_continuity
+            self._serve_study(table_continuity.continuity_report_all)
+        elif path == "/api/pipeline/parciais":
+            query = parse_qs(parts.query)
+            if set(query) - {"limit"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["500"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            if limit < 1:
+                self._bad_request("limit inválido")
+                return
+            from radar import page_batches
+            self._serve_study(page_batches.batch_report, limit=limit)
+        elif path == "/api/pipeline/escopo-regional":
+            query = parse_qs(parts.query)
+            if set(query) - {"version_id"} or "version_id" not in query:
+                self._bad_request("version_id obrigatório")
+                return
+            from radar import regional_scope
+            version_id = query["version_id"][0]
+            try:
+                self._serve_study(regional_scope.scope_report, version_id=version_id)
+            except ValueError as error:
+                self._bad_request(str(error))
         elif path == "/api/revisao/duplicidades":
             query = parse_qs(parts.query)
             if set(query) - {"limit", "contest_id", "field"}:

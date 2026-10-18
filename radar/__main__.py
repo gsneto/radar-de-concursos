@@ -753,6 +753,58 @@ def _cmd_pipeline_cobertura(args: argparse.Namespace) -> None:
                      ensure_ascii=False, default=str))
 
 
+def _cmd_pipeline_continuidade(args: argparse.Namespace) -> None:
+    from radar import table_continuity
+    print(json.dumps(table_continuity.continuity_report_all(args.db, limit=args.limit),
+                     ensure_ascii=False, default=str))
+
+
+def _cmd_pipeline_regional(args: argparse.Namespace) -> None:
+    from radar import regional_scope
+    report = regional_scope.scope_report(args.db, args.version_id)
+    if args.propostas:
+        report["propostas"] = regional_scope.proposals_from_scope(
+            report, label_prefix=args.label_prefix or "")
+    print(json.dumps(report, ensure_ascii=False, default=str))
+
+
+def _cmd_documentos_parciais(args: argparse.Namespace) -> None:
+    from radar import page_batches
+    print(json.dumps(page_batches.batch_report(args.db, limit=args.limit),
+                     ensure_ascii=False, default=str))
+
+
+def _cmd_documentos_paginas(args: argparse.Namespace) -> None:
+    from radar import page_batches
+    pages = None
+    if args.pages:
+        pages = []
+        try:
+            for item in args.pages.split(","):
+                item = item.strip()
+                if not item:
+                    continue
+                if "-" in item:
+                    start, end = item.split("-", 1)
+                    pages.extend(range(int(start), int(end) + 1))
+                else:
+                    pages.append(int(item))
+        except ValueError:
+            raise SystemExit("--pages inválido: use números ou faixas (ex.: 1-10,25)")
+        if not pages or min(pages) < 1 or len(pages) > 2000:
+            raise SystemExit("--pages fora do intervalo (1..2000 páginas por consulta)")
+    print(json.dumps(page_batches.page_index(args.db, args.version_id, pages=pages,
+                                             sample=args.sample),
+                     ensure_ascii=False, default=str))
+
+
+def _cmd_documentos_lote(args: argparse.Namespace) -> None:
+    from radar import page_batches
+    report = page_batches.append_pages(
+        args.db, args.version_id, start_page=args.start_page, end_page=args.end_page,
+        max_pages=args.max_pages, dry_run=not args.apply, checkpoint=args.checkpoint)
+    print(json.dumps(report, ensure_ascii=False, default=str))
+
 def _cmd_documentos_pendentes(args: argparse.Namespace) -> None:
     from radar import pipeline
     itens = pipeline.pending_versions(
@@ -1283,6 +1335,46 @@ def build_parser() -> argparse.ArgumentParser:
     pipe_cob.add_argument('--db', required=True)
     pipe_cob.add_argument('--limit', type=int, default=500)
     pipe_cob.set_defaults(func=_cmd_pipeline_cobertura)
+    pipe_cont = subparsers.add_parser('pipeline-continuidade',
+                                      help='quadros de vagas que atravessam páginas')
+    pipe_cont.add_argument('--db', required=True)
+    pipe_cont.add_argument('--limit', type=int, default=2000)
+    pipe_cont.set_defaults(func=_cmd_pipeline_continuidade)
+
+    pipe_reg = subparsers.add_parser('pipeline-regional',
+                                     help='escopo do edital, NTE e distribuição regional')
+    pipe_reg.add_argument('--db', required=True)
+    pipe_reg.add_argument('--version-id', required=True)
+    pipe_reg.add_argument('--propostas', action='store_true',
+                          help='mostra as propostas de total agregado que seriam geradas')
+    pipe_reg.add_argument('--label-prefix', default='')
+    pipe_reg.set_defaults(func=_cmd_pipeline_regional)
+
+    doc_parc = subparsers.add_parser('documentos-parciais',
+                                     help='PDFs com extração parcial e decisão justificada')
+    doc_parc.add_argument('--db', required=True)
+    doc_parc.add_argument('--limit', type=int, default=500)
+    doc_parc.set_defaults(func=_cmd_documentos_parciais)
+
+    doc_pag = subparsers.add_parser('documentos-paginas',
+                                    help='índice de conteúdo por página de uma versão')
+    doc_pag.add_argument('--db', required=True)
+    doc_pag.add_argument('--version-id', required=True)
+    doc_pag.add_argument('--pages', help='ex.: 1-10,25,40-45 (padrão: amostra das não lidas)')
+    doc_pag.add_argument('--sample', type=int, default=60)
+    doc_pag.set_defaults(func=_cmd_documentos_paginas)
+
+    doc_lote = subparsers.add_parser('documentos-lote',
+                                     help='acrescenta um lote de páginas não extraídas')
+    doc_lote.add_argument('--db', required=True)
+    doc_lote.add_argument('--version-id', required=True)
+    doc_lote.add_argument('--start-page', type=int)
+    doc_lote.add_argument('--end-page', type=int)
+    doc_lote.add_argument('--max-pages', type=int, default=40)
+    doc_lote.add_argument('--checkpoint', help='arquivo JSON com a próxima página')
+    doc_lote.add_argument('--apply', action='store_true')
+    doc_lote.set_defaults(func=_cmd_documentos_lote)
+
 
     pend = subparsers.add_parser('documentos-pendentes',
                                  help='versões baixadas ainda não extraídas')

@@ -1364,6 +1364,22 @@ def record_analysis(db_path, version_id: str, blocks: list[dict], proposals: lis
     ``note`` registra a versão do extrator e limitações (ex.: extração de prefixo) no evento
     de análise, sem alterar o esquema.
     """
+    _persist_analysis(db_path, version_id, blocks, proposals, note=note, append=False)
+
+
+def append_page_analysis(db_path, version_id: str, blocks: list[dict], proposals: list[dict],
+                         *, note: str | None = None) -> dict:
+    """Acrescenta blocos/propostas de páginas **ainda não extraídas** (Fase 32).
+
+    Idempotente por página: páginas que já têm bloco são ignoradas, junto com as propostas que
+    dependiam delas. Permite processar PDF longo em lotes, com retomada segura, sem duplicar
+    conteúdo nem destruir evidência anterior.
+    """
+    return _persist_analysis(db_path, version_id, blocks, proposals, note=note, append=True)
+
+
+def _persist_analysis(db_path, version_id: str, blocks: list[dict], proposals: list[dict],
+                      *, note: str | None, append: bool):
     conn = connect_documents(db_path)
     try:
         conn.execute("BEGIN IMMEDIATE")
@@ -1374,11 +1390,53 @@ def record_analysis(db_path, version_id: str, blocks: list[dict], proposals: lis
         if version is None:
             raise ValueError("versão inexistente")
         contest_id, document_id, observation_id, document_role_id = version
+        existing_pages = set()
         if conn.execute("SELECT 1 FROM blocos_documento WHERE version_id=? LIMIT 1", (version_id,)).fetchone():
-            raise ValueError("versão já analisada")
+            if not append:
+                raise ValueError("versão já analisada")
+            existing_pages = {row[0] for row in conn.execute(
+                "SELECT DISTINCT page_number FROM blocos_documento WHERE version_id=?",
+                (version_id,))}
         if not isinstance(blocks, list) or not blocks:
             # Blocos vazios não são "falha analisada": são entrada inválida.
             raise ValueError("análise sem blocos")
+        # Em modo append, remove páginas já gravadas e remapeia os índices das propostas.
+        skipped_pages = []
+        if existing_pages:
+            kept_index = []
+            for index, block in enumerate(blocks):
+                page = block.get("page_number")
+                if page is not None and page in existing_pages:
+                    skipped_pages.append(page)
+                    continue
+                kept_index.append(index)
+            if not kept_index:
+                conn.rollback()
+                return {"version_id": version_id, "added_pages": [],
+                        "skipped_pages": sorted(set(skipped_pages)), "added_blocks": 0,
+                        "added_proposals": 0, "dropped_proposals": len(proposals),
+                        "idempotent": True}
+            remap = {old: new for new, old in enumerate(kept_index)}
+            kept_proposals = []
+            dropped_proposals = 0
+            for proposal in proposals:
+                index = (proposal.get("evidence") or {}).get("block_index")
+                # Índice malformado é erro de chamador, não proposta a descartar em silêncio.
+                if not isinstance(index, int) or isinstance(index, bool):
+                    raise ValueError("bloco inexistente")
+                if index < 0 or index >= len(blocks):
+                    raise ValueError("bloco inexistente")
+                if index in remap:
+                    kept_proposals.append(dict(
+                        proposal, evidence=dict(proposal["evidence"],
+                                                block_index=remap[index])))
+                else:
+                    # Proposta de página já gravada: não há bloco novo para citar.
+                    dropped_proposals += 1
+            blocks = [blocks[index] for index in kept_index]
+            proposals = kept_proposals
+        added_pages = sorted({block.get("page_number") for block in blocks
+                              if block.get("page_number") is not None})
         block_ids = []
         for block in blocks:
             text = block["text"]
@@ -1392,6 +1450,19 @@ def record_analysis(db_path, version_id: str, blocks: list[dict], proposals: lis
             )
             block_ids.append(block_id)
         period_dates = {}
+        if append:
+            # Validação de datas precisa considerar o que já foi gravado em lotes anteriores.
+            for field_name, value_json, existing_role in conn.execute(
+                    "SELECT field_name,value_json,role_id FROM propostas_campo "
+                    "WHERE contest_id=? AND (role_id IS ? OR role_id=?) "
+                    "AND field_name IN ('registration_start','registration_end')",
+                    (contest_id, document_role_id, document_role_id)):
+                try:
+                    value = json.loads(value_json)
+                except (TypeError, ValueError):
+                    continue
+                if isinstance(value, str):
+                    period_dates.setdefault(existing_role, {})[field_name] = value
         # Deduplicação intra-versão: mesma evidência + mesmo escopo + mesmo valor é a mesma
         # proposta. Evita que cabeçalho/rodapé/tabela repetidos gerem candidatos duplicados.
         seen_keys = set()
@@ -1456,11 +1527,19 @@ def record_analysis(db_path, version_id: str, blocks: list[dict], proposals: lis
             if period.get("registration_start", date.min) > period.get("registration_end", date.max):
                 raise ValueError("datas de inscrição invertidas")
         # Sucesso limpa o código de erro de uma tentativa anterior (não deixa estado contraditório).
+        # Em append, o estado continua "parcial": o documento segue incompleto por definição.
         conn.execute("UPDATE versoes_documento SET extraction_state=?, error_code=NULL WHERE id=?",
-                     ("parcial" if blocks else "falhou", version_id))
+                     ("parcial" if (blocks or append) else "falhou", version_id))
         conn.execute("INSERT INTO eventos_documentais (id,document_id,version_id,event_type,occurred_at,note) VALUES (?,?,?,'analise',?,?)",
                      (str(uuid4()), document_id, version_id, _now(), note))
         conn.commit()
+        if append:
+            return {"version_id": version_id, "added_pages": added_pages,
+                    "skipped_pages": sorted(set(skipped_pages)),
+                    "added_blocks": len(blocks), "added_proposals": len(proposals),
+                    "dropped_proposals": dropped_proposals if existing_pages else 0,
+                    "idempotent": False}
+        return None
     except BaseException:
         conn.rollback()
         raise
