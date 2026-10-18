@@ -812,8 +812,38 @@ def _cmd_cobertura_estados(args: argparse.Namespace) -> None:
 
 
 def _cmd_documentos_nominais(args: argparse.Namespace) -> None:
-    from radar import coverage_states
-    print(json.dumps(coverage_states.nominal_documents(args.db, limit=args.limit),
+    from radar import nominal_triage
+    print(json.dumps(nominal_triage.nominal_triage(args.db, limit=args.limit,
+                                                   offset=args.offset),
+                     ensure_ascii=False, default=str))
+
+
+def _cmd_oportunidades(args: argparse.Namespace) -> None:
+    from radar import opportunities
+    print(json.dumps(opportunities.opportunity_list(
+        args.db, field=args.field, conflict=args.conflict,
+        document_state=args.document_state, has_page=args.has_page, search=args.search,
+        min_priority=args.min_priority, contest_id=args.contest_id,
+        limit=args.limit, offset=args.offset),
+        ensure_ascii=False, default=str))
+
+
+def _cmd_oportunidade(args: argparse.Namespace) -> None:
+    from radar import opportunities
+    print(json.dumps(opportunities.opportunity_dossier(
+        args.db, args.contest_id, role_id=args.role_id),
+        ensure_ascii=False, default=str))
+
+
+def _cmd_evidencia(args: argparse.Namespace) -> None:
+    from radar import opportunities
+    print(json.dumps(opportunities.proposal_evidence(args.db, args.proposal_id),
+                     ensure_ascii=False, default=str))
+
+
+def _cmd_linha_do_tempo(args: argparse.Namespace) -> None:
+    from radar import timeline
+    print(json.dumps(timeline.timeline(args.db, since=args.since, limit=args.limit),
                      ensure_ascii=False, default=str))
 
 
@@ -1391,10 +1421,45 @@ def build_parser() -> argparse.ArgumentParser:
     cob_est.add_argument('--limit', type=int, default=5000)
     cob_est.set_defaults(func=_cmd_cobertura_estados)
 
+    op_list = subparsers.add_parser('oportunidades',
+                                    help='mesa de revisao: oportunidades por concurso e cargo')
+    op_list.add_argument('--db', required=True)
+    op_list.add_argument('--field')
+    op_list.add_argument('--conflict', type=lambda v: v.lower() in ('1','true','yes'))
+    op_list.add_argument('--document-state')
+    op_list.add_argument('--has-page', type=lambda v: v.lower() in ('1','true','yes'))
+    op_list.add_argument('--search')
+    op_list.add_argument('--min-priority', type=int)
+    op_list.add_argument('--contest-id')
+    op_list.add_argument('--limit', type=int, default=50)
+    op_list.add_argument('--offset', type=int, default=0)
+    op_list.set_defaults(func=_cmd_oportunidades)
+
+    op_one = subparsers.add_parser('oportunidade',
+                                   help='dossie de uma oportunidade (concurso + cargo)')
+    op_one.add_argument('--db', required=True)
+    op_one.add_argument('--contest-id', required=True)
+    op_one.add_argument('--role-id')
+    op_one.set_defaults(func=_cmd_oportunidade)
+
+    ev_one = subparsers.add_parser('evidencia',
+                                   help='comparacao de evidencias de uma proposta')
+    ev_one.add_argument('--db', required=True)
+    ev_one.add_argument('--proposal-id', required=True)
+    ev_one.set_defaults(func=_cmd_evidencia)
+
+    tl_parser = subparsers.add_parser('linha-do-tempo',
+                                      help='mudancas da base desde uma referencia')
+    tl_parser.add_argument('--db', required=True)
+    tl_parser.add_argument('--since')
+    tl_parser.add_argument('--limit', type=int, default=200)
+    tl_parser.set_defaults(func=_cmd_linha_do_tempo)
+
     doc_nom = subparsers.add_parser('documentos-nominais',
                                     help='documentos de lista nominal (dado pessoal)')
     doc_nom.add_argument('--db', required=True)
     doc_nom.add_argument('--limit', type=int, default=200)
+    doc_nom.add_argument('--offset', type=int, default=0)
     doc_nom.set_defaults(func=_cmd_documentos_nominais)
 
     ed_falta = subparsers.add_parser('editais-faltantes',

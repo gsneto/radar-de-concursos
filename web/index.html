@@ -226,6 +226,115 @@
       <div id="dups-panel" class="coverage__panel"></div>
     </section>
 
+    <section class="mesa" aria-labelledby="mesa-title">
+      <h2 id="mesa-title" class="results__title">Mesa de revisão</h2>
+      <p class="prep__basis">
+        Revisão por <strong>oportunidade</strong> (concurso e cargo), não por proposta solta.
+        Cada campo mostra o estado real: candidato, ambíguo, em conflito, confirmado ou
+        ausente. Proposta não é valor confirmado; ausência de campo não é zero. A ordem vem da
+        política de prioridade documentada e é reproduzível para a mesma base e os mesmos
+        filtros.
+      </p>
+      <form id="mesa-filters" class="prefs">
+        <label class="prefs__field">Campo
+          <select id="mesa-field">
+            <option value="">Todos</option>
+            <option value="indigenous_vacancies">Vagas imediatas indígenas</option>
+            <option value="indigenous_reserve_vacancies">Reserva indígena</option>
+            <option value="si_compatibility">Compatibilidade com SI</option>
+            <option value="education">Escolaridade/requisito</option>
+            <option value="accepted_courses">Cursos aceitos</option>
+            <option value="registration_start">Início das inscrições</option>
+            <option value="registration_end">Fim das inscrições</option>
+            <option value="exam_location">Local de prova</option>
+            <option value="immediate_vacancies">Vagas imediatas</option>
+            <option value="reserve_vacancies">Cadastro de reserva</option>
+          </select>
+        </label>
+        <label class="prefs__field">Conflito
+          <select id="mesa-conflict">
+            <option value="">Todos</option>
+            <option value="1">Somente com conflito</option>
+            <option value="0">Sem conflito</option>
+          </select>
+        </label>
+        <label class="prefs__field">Estado documental
+          <select id="mesa-document-state">
+            <option value="">Todos</option>
+            <option value="campos_candidatos">Campos candidatos</option>
+            <option value="campos_confirmados">Campos confirmados</option>
+            <option value="conflito">Conflito documental</option>
+            <option value="oficial_sem_edital">Oficial sem edital</option>
+            <option value="apenas_agregador">Apenas agregador</option>
+            <option value="oficial_nao_importado">Edital não importado</option>
+          </select>
+        </label>
+        <label class="prefs__field">Evidência com página
+          <select id="mesa-has-page">
+            <option value="">Todos</option>
+            <option value="1">Somente com página</option>
+            <option value="0">Somente sem página</option>
+          </select>
+        </label>
+        <label class="prefs__field">Busca
+          <input id="mesa-search" type="search" placeholder="órgão, concurso ou cargo">
+        </label>
+        <label class="prefs__field">Prioridade mínima
+          <input id="mesa-min" type="number" min="0" step="1" placeholder="0">
+        </label>
+        <button type="submit" class="button">Aplicar</button>
+        <button id="mesa-session-open" type="button" class="button button--ghost">
+          Abrir sessão
+        </button>
+        <span id="mesa-status" class="prefs__status" role="status" aria-live="polite"></span>
+      </form>
+      <div id="mesa-panel" class="coverage__panel" role="region" aria-label="Oportunidades">
+        <p class="muted">Carregando oportunidades.</p>
+      </div>
+      <div id="mesa-session" class="coverage__panel" role="region" aria-label="Sessão de revisão"
+           aria-live="polite" hidden></div>
+      <div id="mesa-dossier" class="coverage__panel" role="region" aria-label="Dossiê"
+           aria-live="polite" hidden></div>
+      <div id="mesa-evidencia" class="coverage__panel" role="region"
+           aria-label="Comparação de evidências" aria-live="polite" hidden></div>
+    </section>
+
+    <section class="nominais" aria-labelledby="nominais-title">
+      <h2 id="nominais-title" class="results__title">Documentos nominais</h2>
+      <p class="prep__basis">
+        Lista de nomes, inscrições, notas ou aprovados não é ato de regra do certame. Nada é
+        baixado para exibir esta fila e o conteúdo nominal não é copiado: o Radar mostra apenas
+        metadados e o motivo da pendência. Nominal não é autorização nem proibição permanente —
+        é decisão humana.
+      </p>
+      <div class="prefs">
+        <button id="nominais-refresh" type="button" class="button button--ghost">Atualizar</button>
+        <span id="nominais-status" class="prefs__status" role="status" aria-live="polite"></span>
+      </div>
+      <div id="nominais-panel" class="coverage__panel">
+        <p class="muted">Carregando documentos nominais.</p>
+      </div>
+    </section>
+
+    <section class="timeline" aria-labelledby="timeline-title">
+      <h2 id="timeline-title" class="results__title">Linha do tempo da base</h2>
+      <p class="prep__basis">
+        O ciclo agendado altera a base enquanto você trabalha. Esta visão mostra o que mudou
+        desde uma referência, usando as tabelas do próprio monitoramento — não uma contagem
+        paralela. Documento descoberto fora de qualquer janela de ciclo é execução manual.
+      </p>
+      <div class="prefs">
+        <label class="prefs__field">Desde (ISO)
+          <input id="timeline-since" type="text" placeholder="2026-10-18T00:00:00+00:00">
+        </label>
+        <button id="timeline-refresh" type="button" class="button button--ghost">Atualizar</button>
+        <span id="timeline-status" class="prefs__status" role="status" aria-live="polite"></span>
+      </div>
+      <div id="timeline-panel" class="coverage__panel">
+        <p class="muted">Carregando linha do tempo.</p>
+      </div>
+    </section>
+
     <section class="assoc" aria-labelledby="assoc-title">
       <h2 id="assoc-title" class="results__title">Associações pendentes</h2>
       <p class="prep__basis">

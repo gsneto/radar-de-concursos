@@ -10,7 +10,8 @@ from contextlib import closing
 from pathlib import Path
 
 from radar import budget, connectors, ibge_source, source_catalog, source_policy
-from radar.document_store import connect_documents, migrate_document_schema
+from radar.document_store import (SCHEMA_VERSION, connect_documents,
+                                  migrate_document_schema)
 from radar.server import create_server
 
 NOW = "2026-10-17T12:00:00+00:00"
@@ -487,7 +488,8 @@ class SchemaTest(unittest.TestCase):
         migrate_document_schema(db)
         migrate_document_schema(db)
         with closing(sqlite3.connect(db)) as conn:
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 18)
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0],
+                         SCHEMA_VERSION)
             self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
             tables = {row[0] for row in conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table'")}

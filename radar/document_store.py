@@ -566,6 +566,25 @@ _V18_COLUMNS = {
 }
 
 
+# Fase 34: impressão da evidência no momento em que a sessão de revisão foi aberta.
+# Sem esse snapshot não é possível dizer se o candidato mudou (nova versão/proposta) desde
+# que o operador começou a trabalhar — e a retomada não pode presumir base estática.
+_V19_COLUMNS = {
+    "lote_revisao_itens": {"lote_id", "position", "proposal_id", "state", "decided_at",
+                           "snapshot_sha256", "scope_snapshot"},
+}
+
+
+def _apply_v19(conn) -> None:
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(lote_revisao_itens)")}
+    if not columns:
+        return
+    if "snapshot_sha256" not in columns:
+        conn.execute("ALTER TABLE lote_revisao_itens ADD COLUMN snapshot_sha256 TEXT")
+    if "scope_snapshot" not in columns:
+        conn.execute("ALTER TABLE lote_revisao_itens ADD COLUMN scope_snapshot TEXT")
+
+
 def _apply_v18(conn) -> None:
     present = {row[0] for row in conn.execute(
         "SELECT name FROM sqlite_master WHERE type IN ('table','index')")}
@@ -719,10 +738,11 @@ _V2_COLUMNS = {
 }
 
 # Versão corrente do esquema documental (v2 base + reconciliação/hash + monitoramento + fila).
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 
 # Versões que as rotas de leitura aceitam sem migrar (v2..v13 + atual).
-_READABLE_VERSIONS = (2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, SCHEMA_VERSION)
+_READABLE_VERSIONS = (2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17,
+                       SCHEMA_VERSION)
 
 
 def _validate_schema(conn, statements, columns_by_table, version_label):
@@ -1003,7 +1023,8 @@ def migrate_document_schema(db_path) -> None:
     try:
         conn.execute("BEGIN IMMEDIATE")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, SCHEMA_VERSION):
+        if version not in (0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+                           SCHEMA_VERSION):
             raise ValueError(f"versão de esquema não suportada: {version}")
         _v3_extra = dict(
             versoes_documento=_V2_COLUMNS["versoes_documento"] | {"comparison_sha256"},
@@ -1035,8 +1056,10 @@ def migrate_document_schema(db_path) -> None:
                 _v16_columns[_table] = _V16_COLUMNS[_table]
             for _table, _columns in _V18_COLUMNS.items():
                 _v16_columns[_table] = _columns
-            # v18 é da fase corrente: garante tabela/coluna antes de validar (idempotente).
+            _v16_columns["lote_revisao_itens"] = _V19_COLUMNS["lote_revisao_itens"]
+            # v18/v19 são da fase corrente: garante tabela/coluna antes de validar (idempotente).
             _apply_v18(conn)
+            _apply_v19(conn)
             _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL + _V12_DDL + _V14_DDL + _V15_DDL + _V16_DDL + _V18_DDL,
                              _v16_columns, f"v{SCHEMA_VERSION}")
             _seed_alert_watermarks(conn)
@@ -1096,6 +1119,10 @@ def migrate_document_schema(db_path) -> None:
             elif version == 17:
                 _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL + _V12_DDL + _V14_DDL + _V15_DDL + _V16_DDL,
                                  dict(_v15_extra, **_V16_COLUMNS), "v17")
+            elif version == 18:
+                # v18 já tem todas as tabelas; só falta a coluna da Fase 34 (aplicada abaixo).
+                _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL + _V12_DDL + _V14_DDL + _V15_DDL + _V16_DDL + _V18_DDL,
+                                 dict(_v15_extra, **_V16_COLUMNS, **_V18_COLUMNS), "v18")
             else:
                 for statement in _DDL:
                     conn.execute(statement)
@@ -1115,6 +1142,7 @@ def migrate_document_schema(db_path) -> None:
             _apply_v16(conn)
             _apply_v17(conn)
             _apply_v18(conn)
+            _apply_v19(conn)
             _seed_alert_watermarks(conn)
             conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         _ensure_alert_indexes(conn)

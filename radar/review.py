@@ -21,6 +21,7 @@ from hashlib import sha256
 from uuid import uuid4
 
 from radar.document_store import connect_documents, is_readable_schema
+from radar.document_types import is_nominal_title
 
 REVIEW_VERSION = "review_v1"
 
@@ -208,16 +209,61 @@ def _deadlines(rows) -> dict[str, date]:
     return out
 
 
-def _conflicts(rows) -> dict[tuple, list[dict]]:
-    """Conflito só entre propostas abertas: valor rejeitado/superado não é disputa."""
+def _reconciled_map(conn) -> dict:
+    """Mapa (concurso, rótulo) → cargo, a partir da reconciliação humana registrada.
+
+    A reconciliação não reescreve propostas antigas; sem consultar este mapa, o mesmo cargo
+    apareceria em dois escopos (rótulo e identidade) e um conflito real ficaria invisível.
+    """
+    mapping = {}
+    for contest_id, label, role_id in conn.execute(
+            "SELECT contest_id, label, role_id FROM reconciliacoes_cargo"
+            " ORDER BY reconciled_at, id"):
+        mapping[(contest_id, label)] = role_id
+    return mapping
+
+
+def _label_of(row) -> str | None:
+    reason = row.get("ambiguity_reason") or ""
+    prefix = "cargo do documento não reconciliado: "
+    if not reason.startswith(prefix):
+        return None
+    label = reason[len(prefix):].split(" — ")[0].strip()
+    return label or None
+
+
+def role_scope(row, reconciled=None) -> tuple[str, str | None]:
+    """Escopo de cargo: identidade reconciliada ou rótulo do próprio documento.
+
+    Sem identidade canônica, o rótulo do edital é o único escopo honesto. Sem isso, todos os
+    cargos de um mesmo documento seriam tratados como um só e valores de cargos diferentes
+    apareceriam como conflito — divergência que não existe. Quando o rótulo já foi
+    reconciliado por decisão humana, o escopo é a identidade canônica.
+    """
+    if row.get("role_id"):
+        return row["role_id"], None
+    label = _label_of(row)
+    if not label:
+        return "", None
+    mapped = (reconciled or {}).get((row["contest_id"], label))
+    if mapped:
+        return mapped, label
+    return f"label:{label}", label
+
+
+def _scope_key(row, reconciled=None) -> tuple:
+    return (row["contest_id"], role_scope(row, reconciled)[0], row["field_name"])
+
+
+def _conflicts(rows, reconciled=None) -> dict[tuple, list[dict]]:
+    """Conflito só entre propostas abertas do **mesmo escopo** de cargo."""
     groups = {}
     for row in rows:
         if not _is_open(row):
             continue
         if row["field_name"] in MULTI_VALUE_FIELDS:
             continue  # vários valores por cargo/localidade: não é conflito escalar
-        key = (row["contest_id"], row["role_id"], row["field_name"])
-        groups.setdefault(key, []).append(row)
+        groups.setdefault(_scope_key(row, reconciled), []).append(row)
     conflicts = {}
     for key, items in groups.items():
         values = {item["value_json"] for item in items}
@@ -230,7 +276,8 @@ INDIGENOUS_FIELDS = ("indigenous_vacancies", "indigenous_reserve_vacancies")
 FORMATION_FIELDS = ("education", "accepted_courses", "si_compatibility")
 
 
-def _priority(row, *, editais, deadlines, conflicts, duplicates, today) -> tuple[int, list[dict]]:
+def _priority(row, *, editais, deadlines, conflicts, duplicates, today,
+              reconciled=None) -> tuple[int, list[dict]]:
     factors = []
 
     def add(name, motivo=None):
@@ -250,7 +297,7 @@ def _priority(row, *, editais, deadlines, conflicts, duplicates, today) -> tuple
         add("formacao_si", f"formação/elegibilidade: {row['field_name']}")
     if row["proposal_id"] in duplicates:
         add("duplicata", "mesma evidência/valor aparece mais de uma vez")
-    group = conflicts.get((row["contest_id"], row["role_id"], row["field_name"]))
+    group = conflicts.get(_scope_key(row, reconciled))
     if group:
         add("conflito", f"{len({i['value_json'] for i in group})} valores distintos no mesmo campo")
         dates = [i["published_at"] for i in group if i["published_at"]]
@@ -267,7 +314,7 @@ def _priority(row, *, editais, deadlines, conflicts, duplicates, today) -> tuple
     return score, factors
 
 
-def _matches(row, *, state, conflict, filters, conflicts) -> bool:
+def _matches(row, *, state, conflict, filters, conflicts, reconciled=None) -> bool:
     if filters["contest_id"] and row["contest_id"] != filters["contest_id"]:
         return False
     if filters["role_id"] and row["role_id"] != filters["role_id"]:
@@ -288,7 +335,13 @@ def _matches(row, *, state, conflict, filters, conflicts) -> bool:
         return False
     if filters["reviewed_until"] and (row["last_review_at"] or "") > filters["reviewed_until"]:
         return False
-    has_conflict = (row["contest_id"], row["role_id"], row["field_name"]) in conflicts
+    if filters.get("search"):
+        needle = filters["search"].lower()
+        haystack = " ".join([row["document_title"] or "", row["issuer"] or "",
+                              row["field_name"] or "", str(row["value_json"] or "")]).lower()
+        if needle not in haystack:
+            return False
+    has_conflict = _scope_key(row, reconciled) in conflicts
     if conflict is True and not has_conflict:
         return False
     if conflict is False and has_conflict:
@@ -400,7 +453,7 @@ def duplicate_groups(db_path, *, contest_id=None, field_name=None, limit=50) -> 
 def review_queue(db_path, *, contest_id=None, role_id=None, field_name=None, document_id=None,
                  source=None, state="pendente", conflict=None, min_priority=None,
                  since=None, until=None, reviewed_since=None, reviewed_until=None,
-                 limit=25, offset=0, now=None) -> dict:
+                 search=None, limit=25, offset=0, now=None) -> dict:
     """Fila priorizada e paginada de propostas, com evidência e fatores explicados.
 
     ``state`` aceita ``pendente`` (padrão), ``aberto`` (pendente + adiado),
@@ -418,24 +471,27 @@ def review_queue(db_path, *, contest_id=None, role_id=None, field_name=None, doc
     today = now_dt.date()
     filters = {"contest_id": contest_id, "role_id": role_id, "field_name": field_name,
                "document_id": document_id, "source": source, "since": since, "until": until,
-               "reviewed_since": reviewed_since, "reviewed_until": reviewed_until}
+               "reviewed_since": reviewed_since, "reviewed_until": reviewed_until,
+               "search": search}
 
     with closing(connect_documents(db_path)) as conn:
         if not is_readable_schema(conn):
             raise ValueError("migração documental pendente")
         rows = _rows(conn)
         editais = _official_editais(conn)
-    conflicts = _conflicts(rows)
+        reconciled = _reconciled_map(conn)
+    conflicts = _conflicts(rows, reconciled)
     deadlines = _deadlines(rows)
     duplicates = _duplicate_members(rows)
 
     selected = []
     for row in rows:
         if not _matches(row, state=state, conflict=conflict, filters=filters,
-                        conflicts=conflicts):
+                        conflicts=conflicts, reconciled=reconciled):
             continue
         score, factors = _priority(row, editais=editais, deadlines=deadlines,
-                                   conflicts=conflicts, duplicates=duplicates, today=today)
+                                   conflicts=conflicts, duplicates=duplicates, today=today,
+                                   reconciled=reconciled)
         if min_priority is not None and score < int(min_priority):
             continue
         selected.append((score, factors, row))
@@ -446,7 +502,7 @@ def review_queue(db_path, *, contest_id=None, role_id=None, field_name=None, doc
 
     items = []
     for score, factors, row in page:
-        group = conflicts.get((row["contest_id"], row["role_id"], row["field_name"]), [])
+        group = conflicts.get(_scope_key(row, reconciled), [])
         items.append({
             "proposal_id": row["proposal_id"],
             "contest_id": row["contest_id"],
@@ -462,7 +518,8 @@ def review_queue(db_path, *, contest_id=None, role_id=None, field_name=None, doc
             "priority": score,
             "factors": factors,
             "evidence": {
-                "quote": row["quote"],
+                "quote": (None if is_nominal_title(row["document_title"])
+                           else row["quote"]),
                 "page_number": row["page_number"],
                 "locator": row["locator"],
                 "start_offset": row["start_offset"],
@@ -475,7 +532,11 @@ def review_queue(db_path, *, contest_id=None, role_id=None, field_name=None, doc
                 "version_id": row["version_id"],
                 "sha256": row["sha256"],
                 "tipo_documental": row["tipo_documental"],
-                "limitation": None if row["quote"] else "sem trecho literal registrado",
+                "nominal": is_nominal_title(row["document_title"]),
+                "limitation": ("documento nominal: trecho não reproduzido (dados pessoais)"
+                                if is_nominal_title(row["document_title"])
+                                else None if row["quote"]
+                                else "sem trecho literal registrado"),
             },
             "conflicts": [
                 {"proposal_id": other["proposal_id"],
@@ -488,6 +549,11 @@ def review_queue(db_path, *, contest_id=None, role_id=None, field_name=None, doc
             "last_review": ({"decision": row["last_decision"],
                              "reviewed_at": row["last_review_at"]}
                             if row["last_decision"] else None),
+            # Impressão estável da evidência: a sessão usa este valor como snapshot para
+            # detectar alteração posterior (nova versão/proposta) na retomada.
+            "evidence_sha256": _evidence_hash(
+                row["value_json"], row["quote"], row["version_id"],
+                row["start_offset"], row["end_offset"]),
         })
 
     by_field = {}
@@ -508,8 +574,7 @@ def review_queue(db_path, *, contest_id=None, role_id=None, field_name=None, doc
                    | {"state": state, "conflict": conflict},
         "resumo": {"por_campo": by_field, "por_estado": by_state,
                    "com_conflito": sum(1 for _, _, row in selected
-                                       if (row["contest_id"], row["role_id"],
-                                           row["field_name"]) in conflicts)},
+                                       if _scope_key(row, reconciled) in conflicts)},
         "items": items,
         "limitacao": ("Prioridade é heurística determinística e explicada; não é probabilidade "
                       "de aprovação. Nenhum item entra como confirmado sem decisão humana."),
@@ -565,7 +630,8 @@ def proposal_detail(db_path, proposal_id: str) -> dict:
             "extracted_at": target["extracted_at"],
         },
         "evidence": {
-            "quote": target["quote"],
+            "quote": (None if is_nominal_title(target["document_title"])
+                       else target["quote"]),
             "page_number": target["page_number"],
             "locator": target["locator"],
             "start_offset": target["start_offset"],
@@ -578,13 +644,18 @@ def proposal_detail(db_path, proposal_id: str) -> dict:
             "version_id": target["version_id"],
             "sha256": target["sha256"],
             "tipo_documental": target["tipo_documental"],
-            "limitation": None if target["quote"] else "sem trecho literal registrado",
+            "nominal": is_nominal_title(target["document_title"]),
+            "limitation": ("documento nominal: trecho não reproduzido (dados pessoais)"
+                            if is_nominal_title(target["document_title"])
+                            else None if target["quote"]
+                            else "sem trecho literal registrado"),
         },
         "other_proposals": [
             {"proposal_id": row["proposal_id"], "value": _value_of(row["value_json"]),
              "state": _state(row["last_decision"], row["selected"]),
              "document_title": row["document_title"], "published_at": row["published_at"],
-             "quote": row["quote"], "page_number": row["page_number"],
+             "quote": (None if is_nominal_title(row["document_title"]) else row["quote"]),
+             "page_number": row["page_number"],
              "sha256": row["sha256"]}
             for row in group if row["proposal_id"] != proposal_id],
         "current_value": ({"proposal_id": current[0], "selected_at": current[1],
@@ -607,17 +678,55 @@ def _decide_on(conn, proposal_id: str, decision: str, *, reviewer: str, reason: 
         raise ValueError("migração documental pendente")
     row = conn.execute("""
         SELECT p.contest_id,p.role_id,p.field_name,p.value_json,p.evidence_id,
-               e.quote,e.version_id,e.start_offset,e.end_offset
+               e.quote,e.version_id,e.start_offset,e.end_offset,p.ambiguity_reason
         FROM propostas_campo p JOIN evidencias e ON e.id=p.evidence_id
         JOIN versoes_documento v ON v.id=e.version_id
         JOIN documentos d ON d.id=v.document_id
         WHERE p.id=? AND d.contest_id=p.contest_id""", (proposal_id,)).fetchone()
     if not row:
         raise ValueError("proposta sem evidência válida")
-    contest_id, role_id, field_name, value_json, evidence_id, quote, version_id, start, end = row
+    (contest_id, role_id, field_name, value_json, evidence_id, quote, version_id, start, end,
+     ambiguity_reason) = row
     fingerprint = _evidence_hash(value_json, quote, version_id, start, end)
     if expected_evidence_sha256 and expected_evidence_sha256 != fingerprint:
         raise ValueError("evidência mudou desde a exportação")
+    if lote_id:
+        # Retomada de sessão não presume base estática: se a evidência mudou desde a
+        # abertura, a decisão precisa ser reavaliada (não se sobrescreve o que o operador
+        # não viu).
+        item = conn.execute(
+            "SELECT snapshot_sha256 FROM lote_revisao_itens WHERE lote_id=? AND proposal_id=?",
+            (lote_id, proposal_id)).fetchone()
+        if item is None:
+            raise ValueError("proposta não pertence ao lote")
+        if item[0] and item[0] != fingerprint:
+            raise ValueError("evidência mudou desde a abertura da sessão; reavalie o item")
+        scope_row = conn.execute(
+            "SELECT scope_snapshot FROM lote_revisao_itens WHERE lote_id=? AND proposal_id=?",
+            (lote_id, proposal_id)).fetchone()
+        if scope_row is None or not scope_row[0]:
+            # Lote anterior à v19: não há registro do que o operador viu ao abrir.
+            raise ValueError(
+                "sessão aberta antes da atualização; reabra o lote para revisar este item")
+        try:
+            before = set(json.loads(scope_row[0]))
+        except ValueError:
+            before = None
+        if before is None:
+            raise ValueError(
+                "sessão aberta antes da atualização; reabra o lote para revisar este item")
+        reconciled = _reconciled_map(conn)
+        scope_name = role_scope({"contest_id": contest_id, "role_id": role_id,
+                                 "ambiguity_reason": ambiguity_reason}, reconciled)[0]
+        current = {pid for pid, other_role, reason in conn.execute(
+            "SELECT id, role_id, ambiguity_reason FROM propostas_campo "
+            "WHERE contest_id=? AND field_name=?", (contest_id, field_name))
+            if role_scope({"contest_id": contest_id, "role_id": other_role,
+                           "ambiguity_reason": reason}, reconciled)[0] == scope_name}
+        if current != before:
+            raise ValueError(
+                "surgiu nova proposta para o mesmo campo desde a abertura da sessão; "
+                "reavalie o item")
     last = conn.execute(
         "SELECT decision,reason,origin,value_json FROM revisoes_campo WHERE proposal_id=? "
         "ORDER BY reviewed_at DESC, rowid DESC LIMIT 1", (proposal_id,)).fetchone()
@@ -778,22 +887,69 @@ def _batch(db_path, lote_id):
             "SELECT i.position,i.proposal_id,i.state,i.decided_at,p.field_name,p.value_json,"
             "p.contest_id,p.role_id,"
             "(SELECT r.decision FROM revisoes_campo r WHERE r.proposal_id=p.id "
-            " ORDER BY r.reviewed_at DESC,r.rowid DESC LIMIT 1) "
+            " ORDER BY r.reviewed_at DESC,r.rowid DESC LIMIT 1),"
+            "i.snapshot_sha256,p.value_json,e.quote,e.version_id,e.start_offset,e.end_offset,"
+            "p.extracted_at,i.scope_snapshot,p.ambiguity_reason "
             "FROM lote_revisao_itens i JOIN propostas_campo p ON p.id=i.proposal_id "
+            "JOIN evidencias e ON e.id=p.evidence_id "
             "WHERE i.lote_id=? ORDER BY i.position", (lote_id,)).fetchall()
-    lote = {"lote_id": row[0], "created_at": row[1], "created_by": row[2], "origin": row[3],
-            "filters": json.loads(row[4]), "size": row[5], "state": row[6], "cursor": row[7],
-            "note": row[8]}
-    lote["itens"] = [
-        {"position": item[0], "proposal_id": item[1], "batch_state": item[2],
-         "decided_at": item[3], "field_name": item[4], "value": _value_of(item[5]),
-         "contest_id": item[6], "role_id": item[7],
-         "state": _state(item[8], False) if item[8] else "pendente"}
-        for item in items]
+        created_at = row[1]
+        reconciled = _reconciled_map(conn)
+        # Propostas por escopo no momento da leitura: a mudança é detectada por **conjunto de
+        # ids**, não por relógio nem por valor. Uma proposta nova conta mesmo que repita um
+        # valor já existente; e o escopo usa o rótulo (ou a identidade reconciliada), não o
+        # role_id bruto — senão cargos diferentes cairiam no mesmo conjunto.
+        scope_ids = {}
+        for proposal_id, contest_id, role_id, field_name, reason in conn.execute(
+                "SELECT p.id, p.contest_id, p.role_id, p.field_name, p.ambiguity_reason "
+                "FROM propostas_campo p WHERE p.contest_id IN ("
+                " SELECT p2.contest_id FROM lote_revisao_itens i "
+                " JOIN propostas_campo p2 ON p2.id=i.proposal_id WHERE i.lote_id=?)",
+                (lote_id,)):
+            scope = role_scope({"contest_id": contest_id, "role_id": role_id,
+                                "ambiguity_reason": reason}, reconciled)[0]
+            scope_ids.setdefault((contest_id, scope, field_name), set()).add(proposal_id)
+    lote = {"lote_id": row[0], "created_at": created_at, "created_by": row[2],
+            "origin": row[3], "filters": json.loads(row[4]), "size": row[5],
+            "state": row[6], "cursor": row[7], "note": row[8]}
+    lote["itens"] = []
+    for item in items:
+        snapshot = item[9]
+        scope_snapshot = item[16]
+        live = _evidence_hash(item[10], item[11], item[12], item[13], item[14])
+        change = None
+        if snapshot is None:
+            # Lote aberto antes da v19: não há impressão do que o operador viu.
+            change = "sem_snapshot"
+        elif snapshot != live:
+            change = "evidencia"
+        else:
+            scope = role_scope({"contest_id": item[6], "role_id": item[7],
+                                "ambiguity_reason": item[17]}, reconciled)[0]
+            current = sorted(scope_ids.get((item[6], scope, item[4])) or ())
+            try:
+                before = json.loads(scope_snapshot) if scope_snapshot else None
+            except ValueError:
+                before = None
+            if before is None:
+                change = "sem_snapshot"
+            elif current != sorted(before):
+                change = "nova_proposta"
+        lote["itens"].append({
+            "position": item[0], "proposal_id": item[1], "batch_state": item[2],
+            "decided_at": item[3], "field_name": item[4], "value": _value_of(item[5]),
+            "contest_id": item[6], "role_id": item[7],
+            "state": _state(item[8], False) if item[8] else "pendente",
+            "alterado": change is not None,
+            "motivo_alteracao": change,
+            "snapshot_sha256": snapshot,
+            "evidence_sha256": live,
+        })
     lote["progresso"] = {
         "total": len(lote["itens"]),
         "decididos": sum(1 for item in lote["itens"]
                          if item["state"] in DECIDED_STATES or item["batch_state"] == "decidido"),
+        "alterados": sum(1 for item in lote["itens"] if item["alterado"]),
     }
     lote["item_atual"] = next(
         (item for item in lote["itens"] if item["position"] == (lote["cursor"] or 1)), None)
@@ -812,11 +968,26 @@ def open_batch(db_path, *, created_by: str, filters: dict | None = None, size: i
     filters = dict(filters or {})
     allowed = {"contest_id", "role_id", "field_name", "document_id", "source", "state",
                "conflict", "min_priority", "since", "until", "reviewed_since",
-               "reviewed_until"}
+               "reviewed_until", "search"}
     unknown = set(filters) - allowed
     if unknown:
         raise ValueError(f"filtro de lote inválido: {', '.join(sorted(unknown))}")
     filters.setdefault("state", "pendente")
+    if "conflict" in filters:
+        # A interface manda string ("1"/"0"); sem converter, o filtro seria ignorado.
+        value = filters["conflict"]
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in ("1", "true", "yes"):
+                filters["conflict"] = True
+            elif lowered in ("0", "false", "no"):
+                filters["conflict"] = False
+            elif lowered == "":
+                filters.pop("conflict")
+            else:
+                raise ValueError("filtro de conflito inválido")
+        elif not isinstance(value, bool):
+            raise ValueError("filtro de conflito inválido")
     queue = review_queue(db_path, limit=size, offset=0, now=now, **filters)
     if not queue["items"]:
         raise ValueError("nenhuma proposta pendente para os filtros")
@@ -824,15 +995,38 @@ def open_batch(db_path, *, created_by: str, filters: dict | None = None, size: i
     lote_id = str(uuid4())
     with closing(connect_documents(db_path)) as conn, conn:
         conn.execute("BEGIN IMMEDIATE")
+        reconciled = _reconciled_map(conn)
         conn.execute(
             "INSERT INTO lotes_revisao (id,created_at,created_by,origin,filters_json,size,state,"
             "cursor,note) VALUES (?,?,?,?,?,?,?,?,?)",
             (lote_id, at, created_by, origin, json.dumps(filters, ensure_ascii=False, sort_keys=True),
              size, "aberto", 1, note))
         for position, item in enumerate(queue["items"], start=1):
+            # Snapshot da evidência no momento da abertura: permite detectar, na retomada,
+            # que o candidato mudou (nova versão/proposta) desde que a sessão começou.
+            snapshot = item.get("evidence_sha256")
+            row = conn.execute(
+                "SELECT p.value_json,e.quote,e.version_id,e.start_offset,e.end_offset,"
+                "p.contest_id,p.role_id,p.field_name,p.ambiguity_reason "
+                "FROM propostas_campo p JOIN evidencias e ON e.id=p.evidence_id "
+                "WHERE p.id=?", (item["proposal_id"],)).fetchone()
+            if row is None:
+                continue
+            if not snapshot:
+                snapshot = _evidence_hash(*row[:5])
+            scope_name = role_scope({"contest_id": row[5], "role_id": row[6],
+                                     "ambiguity_reason": row[8]}, reconciled)[0]
+            scope = sorted(
+                pid for pid, role_id, reason in conn.execute(
+                    "SELECT id, role_id, ambiguity_reason FROM propostas_campo "
+                    "WHERE contest_id=? AND field_name=?", (row[5], row[7]))
+                if role_scope({"contest_id": row[5], "role_id": role_id,
+                               "ambiguity_reason": reason}, reconciled)[0] == scope_name)
             conn.execute(
-                "INSERT INTO lote_revisao_itens (lote_id,position,proposal_id,state) "
-                "VALUES (?,?,?,'pendente')", (lote_id, position, item["proposal_id"]))
+                "INSERT INTO lote_revisao_itens (lote_id,position,proposal_id,state,"
+                "snapshot_sha256,scope_snapshot) VALUES (?,?,?,'pendente',?,?)",
+                (lote_id, position, item["proposal_id"], snapshot,
+                 json.dumps(scope, ensure_ascii=False)))
     return _batch(db_path, lote_id)
 
 

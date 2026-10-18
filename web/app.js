@@ -3507,6 +3507,23 @@
     if (pipelineRefresh) pipelineRefresh.addEventListener('click', fetchPipeline);
     var officialRefresh = doc.getElementById('official-refresh');
     if (officialRefresh) officialRefresh.addEventListener('click', fetchOfficialCoverage);
+    var mesaForm = doc.getElementById('mesa-filters');
+    if (mesaForm) mesaForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      mesaState.offset = 0;
+      mesaSaveFilters();
+      ['mesa-dossier', 'mesa-evidencia'].forEach(function (id) {
+        var node = document.getElementById(id);
+        if (node) { clearContainer(node); node.hidden = true; }
+      });
+      fetchMesa();
+    });
+    var mesaSessionOpen = doc.getElementById('mesa-session-open');
+    if (mesaSessionOpen) mesaSessionOpen.addEventListener('click', openMesaSession);
+    var nominaisRefresh = doc.getElementById('nominais-refresh');
+    if (nominaisRefresh) nominaisRefresh.addEventListener('click', fetchNominais);
+    var timelineRefresh = doc.getElementById('timeline-refresh');
+    if (timelineRefresh) timelineRefresh.addEventListener('click', fetchTimeline);
     var dupsRefresh = doc.getElementById('dups-refresh');
     if (dupsRefresh) dupsRefresh.addEventListener('click', fetchDuplicates);
     var coverageRefresh = doc.getElementById('coverage-refresh');
@@ -3527,12 +3544,891 @@
     fetchSources();
     fetchPipeline();
     fetchOfficialCoverage();
+    mesaRestoreFilters();
+    fetchMesa();
+    fetchNominais();
+    fetchTimeline();
+    restoreMesaSession();
     fetchDuplicates();
     restoreBatch();
     startAutoRefresh();
     if (global.addEventListener) {
       global.addEventListener('hashchange', function () { focusContestFromHash(); });
     }
+  }
+
+  // --- Mesa de revisão (Fase 34) ---
+
+  var MESA_FIELD_STATE = {
+    confirmado: {label: 'Confirmado', variant: 'confirmado'},
+    corrigido: {label: 'Corrigido', variant: 'confirmado'},
+    em_conflito: {label: 'Em conflito', variant: 'conflito'},
+    ambiguo: {label: 'Ambíguo', variant: 'ambiguo'},
+    candidato: {label: 'Candidato', variant: 'candidato'},
+    multiplo_por_cargo: {label: 'Vários cargos', variant: 'ausente'},
+    rejeitado: {label: 'Rejeitado', variant: 'ausente'},
+    nao_extraido: {label: 'Ausente', variant: 'ausente'}
+  };
+
+  var DOC_STATE_VARIANT = {
+    campos_confirmados: 'confirmado',
+    conflito: 'conflito',
+    campos_candidatos: 'candidato',
+    edital_extraido: 'candidato',
+    oficial_sem_extracao: 'ausente',
+    oficial_sem_edital: 'ausente',
+    identidade_pendente: 'ausente',
+    obtencao_nao_autorizada: 'conflito',
+    oficial_nao_importado: 'ausente',
+    apenas_agregador: 'ausente',
+    fonte_nao_catalogada: 'ausente',
+    sem_documento: 'ausente'
+  };
+
+  var PROPOSAL_STATE_VARIANT = {
+    validado: 'confirmado',
+    corrigido: 'confirmado',
+    selecionado: 'confirmado',
+    rejeitado: 'ausente',
+    adiado: 'ausente',
+    ambiguo: 'ambiguo',
+    pendente: 'candidato'
+  };
+
+  var LOCATION_STATE_LABEL = {
+    confirmado_documentalmente: 'confirmado',
+    extraido_nao_revisado: 'extraído, não revisado',
+    ambiguo: 'ambíguo',
+    em_conflito: 'em conflito',
+    nao_informado: 'não informado no documento',
+    nao_extraido: 'não extraído'
+  };
+
+  var mesaState = {
+    offset: 0, limit: 25, items: [], dossier: null, evidence: null,
+    loteId: null, lote: null
+  };
+
+  function mesaStatus(message) {
+    var doc = global.document;
+    var node = doc && doc.getElementById('mesa-status');
+    if (node) node.textContent = message || '';
+  }
+
+  function mesaValue(id) {
+    var doc = global.document;
+    var node = doc && doc.getElementById(id);
+    return node && node.value ? node.value.trim() : '';
+  }
+
+  function mesaFilters() {
+    var filters = {state: 'pendente'};
+    if (mesaValue('mesa-field')) filters.field_name = mesaValue('mesa-field');
+    if (mesaValue('mesa-conflict')) {
+      filters.conflict = mesaValue('mesa-conflict') === '1';
+    }
+    if (mesaValue('mesa-search')) filters.search = mesaValue('mesa-search');
+    if (mesaValue('mesa-min')) filters.min_priority = mesaValue('mesa-min');
+    return filters;
+  }
+
+  function mesaQuery() {
+    var parts = ['limit=' + mesaState.limit, 'offset=' + mesaState.offset];
+    if (mesaValue('mesa-field')) {
+      parts.push('field=' + encodeURIComponent(mesaValue('mesa-field')));
+    }
+    if (mesaValue('mesa-conflict')) parts.push('conflict=' + mesaValue('mesa-conflict'));
+    if (mesaValue('mesa-document-state')) {
+      parts.push('document_state=' + encodeURIComponent(mesaValue('mesa-document-state')));
+    }
+    if (mesaValue('mesa-has-page')) parts.push('has_page=' + mesaValue('mesa-has-page'));
+    if (mesaValue('mesa-search')) {
+      parts.push('search=' + encodeURIComponent(mesaValue('mesa-search')));
+    }
+    if (mesaValue('mesa-min')) parts.push('min_priority=' + mesaValue('mesa-min'));
+    return parts.join('&');
+  }
+
+  function mesaFieldBadge(document, state) {
+    var info = MESA_FIELD_STATE[state] || {label: formatText(state), variant: 'ausente'};
+    return el(document, 'span', 'mesa__badge mesa__badge--' + info.variant, info.label);
+  }
+
+  function renderMesa(document, payload) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    var page = Math.floor(payload.offset / payload.limit) + 1;
+    wrap.appendChild(el(document, 'p', 'prep__basis',
+      payload.total + ' oportunidade(s) · página ' + page +
+      ' · referência ' + (payload.generated_at || '').slice(0, 19).replace('T', ' ')));
+    if (!payload.itens.length) {
+      wrap.appendChild(el(document, 'p', 'muted', 'Nenhuma oportunidade para os filtros.'));
+      return wrap;
+    }
+    var table = el(document, 'table', 'mesa__table');
+    table.appendChild(el(document, 'caption', '',
+      'Abra o dossiê pelo concurso. Estado do campo é o que existe hoje, não confirmação.'));
+    var head = el(document, 'tr');
+    ['Prioridade', 'Concurso', 'Cargo', 'Documentação', 'Campos', 'Pend.', 'Conflitos',
+     'Página', 'Próxima ação'].forEach(function (label) {
+      head.appendChild(el(document, 'th', '', label));
+    });
+    var thead = el(document, 'thead');
+    thead.appendChild(head);
+    table.appendChild(thead);
+    var tbody = el(document, 'tbody');
+    payload.itens.forEach(function (item) {
+      var row = el(document, 'tr');
+      var open = function () { openDossier(item.contest_id, item.scope); };
+      row.addEventListener('click', function (event) {
+        // Clique no botão já abre; evita abrir duas vezes.
+        if (event.target && event.target.tagName === 'BUTTON') return;
+        open();
+      });
+      var prio = el(document, 'td', 'num', String(item.prioridade));
+      prio.title = (item.motivos || []).map(function (motivo) {
+        return motivo.motivo + ' (' + (motivo.pontos >= 0 ? '+' : '') + motivo.pontos + ')';
+      }).join(' · ');
+      row.appendChild(prio);
+      var contest = el(document, 'td');
+      var openButton = el(document, 'button', 'mesa__row-button',
+        item.contest_title || item.competition_id || shortId(item.contest_id));
+      openButton.type = 'button';
+      openButton.addEventListener('click', open);
+      contest.appendChild(openButton);
+      contest.appendChild(el(document, 'div', 'mesa__meta',
+        (item.competition_id || '') + ' · ' + shortId(item.contest_id)));
+      row.appendChild(contest);
+      row.appendChild(el(document, 'td', '', item.role_name || 'cargo não identificado'));
+      var docCell = el(document, 'td');
+      docCell.appendChild(el(document, 'span', 'mesa__badge mesa__badge--' +
+        (DOC_STATE_VARIANT[item.documental.estado] || 'ausente'),
+        item.documental.estado_label || item.documental.estado || 'sem estado'));
+      docCell.appendChild(el(document, 'div', 'mesa__meta',
+        item.documental.documentos_oficiais + ' oficial(is) · ' +
+        item.documental.editais + ' edital(is) · ' +
+        item.documental.retificacoes + ' retificação(ões)'));
+      row.appendChild(docCell);
+      var fields = el(document, 'td');
+      var shown = 0;
+      Object.keys(item.campos).forEach(function (name) {
+        if (shown >= 4) return;
+        var entry = item.campos[name];
+        var line = el(document, 'div', 'mesa__meta');
+        line.appendChild(mesaFieldBadge(document, entry.estado));
+        line.appendChild(el(document, 'span', '', ' ' + entry.label));
+        fields.appendChild(line);
+        shown += 1;
+      });
+      if (!shown) fields.appendChild(el(document, 'span', 'mesa__meta', 'sem campo decisivo'));
+      row.appendChild(fields);
+      row.appendChild(el(document, 'td', 'num', String(item.pendentes)));
+      row.appendChild(el(document, 'td', 'num', String(item.conflitos)));
+      row.appendChild(el(document, 'td', '', item.tem_pagina ? 'sim' : 'não'));
+      row.appendChild(el(document, 'td', '', item.proxima_acao));
+      tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    var scroll = el(document, 'div', 'mesa__scroll');
+    scroll.appendChild(table);
+    wrap.appendChild(scroll);
+    var nav = el(document, 'div', 'prefs');
+    var previous = el(document, 'button', 'button button--ghost', 'Anterior');
+    previous.type = 'button';
+    previous.disabled = payload.offset <= 0;
+    previous.addEventListener('click', function () {
+      mesaState.offset = Math.max(0, mesaState.offset - mesaState.limit);
+      fetchMesa();
+    });
+    var next = el(document, 'button', 'button button--ghost', 'Próxima');
+    next.type = 'button';
+    next.disabled = !payload.has_more;
+    next.addEventListener('click', function () {
+      mesaState.offset += mesaState.limit;
+      fetchMesa();
+    });
+    nav.appendChild(previous);
+    nav.appendChild(next);
+    wrap.appendChild(nav);
+    wrap.appendChild(el(document, 'p', 'muted', payload.limitacao || ''));
+    return wrap;
+  }
+
+  function fetchMesa() {
+    var doc = global.document;
+    if (!doc || !doc.getElementById('mesa-panel')) return Promise.resolve();
+    mesaStatus('Atualizando…');
+    return global.fetch('/api/oportunidades?' + mesaQuery(),
+                        {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        mesaState.items = payload.itens;
+        var node = doc.getElementById('mesa-panel');
+        clearContainer(node);
+        node.appendChild(renderMesa(doc, payload));
+        mesaStatus(payload.total + ' oportunidade(s) para os filtros.');
+      })
+      .catch(function (error) { mesaStatus('Mesa indisponível (' + error.message + ').'); });
+  }
+
+  function renderDossier(document, payload) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    var head = el(document, 'div', 'mesa__session');
+    var scopeLabel = 'Dossiê do concurso (sem cargo identificado)';
+    if (payload.role_id) scopeLabel = 'Dossiê do cargo';
+    else if (payload.scope && String(payload.scope).indexOf('label:') === 0) {
+      scopeLabel = 'Dossiê do cargo (rótulo não reconciliado)';
+    }
+    head.appendChild(el(document, 'strong', '', scopeLabel));
+    head.appendChild(el(document, 'span', 'mesa__badge mesa__badge--' +
+      (DOC_STATE_VARIANT[payload.documental.estado] || 'ausente'),
+      payload.documental.estado_label || payload.documental.estado || 'sem estado'));
+    head.appendChild(el(document, 'span', 'mesa__meta',
+      payload.revisao.pendentes + ' pendente(s) · ' +
+      payload.revisao.propostas + ' proposta(s) · ' +
+      payload.revisao.conflitos + ' conflito(s)'));
+    wrap.appendChild(head);
+
+    wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Documentos'));
+    var docs = el(document, 'ul', 'mesa__list');
+    (payload.documental.documentos || []).forEach(function (doc) {
+      var line = el(document, 'li');
+      line.appendChild(el(document, 'span', 'mesa__meta',
+        (doc.tipo || 'outro') + ' · ' + (doc.published_at || 'sem data') + ' · '));
+      if (isHttpsUrl(doc.official_url)) {
+        var link = el(document, 'a', 'link', doc.title || doc.official_url);
+        link.href = doc.official_url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        line.appendChild(link);
+      } else {
+        line.appendChild(el(document, 'span', '', doc.title || 'documento'));
+      }
+      line.appendChild(el(document, 'span', 'mesa__meta',
+        ' · ' + doc.versoes + ' versão(ões) · ' + doc.paginas_extraidas + ' página(s)'));
+      docs.appendChild(line);
+    });
+    if (!payload.documental.documentos.length) {
+      docs.appendChild(el(document, 'li', 'muted', 'Nenhum documento registrado.'));
+    }
+    wrap.appendChild(docs);
+
+    wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Campos decisivos'));
+    var table = el(document, 'table', 'mesa__table');
+    var headRow = el(document, 'tr');
+    ['Campo', 'Estado', 'Valores', 'Evidências'].forEach(function (label) {
+      headRow.appendChild(el(document, 'th', '', label));
+    });
+    var thead = el(document, 'thead');
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+    var tbody = el(document, 'tbody');
+    payload.campos.forEach(function (field) {
+      var row = el(document, 'tr');
+      row.appendChild(el(document, 'td', '', field.label));
+      var stateCell = el(document, 'td');
+      stateCell.appendChild(mesaFieldBadge(document, field.estado));
+      row.appendChild(stateCell);
+      row.appendChild(el(document, 'td', 'mesa__meta',
+        field.valores.length ? field.valores.slice(0, 4).join(' | ') : '—'));
+      var evCell = el(document, 'td');
+      if (field.evidencias && field.evidencias.length) {
+        var list = el(document, 'ul', 'mesa__list');
+        field.evidencias.slice(0, 6).forEach(function (ev) {
+          var li = el(document, 'li');
+          var button = el(document, 'button', 'mesa__row-button',
+            String(ev.value) + ' · p' + (ev.page_number === null ? '—' : ev.page_number));
+          button.type = 'button';
+          button.addEventListener('click', function () { openEvidence(ev.proposal_id); });
+          li.appendChild(button);
+          li.appendChild(el(document, 'span', 'mesa__meta',
+            ' · ' + (ev.document_title || 'documento') + ' · ' + ev.state));
+          list.appendChild(li);
+        });
+        if (field.evidencias.length > 6) {
+          list.appendChild(el(document, 'li', 'mesa__meta',
+            '+' + (field.evidencias.length - 6) + ' outra(s)'));
+        }
+        evCell.appendChild(list);
+      } else {
+        evCell.appendChild(el(document, 'span', 'mesa__meta', '—'));
+      }
+      row.appendChild(evCell);
+      tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+
+    wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Conflitos e lacunas'));
+    var issues = el(document, 'ul', 'mesa__list');
+    (payload.conflitos || []).forEach(function (conflict) {
+      issues.appendChild(el(document, 'li', '',
+        conflict.field_name + ': ' + conflict.tipo + ' — ' + conflict.motivo));
+    });
+    (payload.campos_ausentes || []).forEach(function (name) {
+      issues.appendChild(el(document, 'li', 'mesa__meta',
+        name + ': ausente no texto extraído (não é zero)'));
+    });
+    if (!issues.firstChild) {
+      issues.appendChild(el(document, 'li', 'muted', 'Nenhum conflito ou lacuna registrado.'));
+    }
+    wrap.appendChild(issues);
+
+    var prioritarios = payload.prioritarios || {};
+    wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Campos prioritários'));
+    var prio = el(document, 'ul', 'mesa__list');
+    if (prioritarios.indigenas) {
+      prio.appendChild(el(document, 'li', '',
+        'Vagas indígenas: ' + (prioritarios.indigenas.estado_label ||
+        prioritarios.indigenas.estado) +
+        ' (total agregado não vira vaga indígena)'));
+    }
+    if (prioritarios.sistemas_de_informacao) {
+      prio.appendChild(el(document, 'li', '',
+        'Sistemas de Informação: ' + (prioritarios.sistemas_de_informacao.estado_label ||
+        prioritarios.sistemas_de_informacao.estado)));
+    }
+    if (prioritarios.prazos) {
+      var fim = prioritarios.prazos.inscricao_fim || {};
+      prio.appendChild(el(document, 'li', '',
+        'Fim das inscrições: ' + (fim.vigente ? fim.vigente.value : fim.estado) +
+        (fim.anteriores && fim.anteriores.length
+          ? ' (anterior: ' + fim.anteriores[0].value + ')' : '')));
+    }
+    if (prioritarios.local) {
+      var prova = prioritarios.local.prova || {};
+      prio.appendChild(el(document, 'li', '',
+        'Local de prova: ' + (LOCATION_STATE_LABEL[prova.state] || prova.state ||
+                              'não informado') +
+        (prova.municipios && prova.municipios.length
+          ? ' (' + prova.municipios.join(', ') + ')' : '') +
+        ' · lotação: ' + ((prioritarios.local.lotacao || {}).state || 'não informado')));
+    }
+    wrap.appendChild(prio);
+    wrap.appendChild(el(document, 'p', 'muted', payload.limitacao || ''));
+    return wrap;
+  }
+
+  function openDossier(contestId, scope) {
+    var doc = global.document;
+    if (!doc) return Promise.resolve();
+    var isRole = scope && !String(scope).startsWith('label:');
+    var url = '/api/oportunidades/' + encodeURIComponent(contestId) +
+      (scope ? '?' + (isRole ? 'role_id=' : 'scope=') + encodeURIComponent(scope) : '');
+    mesaStatus('Abrindo dossiê…');
+    return global.fetch(url, {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        mesaState.dossier = payload;
+        var node = doc.getElementById('mesa-dossier');
+        clearContainer(node);
+        node.hidden = false;
+        node.appendChild(renderDossier(doc, payload));
+        mesaStatus('');
+        if (node.scrollIntoView) node.scrollIntoView({behavior: 'smooth', block: 'start'});
+      })
+      .catch(function (error) { mesaStatus('Dossiê indisponível (' + error.message + ').'); });
+  }
+
+  function renderEvidence(document, payload) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    var proposal = payload.proposal || {};
+    var evidence = payload.evidence || {};
+    var head = el(document, 'div', 'mesa__session');
+    head.appendChild(el(document, 'strong', '',
+      proposal.field_name + ' = ' + String(proposal.value)));
+    head.appendChild(el(document, 'span', 'mesa__badge mesa__badge--' +
+      (PROPOSAL_STATE_VARIANT[proposal.state] || 'candidato'),
+      proposal.state || 'pendente'));
+    head.appendChild(el(document, 'span', 'mesa__meta', payload.origin || ''));
+    wrap.appendChild(head);
+
+    var meta = el(document, 'ul', 'mesa__list');
+    [
+      ['Documento', evidence.document_title],
+      ['Versão', evidence.version_id ? shortId(evidence.version_id) : null],
+      ['Hash', evidence.sha256 ? String(evidence.sha256).slice(0, 16) : null],
+      ['Página', evidence.page_number === null || evidence.page_number === undefined
+        ? 'sem página' : String(evidence.page_number)],
+      ['Publicado', evidence.published_at],
+      ['Coletado', evidence.fetched_at || proposal.extracted_at],
+      ['Fonte', evidence.issuer]
+    ].forEach(function (pair) {
+      if (!pair[1]) return;
+      meta.appendChild(el(document, 'li', 'mesa__meta', pair[0] + ': ' + pair[1]));
+    });
+    wrap.appendChild(meta);
+
+    if (isHttpsUrl(evidence.official_url)) {
+      var link = el(document, 'a', 'link', 'Abrir documento oficial');
+      link.href = evidence.official_url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      wrap.appendChild(link);
+    }
+
+    wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Trecho'));
+    wrap.appendChild(el(document, 'blockquote', 'mesa__quote',
+      evidence.quote || evidence.limitation || 'sem trecho literal registrado'));
+    var context = payload.context || {};
+    if (context.before || context.after) {
+      var ctx = el(document, 'div', 'mesa__context');
+      ctx.appendChild(el(document, 'div', '', '…' + (context.before || '')));
+      ctx.appendChild(el(document, 'div', '', (context.after || '') + '…'));
+      wrap.appendChild(ctx);
+    } else if (context.limitation) {
+      wrap.appendChild(el(document, 'p', 'muted', context.limitation));
+    }
+
+    var structural = payload.structural_confidence || {};
+    if (structural.aplicavel) {
+      wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Quadro reconstruído'));
+      wrap.appendChild(el(document, 'p', 'prep__basis',
+        'Certeza: ' + (structural.certeza || 'não declarada') +
+        ' · cabeçalho p' + (structural.header_page === null ? '—' : structural.header_page) +
+        ' · total p' + (structural.total_page === null ? '—' : structural.total_page) +
+        ' · total publicado: ' +
+        (structural.total_publicado === null ? '—' : structural.total_publicado) +
+        '. ' + (structural.nota || '')));
+    } else if (structural.motivo) {
+      wrap.appendChild(el(document, 'p', 'muted', structural.motivo));
+    }
+
+    wrap.appendChild(el(document, 'h4', 'study__subtitle',
+      'Outras propostas para o mesmo campo'));
+    var others = el(document, 'ul', 'mesa__list');
+    (payload.other_proposals || []).forEach(function (other) {
+      var li = el(document, 'li');
+      var button = el(document, 'button', 'mesa__row-button', String(other.value));
+      button.type = 'button';
+      button.addEventListener('click', function () { openEvidence(other.proposal_id); });
+      li.appendChild(button);
+      li.appendChild(el(document, 'span', 'mesa__meta',
+        ' · ' + (other.document_title || 'documento') + ' · ' +
+        (other.published_at || 'sem data') + ' · ' + other.state));
+      others.appendChild(li);
+    });
+    if (!others.firstChild) {
+      others.appendChild(el(document, 'li', 'muted', 'Nenhuma outra proposta.'));
+    }
+    wrap.appendChild(others);
+
+    wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Histórico de decisões'));
+    var history = el(document, 'ul', 'mesa__list');
+    (payload.reviews || []).forEach(function (review) {
+      history.appendChild(el(document, 'li', 'mesa__meta',
+        review.decision + ' · ' + review.reviewer + ' · ' + review.reviewed_at +
+        ' · ' + review.reason));
+    });
+    if (!history.firstChild) {
+      history.appendChild(el(document, 'li', 'muted', 'Nenhuma decisão registrada.'));
+    }
+    wrap.appendChild(history);
+
+    var actions = el(document, 'div', 'prefs');
+    var reviewButton = el(document, 'button', 'button', 'Revisar esta proposta');
+    reviewButton.type = 'button';
+    reviewButton.addEventListener('click', function () {
+      openProposal(proposal.proposal_id);
+      var node = global.document.getElementById('review-detail');
+      if (node && node.scrollIntoView) {
+        node.scrollIntoView({behavior: 'smooth', block: 'start'});
+      }
+    });
+    actions.appendChild(reviewButton);
+    wrap.appendChild(actions);
+    wrap.appendChild(el(document, 'p', 'muted', payload.limitacao || ''));
+    return wrap;
+  }
+
+  function openEvidence(proposalId) {
+    var doc = global.document;
+    if (!doc) return Promise.resolve();
+    mesaStatus('Carregando evidência…');
+    return global.fetch('/api/revisao/evidencia/' + encodeURIComponent(proposalId),
+                        {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        mesaState.evidence = payload;
+        var node = doc.getElementById('mesa-evidencia');
+        clearContainer(node);
+        node.hidden = false;
+        node.appendChild(renderEvidence(doc, payload));
+        mesaStatus('');
+        if (node.scrollIntoView) node.scrollIntoView({behavior: 'smooth', block: 'start'});
+      })
+      .catch(function (error) {
+        mesaStatus('Evidência indisponível (' + error.message + ').');
+      });
+  }
+
+  function mesaSaveFilters() {
+    try {
+      if (global.localStorage) {
+        global.localStorage.setItem('radar.mesa.filtros', JSON.stringify({
+          field: mesaValue('mesa-field'),
+          conflict: mesaValue('mesa-conflict'),
+          document_state: mesaValue('mesa-document-state'),
+          has_page: mesaValue('mesa-has-page'),
+          search: mesaValue('mesa-search'),
+          min_priority: mesaValue('mesa-min')
+        }));
+      }
+    } catch (error) { /* armazenamento indisponível não quebra a mesa */ }
+  }
+
+  function mesaRestoreFilters() {
+    var doc = global.document;
+    if (!doc) return;
+    var raw = null;
+    try {
+      raw = global.localStorage && global.localStorage.getItem('radar.mesa.filtros');
+    } catch (error) { raw = null; }
+    if (!raw) return;
+    var saved;
+    try { saved = JSON.parse(raw); } catch (error) { return; }
+    [['mesa-field', 'field'], ['mesa-conflict', 'conflict'],
+     ['mesa-document-state', 'document_state'], ['mesa-has-page', 'has_page'],
+     ['mesa-search', 'search'], ['mesa-min', 'min_priority']].forEach(function (pair) {
+      var node = doc.getElementById(pair[0]);
+      if (node && saved[pair[1]]) node.value = saved[pair[1]];
+    });
+  }
+
+  function mesaSaveSessionId(loteId) {
+    try {
+      if (global.localStorage) {
+        if (loteId) global.localStorage.setItem('radar.mesa.lote', loteId);
+        else global.localStorage.removeItem('radar.mesa.lote');
+      }
+    } catch (error) { /* armazenamento indisponível não quebra a mesa */ }
+  }
+
+  function restoreMesaSession() {
+    var doc = global.document;
+    var loteId = null;
+    try {
+      loteId = global.localStorage && global.localStorage.getItem('radar.mesa.lote');
+    } catch (error) { loteId = null; }
+    if (!loteId || !doc || !doc.getElementById('mesa-session')) return Promise.resolve();
+    return global.fetch('/api/revisao/lotes/' + encodeURIComponent(loteId),
+                        {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (lote) {
+        mesaState.loteId = lote.lote_id;
+        mesaState.lote = lote;
+        var node = doc.getElementById('mesa-session');
+        clearContainer(node);
+        node.hidden = false;
+        node.appendChild(renderMesaSession(doc, lote));
+        if (lote.progresso.alterados) {
+          mesaStatus('Sessão retomada: ' + lote.progresso.alterados +
+                     ' item(ns) com contexto alterado desde a abertura.');
+        } else {
+          mesaStatus('Sessão retomada do último item.');
+        }
+      })
+      .catch(function () { mesaSaveSessionId(null); });
+  }
+
+  function renderMesaSession(document, lote) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    var bar = el(document, 'div', 'mesa__session');
+    bar.appendChild(el(document, 'strong', '', 'Sessão de revisão'));
+    bar.appendChild(el(document, 'span', 'mesa__meta',
+      'estado: ' + lote.state + ' · ' + lote.progresso.decididos + '/' +
+      lote.progresso.total + ' decidido(s)' +
+      (lote.progresso.alterados
+        ? ' · ' + lote.progresso.alterados + ' alterado(s)' : '')));
+    [['pausar', 'Pausar'], ['retomar', 'Retomar'], ['anterior', 'Anterior'],
+     ['proximo', 'Próximo'], ['concluir', 'Concluir']].forEach(function (pair) {
+      var button = el(document, 'button', 'button button--ghost', pair[1]);
+      button.type = 'button';
+      button.addEventListener('click', function () { mesaBatchStep(pair[0]); });
+      bar.appendChild(button);
+    });
+    wrap.appendChild(bar);
+
+    var item = lote.item_atual;
+    if (!item) {
+      wrap.appendChild(el(document, 'p', 'muted', 'Sessão sem item atual.'));
+      return wrap;
+    }
+    var card = el(document, 'article', 'study-disc');
+    card.appendChild(el(document, 'h4', 'study-disc__title',
+      item.field_name + ' = ' + String(item.value)));
+    var stateLine = el(document, 'p', 'prep__basis');
+    stateLine.appendChild(el(document, 'span', 'mesa__badge mesa__badge--' +
+      (PROPOSAL_STATE_VARIANT[item.state] || 'candidato'), item.state));
+    stateLine.appendChild(el(document, 'span', '', ' · ' + shortId(item.contest_id) +
+      ' · posição ' + item.position + ' de ' + lote.progresso.total));
+    card.appendChild(stateLine);
+    if (item.alterado) {
+      card.appendChild(el(document, 'p', 'mesa__badge mesa__badge--alterado',
+        'Evidência mudou desde a abertura da sessão: reavalie antes de decidir.'));
+    }
+    var openButton = el(document, 'button', 'button button--ghost', 'Ver evidência');
+    openButton.type = 'button';
+    openButton.addEventListener('click', function () { openEvidence(item.proposal_id); });
+    card.appendChild(openButton);
+
+    if (!item.alterado) {
+      var form = el(document, 'div', 'prefs');
+      var reason = el(document, 'input', '');
+      reason.type = 'text';
+      reason.placeholder = 'Justificativa (obrigatória)';
+      reason.id = 'mesa-reason';
+      form.appendChild(reason);
+      var valueInput = el(document, 'input', '');
+      valueInput.type = 'text';
+      valueInput.placeholder = 'Valor corrigido (só para corrigir)';
+      valueInput.id = 'mesa-value';
+      form.appendChild(valueInput);
+      card.appendChild(form);
+      var actions = el(document, 'div', 'prefs');
+      [['validado', 'Confirmar'], ['rejeitado', 'Rejeitar'],
+       ['ambiguo', 'Marcar ambíguo'], ['adiado', 'Adiar'],
+       ['nova_extracao', 'Nova extração'], ['reaberto', 'Reabrir'],
+       ['corrigido', 'Corrigir']].forEach(function (pair) {
+        var button = el(document, 'button', 'button button--ghost', pair[1]);
+        button.type = 'button';
+        button.addEventListener('click', function () { mesaDecide(pair[0]); });
+        actions.appendChild(button);
+      });
+      card.appendChild(actions);
+    } else {
+      card.appendChild(el(document, 'p', 'muted',
+        'Ação bloqueada até a reavaliação: a evidência atual difere da que você viu.'));
+    }
+    wrap.appendChild(card);
+    wrap.appendChild(el(document, 'p', 'muted',
+      'Decidir aqui registra a decisão na fila oficial de revisão, com a sessão e a ' +
+      'impressão da evidência. Nada é aprovado em massa.'));
+    return wrap;
+  }
+
+  function openMesaSession() {
+    var doc = global.document;
+    if (!doc) return Promise.resolve();
+    mesaStatus('Abrindo sessão…');
+    return studyPost('/api/revisao/lotes', {
+      created_by: reviewReviewer(), size: mesaState.limit, origin: 'interface',
+      filters: mesaFilters()
+    }).then(function (lote) {
+      mesaState.loteId = lote.lote_id;
+      mesaState.lote = lote;
+      mesaSaveSessionId(lote.lote_id);
+      var node = doc.getElementById('mesa-session');
+      clearContainer(node);
+      node.hidden = false;
+      node.appendChild(renderMesaSession(doc, lote));
+      mesaStatus('Sessão aberta com ' + lote.progresso.total + ' item(ns).');
+    }).catch(function (error) {
+      mesaStatus('Falha ao abrir sessão: ' + error.message);
+    });
+  }
+
+  function mesaBatchStep(action) {
+    var doc = global.document;
+    if (!mesaState.loteId) return Promise.resolve();
+    return studyPost('/api/revisao/lotes/' + encodeURIComponent(mesaState.loteId),
+                     {action: action})
+      .then(function (lote) {
+        mesaState.lote = lote;
+        var node = doc.getElementById('mesa-session');
+        clearContainer(node);
+        node.appendChild(renderMesaSession(doc, lote));
+        mesaStatus('Sessão: ' + lote.state + '.');
+      })
+      .catch(function (error) { mesaStatus('Falha na sessão: ' + error.message); });
+  }
+
+  function mesaDecide(decision) {
+    var doc = global.document;
+    var item = mesaState.lote && mesaState.lote.item_atual;
+    if (!item) return;
+    var reasonNode = doc.getElementById('mesa-reason');
+    var reason = reasonNode && reasonNode.value ? reasonNode.value.trim() : '';
+    if (!reason) {
+      mesaStatus('Justificativa obrigatória para registrar a decisão.');
+      return;
+    }
+    var body = {decision: decision, reviewer: reviewReviewer(), reason: reason,
+                origin: 'interface', lote_id: mesaState.loteId,
+                evidence_sha256: item.evidence_sha256};
+    if (decision === 'corrigido') {
+      var valueNode = doc.getElementById('mesa-value');
+      var raw = valueNode && valueNode.value ? valueNode.value.trim() : '';
+      if (!raw) {
+        mesaStatus('Informe o valor corrigido.');
+        return;
+      }
+      try { body.value = JSON.parse(raw); } catch (error) { body.value = raw; }
+    }
+    mesaStatus('Registrando decisão…');
+    studyPost('/api/revisao/proposta/' + encodeURIComponent(item.proposal_id), body)
+      .then(function (result) {
+        return mesaBatchStep('proximo').then(fetchMesa).then(function () {
+          mesaStatus(result.duplicada ? 'Decisão já registrada (idempotente).'
+                                      : 'Decisão registrada.');
+        });
+      })
+      .catch(function (error) { mesaStatus('Falha: ' + error.message); });
+  }
+
+  function renderNominais(document, payload) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    wrap.appendChild(el(document, 'p', 'prep__basis',
+      payload.total + ' documento(s) nominal(is) · ' +
+      Object.keys(payload.por_estado || {}).map(function (key) {
+        return key + ': ' + payload.por_estado[key];
+      }).join(' · ')));
+    var table = el(document, 'table', 'mesa__table');
+    var head = el(document, 'tr');
+    ['Documento', 'Concurso', 'Tipo', 'Fonte', 'Identificação', 'Acesso',
+     'Armazenamento', 'Estado', 'Próxima ação']
+      .forEach(function (label) { head.appendChild(el(document, 'th', '', label)); });
+    var thead = el(document, 'thead');
+    thead.appendChild(head);
+    table.appendChild(thead);
+    var tbody = el(document, 'tbody');
+    (payload.itens || []).forEach(function (item) {
+      var row = el(document, 'tr');
+      var titleCell = el(document, 'td');
+      titleCell.appendChild(el(document, 'span', '', item.title));
+      if (isHttpsUrl(item.official_url)) {
+        var link = el(document, 'a', 'link', ' abrir');
+        link.href = item.official_url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        titleCell.appendChild(link);
+      }
+      row.appendChild(titleCell);
+      row.appendChild(el(document, 'td', '', item.contest_title || shortId(item.contest_id)));
+      row.appendChild(el(document, 'td', '', item.tipo_documental || '—'));
+      row.appendChild(el(document, 'td', '', item.source_id || 'fora do catálogo'));
+      row.appendChild(el(document, 'td', 'mesa__meta', item.identificacao || '—'));
+      row.appendChild(el(document, 'td', 'mesa__meta', item.acesso || '—'));
+      row.appendChild(el(document, 'td', 'mesa__meta',
+        (item.armazenamento || '—') + ' · ' + (item.blocos || 0) + ' bloco(s)'));
+      row.appendChild(el(document, 'td', 'mesa__meta', item.estado));
+      row.appendChild(el(document, 'td', 'mesa__meta', item.proxima_acao));
+      tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    var scroll = el(document, 'div', 'mesa__scroll');
+    scroll.appendChild(table);
+    wrap.appendChild(scroll);
+    wrap.appendChild(el(document, 'p', 'muted', payload.limitacao || ''));
+    return wrap;
+  }
+
+  function fetchNominais() {
+    var doc = global.document;
+    if (!doc || !doc.getElementById('nominais-panel')) return Promise.resolve();
+    var status = doc.getElementById('nominais-status');
+    if (status) status.textContent = 'Atualizando…';
+    return global.fetch('/api/documentos/nominais?limit=200',
+                        {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        var node = doc.getElementById('nominais-panel');
+        clearContainer(node);
+        node.appendChild(renderNominais(doc, payload));
+        if (status) status.textContent = '';
+      })
+      .catch(function (error) {
+        if (status) status.textContent = 'Indisponível (' + error.message + ').';
+      });
+  }
+
+  function renderTimeline(document, payload) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    wrap.appendChild(el(document, 'p', 'prep__basis',
+      'De ' + (payload.referencia.desde || '').slice(0, 19).replace('T', ' ') +
+      ' até ' + (payload.referencia.ate || '').slice(0, 19).replace('T', ' ')));
+    var stats = el(document, 'ul', 'study__revisions');
+    Object.keys(payload.novos || {}).forEach(function (key) {
+      stats.appendChild(el(document, 'li', 'study__revision',
+        key + ' novos: ' + payload.novos[key] +
+        ' (antes: ' + (payload.snapshot_anterior || {})[key] + ')'));
+    });
+    wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Desde a referência'));
+    wrap.appendChild(stats);
+    if (payload.ciclos && payload.ciclos.length) {
+      var cycles = el(document, 'ul', 'study__revisions');
+      payload.ciclos.forEach(function (cycle) {
+        cycles.appendChild(el(document, 'li', 'study__revision',
+          (cycle.started_at || '').slice(0, 19).replace('T', ' ') + ' · ' +
+          cycle.state + ' · ' + cycle.documents_new + ' documento(s) novo(s) · ' +
+          cycle.versions_new + ' versão(ões)'));
+      });
+      wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Ciclos do agendador'));
+      wrap.appendChild(cycles);
+    }
+    if (payload.documentos_descobertos && payload.documentos_descobertos.length) {
+      var docs = el(document, 'ul', 'study__revisions');
+      var mostrados = Math.min(20, payload.documentos_descobertos.length);
+      docs.appendChild(el(document, 'li', 'mesa__meta',
+        'mostrando ' + mostrados + ' de ' + payload.documentos_descobertos.length +
+        ' documento(s) descoberto(s)'));
+      payload.documentos_descobertos.slice(0, 20).forEach(function (doc) {
+        docs.appendChild(el(document, 'li', 'study__revision',
+          (doc.discovered_at || '').slice(0, 19).replace('T', ' ') + ' · ' +
+          doc.atribuicao + ' · ' + (doc.tipo_documental || 'outro') + ' · ' +
+          (doc.title || '')));
+      });
+      wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Documentos descobertos'));
+      wrap.appendChild(docs);
+    }
+    if (payload.falhas_de_fonte && payload.falhas_de_fonte.length) {
+      var failures = el(document, 'ul', 'study__revisions');
+      payload.falhas_de_fonte.forEach(function (failure) {
+        failures.appendChild(el(document, 'li', 'study__revision',
+          failure.source_url + ' · ' + (failure.error_code || 'falha')));
+      });
+      wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Falhas de fonte'));
+      wrap.appendChild(failures);
+    }
+    wrap.appendChild(el(document, 'p', 'muted', payload.limitacao || ''));
+    return wrap;
+  }
+
+  function fetchTimeline() {
+    var doc = global.document;
+    if (!doc || !doc.getElementById('timeline-panel')) return Promise.resolve();
+    var status = doc.getElementById('timeline-status');
+    var since = mesaValue('timeline-since');
+    if (status) status.textContent = 'Atualizando…';
+    var url = '/api/linha-do-tempo' + (since ? '?since=' + encodeURIComponent(since) : '');
+    return global.fetch(url, {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        var node = doc.getElementById('timeline-panel');
+        clearContainer(node);
+        node.appendChild(renderTimeline(doc, payload));
+        if (status) status.textContent = '';
+      })
+      .catch(function (error) {
+        if (status) status.textContent = 'Indisponível (' + error.message + ').';
+      });
   }
 
   var Radar = {
@@ -3574,6 +4470,21 @@
     renderDecisive: renderDecisive,
     renderConflicts: renderVersionConflicts,
     fetchOfficialCoverage: fetchOfficialCoverage,
+    renderMesa: renderMesa,
+    fetchMesa: fetchMesa,
+    renderDossier: renderDossier,
+    openDossier: openDossier,
+    renderEvidence: renderEvidence,
+    openEvidence: openEvidence,
+    renderMesaSession: renderMesaSession,
+    renderNominais: renderNominais,
+    fetchNominais: fetchNominais,
+    renderTimeline: renderTimeline,
+    fetchTimeline: fetchTimeline,
+    mesaFilters: mesaFilters,
+    mesaSaveFilters: mesaSaveFilters,
+    mesaRestoreFilters: mesaRestoreFilters,
+    restoreMesaSession: restoreMesaSession,
     fetchPipeline: fetchPipeline,
     renderDuplicates: renderDuplicates,
     fetchDuplicates: fetchDuplicates,

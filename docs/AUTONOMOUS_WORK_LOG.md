@@ -487,3 +487,15 @@ Comandos de retomada, na raiz do projeto: `git status --short --branch`; `python
 - **Transparencia**: o ciclo agendado do Windows (`Radar de Concursos - Ciclo`, 6 h) rodou durante a fase e importou 97 documentos em 3 certames; o piloto importou 4 em 2. No segundo ciclo, 35 documentos nominais foram registrados so como metadado (guarda ativa). O relatorio separa as origens.
 - **Incidente registrado**: uma lista nominal de 106 paginas foi baixada porque a FGV a rotulou "Retificacao"; guarda por titulo passou a impedir novas aquisicoes/processamentos, e `documentos-nominais` lista os 206 documentos do tipo para decisao humana (nada apagado).
 - **Testes**: **1481 testes, OK** (47 novos; 1 pulado quando ha motor de OCR). Schema v18 inalterado, `integrity ok`, FK vazia, contrato v1 intacto.
+
+### Fase 34 — Mesa de revisao, dossies e decisoes auditaveis (2026-10-17)
+
+- **Diagnostico**: 6.199 propostas em **273 grupos** (concurso x cargo/rotulo), 0 revisoes, 0 valores vigentes, 191 documentos nominais, 24 conflitos entre versoes, 950 documentos.
+- **Oportunidades** (`radar/opportunities.py`): agrupamento por concurso e cargo (ou rotulo nao reconciliado), estado de campo honesto (inclui `multiplo_por_cargo`), prioridade reutilizada de `review._priority` com motivos, proxima acao.
+- **Dossie e evidencia**: documentos com versoes/paginas, campos com todas as evidencias, lacunas declaradas, conflitos com total; comparacao com contexto antes/depois, origem do conteudo e confianca estrutural apenas quando a evidencia pertence ao quadro reconstruido.
+- **Sessao retomavel**: migracao **v19** (`snapshot_sha256`, `scope_snapshot`); item alterado por evidencia ou por proposta nova no escopo; decisao bloqueada ate reavaliacao; lote anterior a v19 exige reabertura; chave de `localStorage` separada da fila antiga.
+- **Nominais** (`radar/nominal_triage.py`): 191 documentos com quatro eixos (identificacao, natureza, acesso, armazenamento), sem download e sem conteudo pessoal; 38 propostas de documentos nominais passam a ter trecho/contexto redigidos na mesa, na fila e na evidencia.
+- **Linha do tempo** (`radar/timeline.py`): snapshot anterior, ciclos, atribuicao por janela (inclui ciclo iniciado antes da referencia) e `since` normalizado para UTC.
+- **Correcoes de honestidade**: conflito entre cargos distintos deixou de ser conflito; rotulo reconciliado compartilha escopo da identidade; "cargo nao reconciliado" nao e ambiguidade do valor; `a_divulgar` x local concreto e ambiguo.
+- **Prova real**: fluxo completo em **copia isolada** (abrir sessao, decidir, pausar, retomar, item alterado bloqueado); base real permanece com **0 revisoes e 0 valores vigentes**.
+- **Testes**: **1531 testes, OK** (50 novos; 1 pulado quando ha motor de OCR). Schema v19, `integrity ok`, FK vazia, contrato v1 intacto.

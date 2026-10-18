@@ -192,6 +192,20 @@ A cobertura é medida em **dois denominadores**: concursos com qualquer document
 
 API `GET /api/cobertura/estados`, `/api/campos-decisivos`, `/api/conflitos`, `/api/editais-faltantes`; CLI `cobertura-estados`, `editais-faltantes`, `aquisicao-planejar`, `aquisicao-executar`, `campos-decisivos`, `conflitos-versao`, `documentos-nominais`. Ver [`docs/superpowers/specs/2026-10-17-cobertura-oficial-campos-decisivos-design.md`](docs/superpowers/specs/2026-10-17-cobertura-oficial-campos-decisivos-design.md).
 
+## Mesa de revisão
+
+A **Mesa de revisão** agrupa o trabalho por **oportunidade** (concurso × cargo), não por proposta solta: 6.199 propostas viram **273 grupos**. Cada linha mostra concurso, cargo (reconciliado ou rótulo do documento), estado documental, estado de até quatro campos decisivos, pendentes, conflitos, presença de evidência por página e próxima ação. Abrir o concurso mostra o **dossiê**: documentos com versões e páginas, todos os campos com todas as evidências (documento, versão, página, trecho, hash), lacunas declaradas e conflitos. A **comparação de evidências** traz o contexto antes/depois do trecho, a origem do conteúdo (extração, tabela, reconstrução regional, cronograma, OCR) e o histórico de decisões.
+
+Estados de campo são explícitos e vêm do modelo existente: `confirmado`, `corrigido`, `em_conflito`, `ambiguo`, `candidato`, `multiplo_por_cargo` (cargos diferentes não são divergência), `rejeitado` (só quando todas as propostas foram rejeitadas) e `nao_extraido`. "Cargo não reconciliado" não é ambiguidade do valor.
+
+**Sessões** têm progresso real, pausa/retomada e restauração após recarregar. Cada item guarda a impressão da evidência e o conjunto de propostas do escopo no momento da abertura: se a evidência mudou ou surgiu proposta nova para o mesmo campo, o item é marcado **alterado** e as ações são bloqueadas até reavaliação. Decidir continua sendo o fluxo append-only de `revisoes_campo`, com autor, justificativa, decisão anterior e hash — nada é aprovado em massa e nada é confirmado ao abrir.
+
+**Documentos nominais** (listas de nomes, inscrições, notas) têm triagem própria com quatro eixos separados — identificação, natureza, acesso e armazenamento — sem baixar nada para exibir a fila e **sem reproduzir trecho ou contexto** de dados pessoais na mesa, na fila ou na comparação de evidências.
+
+A **linha do tempo** mostra o que o ciclo agendado mudou desde uma referência, usando as tabelas do monitoramento (sem contabilidade paralela): snapshot anterior, ciclos, documentos descobertos, versões, propostas e falhas. Atribuição a ciclo é por janela de tempo, e `since` é normalizado para UTC.
+
+API `GET /api/oportunidades`, `/api/oportunidades/<id>`, `/api/revisao/evidencia/<id>`, `/api/documentos/nominais`, `/api/linha-do-tempo`; CLI `oportunidades`, `oportunidade`, `evidencia`, `documentos-nominais`, `linha-do-tempo`. Ver [`docs/superpowers/specs/2026-10-17-mesa-revisao-dossies-design.md`](docs/superpowers/specs/2026-10-17-mesa-revisao-dossies-design.md).
+
 ## Revisão humana e confirmação
 
 A seção **Revisão humana** (`#review-panel`) transforma as propostas extraídas em uma fila de trabalho priorizada, paginada e auditável. Cada item mostra valor proposto, valor vigente, evidência literal (documento, versão, página, trecho e link), conflitos com outras propostas e os **fatores que elevaram ou reduziram a prioridade** — a pontuação é determinística e explicada, nunca opaca. Filtros: campo, estado, conflito, prioridade mínima, documento, fonte, período do documento e data da última revisão.

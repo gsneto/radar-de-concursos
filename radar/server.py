@@ -22,7 +22,7 @@ from uuid import UUID
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse, urlsplit
+from urllib.parse import parse_qs, unquote, urlparse, urlsplit
 
 from radar.document_store import get_competition_details, list_competition_identities, monitoring_status
 from radar.storage import list_records
@@ -281,7 +281,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         query = parse_qs(parts.query)
         allowed = {"limit", "offset", "state", "contest_id", "role_id", "field",
                    "document_id", "source", "conflict", "min_priority", "since", "until",
-                   "reviewed_since", "reviewed_until"}
+                   "reviewed_since", "reviewed_until", "search"}
         if set(query) - allowed:
             self._bad_request("parâmetros inválidos")
             return
@@ -313,7 +313,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             conflict=conflict, min_priority=min_priority,
             since=query.get("since", [None])[0], until=query.get("until", [None])[0],
             reviewed_since=query.get("reviewed_since", [None])[0],
-            reviewed_until=query.get("reviewed_until", [None])[0])
+            reviewed_until=query.get("reviewed_until", [None])[0],
+            search=(query.get("search") or [None])[0])
 
     def _serve_media(self, media_id):
         """Serve a imagem do flashcard com `Content-Type` fixo (nunca inferido do cliente)."""
@@ -553,6 +554,94 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 return
             from radar import table_continuity
             self._serve_study(table_continuity.continuity_report_all)
+        elif path == "/api/oportunidades":
+            from radar import coverage_states
+            query = parse_qs(parts.query)
+            allowed = {"limit", "offset", "field", "conflict", "document_state", "has_page",
+                       "search", "min_priority", "contest_id"}
+            if set(query) - allowed:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["50"])[0])
+                offset = int(query.get("offset", ["0"])[0])
+                min_priority = (int(query["min_priority"][0])
+                                if "min_priority" in query else None)
+            except ValueError:
+                self._bad_request("parâmetros inválidos")
+                return
+            def _bool(name):
+                value = query.get(name, [None])[0]
+                if value is None or value == "":
+                    return None
+                if value in ("1", "true", "yes"):
+                    return True
+                if value in ("0", "false", "no"):
+                    return False
+                raise ValueError(f"{name} inválido")
+            try:
+                conflict = _bool("conflict")
+                has_page = _bool("has_page")
+            except ValueError as error:
+                self._bad_request(str(error))
+                return
+            document_state = query.get("document_state", [None])[0]
+            if document_state and document_state not in coverage_states.STATE_ORDER:
+                self._bad_request("estado documental inválido")
+                return
+            from radar import opportunities
+            self._serve_study(opportunities.opportunity_list, limit=limit, offset=offset,
+                              field=query.get("field", [None])[0], conflict=conflict,
+                              document_state=document_state,
+                              has_page=has_page, search=query.get("search", [None])[0],
+                              min_priority=min_priority,
+                              contest_id=query.get("contest_id", [None])[0])
+        elif path == "/api/documentos/nominais":
+            query = parse_qs(parts.query)
+            if set(query) - {"limit", "offset"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["200"])[0])
+                offset = int(query.get("offset", ["0"])[0])
+            except ValueError:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import nominal_triage
+            self._serve_study(nominal_triage.nominal_triage, limit=limit, offset=offset)
+        elif path == "/api/linha-do-tempo":
+            query = parse_qs(parts.query)
+            if set(query) - {"since", "limit"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["200"])[0])
+            except ValueError:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import timeline
+            self._serve_study(timeline.timeline, since=(query.get("since") or [None])[0],
+                              limit=limit)
+        elif path.startswith("/api/revisao/evidencia/"):
+            proposal_id = unquote(path[len("/api/revisao/evidencia/"):])
+            if not proposal_id or "/" in proposal_id or parts.query:
+                self._bad_request("proposta inválida")
+                return
+            from radar import opportunities
+            self._serve_study(opportunities.proposal_evidence, proposal_id)
+        elif path.startswith("/api/oportunidades/"):
+            contest_id = unquote(path[len("/api/oportunidades/"):])
+            if not contest_id or "/" in contest_id:
+                self._bad_request("concurso inválido")
+                return
+            query = parse_qs(parts.query)
+            if set(query) - {"role_id", "scope"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import opportunities
+            self._serve_study(opportunities.opportunity_dossier, contest_id,
+                              role_id=(query.get("role_id") or [None])[0],
+                              scope=(query.get("scope") or [None])[0])
         elif path == "/api/cobertura/estados":
             query = parse_qs(parts.query)
             if set(query) - {"limit"}:

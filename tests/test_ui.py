@@ -257,6 +257,26 @@ class TestAppStatic(unittest.TestCase):
                       "Pipeline documental"):
             self.assertIn(token, html)
 
+    def test_renders_mesa_de_revisao(self):
+        js = read(APP_PATH)
+        for token in ("renderMesa", "fetchMesa", "/api/oportunidades",
+                      "renderDossier", "openDossier", "renderEvidence", "openEvidence",
+                      "renderMesaSession", "renderNominais", "renderTimeline",
+                      "/api/documentos/nominais", "/api/linha-do-tempo",
+                      "MESA_FIELD_STATE", "mesa-panel", "mesa-dossier", "mesa-evidencia",
+                      "mesa-session"):
+            self.assertIn(token, js, "app.js deve apresentar %r" % token)
+        html = read(os.path.join(WEB, "index.html"))
+        for token in ('id="mesa-panel"', 'id="mesa-filters"', 'id="mesa-session-open"',
+                      'id="mesa-dossier"', 'id="mesa-evidencia"', 'id="mesa-session"',
+                      'id="nominais-panel"', 'id="timeline-panel"',
+                      "Mesa de revisão", "Documentos nominais", "Linha do tempo da base"):
+            self.assertIn(token, html)
+        css = read(os.path.join(WEB, "styles.css"))
+        for token in (".mesa__table", ".mesa__badge--candidato", ".mesa__badge--conflito",
+                      ".mesa__badge--confirmado"):
+            self.assertIn(token, css)
+
     def test_renders_official_coverage_and_decisive_fields(self):
         js = read(APP_PATH)
         for token in ("renderOfficialCoverage", "fetchOfficialCoverage",

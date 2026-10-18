@@ -762,3 +762,104 @@ button:focus-visible {
 .coverage__dim { display: flex; flex-wrap: wrap; gap: var(--space-2, 8px); justify-content: space-between; border-bottom: 1px solid var(--rule, #e6eae6); padding: var(--space-1, 4px) 0; }
 .coverage__dim-label { font-weight: 600; font-size: var(--text-sm, 0.85rem); }
 .coverage__dim-value { font-size: var(--text-sm, 0.85rem); color: var(--ink-soft, #333); }
+
+/* Mesa de revisão (Fase 34) — tabela compacta, foco visível, estados acessíveis. */
+.mesa__scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.mesa__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.mesa__table caption {
+  text-align: left;
+  padding: 0.4rem 0;
+  color: #4a5568;
+}
+.mesa__table th,
+.mesa__table td {
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid #e2e8f0;
+  vertical-align: top;
+}
+.mesa__table th {
+  font-weight: 600;
+  background: #f7fafc;
+  position: sticky;
+  top: 0;
+}
+.mesa__table tbody tr:focus-within {
+  outline: 2px solid #2b6cb0;
+  outline-offset: -2px;
+}
+.mesa__table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.mesa__row-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: #2b6cb0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.mesa__row-button:focus-visible {
+  outline: 2px solid #2b6cb0;
+  outline-offset: 2px;
+}
+.mesa__badge {
+  display: inline-block;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid #cbd5e0;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+/* Candidato/ambíguo nunca usam cor de confirmação. */
+.mesa__badge--candidato { background: #ebf8ff; border-color: #90cdf4; }
+.mesa__badge--ambiguo { background: #fffaf0; border-color: #f6ad55; }
+.mesa__badge--conflito { background: #fff5f5; border-color: #fc8181; }
+.mesa__badge--confirmado { background: #f0fff4; border-color: #68d391; }
+.mesa__badge--ausente { background: #f7fafc; border-color: #cbd5e0; color: #4a5568; }
+.mesa__badge--alterado { background: #fff5f5; border-color: #e53e3e; font-weight: 600; }
+.mesa__detail {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+.mesa__quote {
+  margin: 0.3rem 0;
+  padding: 0.5rem 0.7rem;
+  border-left: 3px solid #cbd5e0;
+  background: #f7fafc;
+  white-space: pre-wrap;
+}
+.mesa__quote mark {
+  background: #fefcbf;
+  padding: 0 0.1rem;
+}
+.mesa__context {
+  color: #4a5568;
+  font-size: 0.85rem;
+}
+.mesa__meta {
+  color: #4a5568;
+  font-size: 0.8rem;
+}
+.mesa__list {
+  margin: 0.2rem 0 0.6rem;
+  padding-left: 1.1rem;
+}
+.mesa__session {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #e2e8f0;
+}
