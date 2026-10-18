@@ -64,6 +64,7 @@ INDIGENOUS_LABELS = {
 
 SI_VIEW_STATES = {
     "aceito_expressamente": "explicito",
+    "nivel_minimo_sem_area": "nivel_minimo",
     "abrangido_por_categoria": "categoria_inclui_curso",
     "ambiguo": "area_correlata_interpretacao",
     "incompativel_com_requisito_explicito": "outras_formacoes",
@@ -72,6 +73,7 @@ SI_VIEW_STATES = {
 }
 SI_VIEW_LABELS = {
     "explicito": "Sistemas de Informação expressamente aceito",
+    "nivel_minimo": ("Escolaridade mínima publicada, sem exigência de curso específico"),
     "categoria_inclui_curso": "Categoria de formação inclui o curso (com evidência)",
     "area_correlata_interpretacao": "Área correlata: exige interpretação humana",
     "outras_formacoes": "Enumera outras formações (SI não citado)",

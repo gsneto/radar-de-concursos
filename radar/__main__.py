@@ -943,6 +943,20 @@ def _cmd_elegibilidade(args: argparse.Namespace) -> None:
         offset=args.offset), ensure_ascii=False, default=str))
 
 
+def _cmd_elegibilidade_pendentes(args: argparse.Namespace) -> None:
+    from radar import eligibility
+    print(json.dumps(eligibility.pending_audit(
+        args.db, contest_id=args.contest_id, cause=args.cause, limit=args.limit,
+        offset=args.offset), ensure_ascii=False, default=str))
+
+
+def _cmd_elegibilidade_revisao(args: argparse.Namespace) -> None:
+    from radar import eligibility
+    print(json.dumps(eligibility.compatibility_review(
+        args.db, profile=args.profile, limit=args.limit),
+        ensure_ascii=False, default=str))
+
+
 def _cmd_elegibilidade_destaques(args: argparse.Namespace) -> None:
     from radar import eligibility
     print(json.dumps(eligibility.highlights(
@@ -1685,6 +1699,22 @@ def build_parser() -> argparse.ArgumentParser:
     eleg.add_argument('--limit', type=int, default=50)
     eleg.add_argument('--offset', type=int, default=0)
     eleg.set_defaults(func=_cmd_elegibilidade)
+
+    eleg_pend = subparsers.add_parser('elegibilidade-pendentes',
+                                      help='auditoria dos rotulos com identidade pendente')
+    eleg_pend.add_argument('--db', required=True)
+    eleg_pend.add_argument('--contest-id')
+    eleg_pend.add_argument('--cause')
+    eleg_pend.add_argument('--limit', type=int, default=100)
+    eleg_pend.add_argument('--offset', type=int, default=0)
+    eleg_pend.set_defaults(func=_cmd_elegibilidade_pendentes)
+
+    eleg_rev = subparsers.add_parser('elegibilidade-revisao',
+                                     help='fichas dos cargos com leitura de formacao')
+    eleg_rev.add_argument('--db', required=True)
+    eleg_rev.add_argument('--profile')
+    eleg_rev.add_argument('--limit', type=int, default=50)
+    eleg_rev.set_defaults(func=_cmd_elegibilidade_revisao)
 
     eleg_high = subparsers.add_parser('elegibilidade-destaques',
                                       help='destaques por elegibilidade (com motivo)')

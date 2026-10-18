@@ -766,6 +766,35 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                               search=query.get("search", [None])[0],
                               contest_id=query.get("contest_id", [None])[0],
                               role_id=query.get("role_id", [None])[0])
+        elif path == "/api/elegibilidade/pendentes":
+            query = parse_qs(parts.query)
+            allowed = {"limit", "offset", "contest_id", "cause"}
+            if set(query) - allowed:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["100"])[0])
+                offset = int(query.get("offset", ["0"])[0])
+            except ValueError:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import eligibility
+            self._serve_study(eligibility.pending_audit, limit=limit, offset=offset,
+                              contest_id=query.get("contest_id", [None])[0],
+                              cause=query.get("cause", [None])[0])
+        elif path == "/api/elegibilidade/revisao":
+            query = parse_qs(parts.query)
+            if set(query) - {"limit", "profile"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["50"])[0])
+            except ValueError:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import eligibility
+            self._serve_study(eligibility.compatibility_review, limit=limit,
+                              profile=query.get("profile", [None])[0])
         elif path == "/api/elegibilidade/destaques":
             query = parse_qs(parts.query)
             if set(query) - {"limit", "profile"}:

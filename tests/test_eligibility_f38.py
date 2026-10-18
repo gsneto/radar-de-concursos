@@ -62,10 +62,19 @@ class EligibilityStateTest(Base):
         self.prop(version=version, field="si_compatibility",
                   value="abrangido_por_categoria",
                   quote="curso superior na área de Tecnologia da Informação, tais como "
-                        "Ciência da Computação e Sistemas de Informação")
+                        "Ciência da Computação e Engenharia da Computação")
         item = self.row()
         self.assertEqual(item["eligibility"]["estado"], "compativel_sem_vaga_indigena")
         self.assertEqual(item["si"]["estado"], "categoria_inclui_curso")
+
+    def test_nome_do_curso_no_texto_vence_categoria(self):
+        _, version = self.doc(text="Requisito do cargo.")
+        self.prop(version=version, field="si_compatibility",
+                  value="abrangido_por_categoria",
+                  quote="curso superior na área de Tecnologia da Informação, tais como "
+                        "Ciência da Computação e Sistemas de Informação")
+        item = self.row()
+        self.assertEqual(item["si"]["estado"], "explicito")
 
     def test_correlato_exige_interpretacao(self):
         _, version = self.doc(text="Requisito do cargo.")

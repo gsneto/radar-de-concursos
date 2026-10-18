@@ -220,6 +220,28 @@ Decisões de identidade são **append-only** e exigem humano: `confirmada`, `rej
 
 API `GET /api/reconciliacao`, `/api/reconciliacao/historico`, `/api/conflitos-revisao`, `/api/prazos`, `/api/documentos/nominais-destino`, `POST /api/reconciliacao`; CLI `reconciliacao`, `reconciliacao-historico`, `reconciliacao-decidir`, `reconciliacao-criar-cargo`, `conflitos-revisao`, `prazos`, `documentos-nominais-destino`. Ver [`docs/superpowers/specs/2026-10-18-reconciliacao-identidades-design.md`](docs/superpowers/specs/2026-10-18-reconciliacao-identidades-design.md).
 
+## Identidade por código e escolaridade mínima
+
+Cada código de vaga é uma **oportunidade distinta**. A matriz mostra `código`, `família` (título-base, só leitura) e `localidade` separadamente: a família **nunca** transfere requisito, vaga ou reserva, e a localidade da vaga **não** é local de prova. Quando o edital publica o mesmo título em municípios diferentes (Quadrix 3049, códigos 200–206), os registros permanecem individuais, cada um com seu código, município e vagas.
+
+A leitura de formação pendurada no rótulo só-código (`"200"`) é **juntada por código** ao cargo nomeado, dentro do mesmo concurso e só quando o código é único entre os cargos nomeados. A atribuição fica registrada (`codigo_do_cargo`, `escopo_do_cargo`, `unico_cargo_do_concurso`, `declaracao_do_concurso`).
+
+**Escolaridade mínima não é formação específica.** O classificador separa nível (médio/técnico/superior) de área (cláusula "em …"), e a matriz distingue:
+
+| Estado | Exemplo | Elegibilidade |
+|---|---|---|
+| expresso | cita "Sistemas de Informação" | compatível |
+| categoria | "áreas de TI … ou curso equivalente" | compatível |
+| **nível mínimo** | "curso de nível médio", "superior em qualquer área" | **compatível por nível mínimo** |
+| correlato | "área de computação" sem categoria | potencial (interpretar) |
+| específico diferente | Direito, Design, licenciatura com magistério | incompatível |
+
+Requisito de nível mínimo **não** é incompatibilidade nem ambiguidade; é candidato declarado como tal. Incompatibilidade explícita vence leitura concorrente, aceitação explícita vence ambiguidade, e **decisão humana `validado`/`corrigido` não é sobrescrita** pela releitura do texto (o valor armazenado continua visível na ficha).
+
+`GET /api/elegibilidade/pendentes` (`elegibilidade-pendentes`) audita os rótulos pendentes por causa — `aguarda_decisao_humana`, `duplicata_de_identidade`, `sem_cargo_canonico`, `codigo_sem_nome` — e `GET /api/elegibilidade/revisao` (`elegibilidade-revisao`) monta as fichas com valor armazenado, leitura atual, nível, área, localidade e evidência.
+
+Ver [`docs/superpowers/specs/2026-10-18-identidade-cargo-escolaridade-design.md`](docs/superpowers/specs/2026-10-18-identidade-cargo-escolaridade-design.md).
+
 ## Elegibilidade por cargo e reserva indígena
 
 A **Matriz de elegibilidade** (`#eleg-panel`, `GET /api/elegibilidade`, CLI `elegibilidade`) responde, **por cargo**, se o requisito formal aceita o Bacharelado em Sistemas de Informação e se existe vaga indígena para aquele cargo. Seis estados exclusivos, com precedência: `incompativel_por_requisito`, `compativel_com_vaga_indigena_cargo`, `compativel_sem_vaga_indigena`, `compativel_por_interpretacao`, `identidade_pendente` e `informacao_insuficiente`.

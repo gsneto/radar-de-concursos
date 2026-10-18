@@ -3544,6 +3544,15 @@
       event.preventDefault();
       fetchDeadlines();
     });
+    var pendingRefresh = doc.getElementById('eleg-pending-refresh');
+    if (pendingRefresh) pendingRefresh.addEventListener('click', fetchEligibilityPending);
+    var pendingGoto = doc.getElementById('eleg-pending-goto');
+    if (pendingGoto) pendingGoto.addEventListener('click', function () {
+      var target = document.getElementById('identidades');
+      if (target && target.scrollIntoView) target.scrollIntoView({block: 'start'});
+    });
+    var reviewRefresh = doc.getElementById('eleg-review-refresh');
+    if (reviewRefresh) reviewRefresh.addEventListener('click', fetchEligibilityReview);
     var elegForm = doc.getElementById('eleg-filters');
     if (elegForm) elegForm.addEventListener('submit', function (event) {
       event.preventDefault();
@@ -3594,6 +3603,8 @@
     fetchPortfolio();
     fetchEligibility();
     fetchEligibilityHighlights();
+    fetchEligibilityPending();
+    fetchEligibilityReview();
     restoreMesaSession();
     fetchDuplicates();
     restoreBatch();
@@ -4658,6 +4669,7 @@
   var ELEG_VARIANT = {
     compativel_com_vaga_indigena_cargo: 'confirmado',
     compativel_sem_vaga_indigena: 'confirmado',
+    compativel_por_nivel_minimo: 'candidato',
     compativel_por_interpretacao: 'candidato',
     identidade_pendente: 'candidato',
     incompativel_por_requisito: 'conflito',
@@ -4713,8 +4725,8 @@
     table.appendChild(el(document, 'caption', '',
       'Elegibilidade por cargo. Reserva do concurso não é vaga do cargo.'));
     var head = el(document, 'tr');
-    ['Concurso', 'Cargo', 'Identidade', 'Elegibilidade', 'Indígena', 'Vagas', 'Prazo',
-     'Próxima ação', '']
+    ['Concurso', 'Código', 'Cargo', 'Localidade', 'Identidade', 'Elegibilidade',
+     'Indígena', 'Vagas', 'Prazo', 'Próxima ação', '']
       .forEach(function (label) { head.appendChild(el(document, 'th', '', label)); });
     var thead = el(document, 'thead');
     thead.appendChild(head);
@@ -4725,7 +4737,19 @@
       row.appendChild(el(document, 'td', 'mesa__meta',
         (item.contest_label || '—') + ' · ' + String(item.contest_id).slice(0, 8)));
       row.appendChild(el(document, 'td', 'mesa__meta',
-        item.role_name || (item.scope ? item.scope : 'concurso')));
+        (item.cargo && item.cargo.codigo) ? item.cargo.codigo : '—'));
+      var roleCell = el(document, 'td', 'mesa__meta',
+        (item.cargo && item.cargo.familia) || item.role_name ||
+        (item.scope ? item.scope : 'concurso'));
+      if (item.si && item.si.educacao && item.si.educacao.kind) {
+        roleCell.appendChild(el(document, 'div', 'mesa__meta',
+          'requisito: ' + item.si.educacao.kind +
+          (item.si.educacao.nivel ? ' · nível ' + item.si.educacao.nivel : '')));
+      }
+      row.appendChild(roleCell);
+      var locality = (item.cargo && item.cargo.localidade) || null;
+      row.appendChild(el(document, 'td', 'mesa__meta',
+        locality ? locality.valor : '—'));
       row.appendChild(el(document, 'td', 'mesa__meta',
         item.identity === 'reconciliado' ? 'reconciliada' : 'pendente'));
       var stateCell = el(document, 'td');
@@ -4831,6 +4855,123 @@
       })
       .catch(function (error) {
         triagemStatus('eleg-highlights-status', 'Indisponível (' + error.message + ').');
+      });
+  }
+
+  // --- Pendências de identidade e revisão de compatibilidade (Fase 39) ---
+
+  function fetchEligibilityPending() {
+    var doc = global.document;
+    if (!doc || !doc.getElementById('eleg-pending-panel')) return Promise.resolve();
+    triagemStatus('eleg-pending-status', 'Atualizando…');
+    return global.fetch('/api/elegibilidade/pendentes?limit=100',
+                        {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        var node = doc.getElementById('eleg-pending-panel');
+        clearContainer(node);
+        var wrap = el(doc, 'div', 'coverage__inner');
+        wrap.appendChild(el(doc, 'p', 'prep__basis',
+          payload.total + ' rótulo(s) pendente(s) · ' +
+          Object.keys(payload.por_causa || {}).map(function (key) {
+            return key + ' ' + payload.por_causa[key];
+          }).join(' · ') + ' · com sugestão ' + payload.com_sugestao +
+          ' · sem sugestão ' + payload.sem_sugestao));
+        var table = el(doc, 'table', 'mesa__table');
+        var head = el(doc, 'tr');
+        ['Concurso', 'Rótulo', 'Código', 'Causa', 'Sugestão', 'Propostas']
+          .forEach(function (label) { head.appendChild(el(doc, 'th', '', label)); });
+        var thead = el(doc, 'thead');
+        thead.appendChild(head);
+        table.appendChild(thead);
+        var tbody = el(doc, 'tbody');
+        (payload.itens || []).forEach(function (item) {
+          var row = el(doc, 'tr');
+          row.appendChild(el(doc, 'td', 'mesa__meta',
+            String(item.contest_id).slice(0, 8)));
+          row.appendChild(el(doc, 'td', 'mesa__meta', item.label));
+          row.appendChild(el(doc, 'td', 'mesa__meta', item.codigo || '—'));
+          row.appendChild(el(doc, 'td', 'mesa__meta', item.cause_label));
+          row.appendChild(el(doc, 'td', 'mesa__meta', item.sugestao
+            ? (item.sugestao.role_name + ' (' + item.sugestao.pontuacao + ', ' +
+               item.sugestao.state + ')')
+            : 'sem candidato'));
+          row.appendChild(el(doc, 'td', 'num', String(item.proposals)));
+          tbody.appendChild(row);
+        });
+        table.appendChild(tbody);
+        var scroll = el(doc, 'div', 'mesa__scroll');
+        scroll.appendChild(table);
+        wrap.appendChild(scroll);
+        wrap.appendChild(el(doc, 'p', 'muted', payload.limitacao || ''));
+        node.appendChild(wrap);
+        triagemStatus('eleg-pending-status', '');
+      })
+      .catch(function (error) {
+        triagemStatus('eleg-pending-status', 'Indisponível (' + error.message + ').');
+      });
+  }
+
+  function fetchEligibilityReview() {
+    var doc = global.document;
+    if (!doc || !doc.getElementById('eleg-review-panel')) return Promise.resolve();
+    triagemStatus('eleg-review-status', 'Atualizando…');
+    return global.fetch('/api/elegibilidade/revisao?limit=50',
+                        {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        var node = doc.getElementById('eleg-review-panel');
+        clearContainer(node);
+        var wrap = el(doc, 'div', 'coverage__inner');
+        wrap.appendChild(el(doc, 'p', 'prep__basis',
+          payload.total + ' cargo(s) com leitura de formação · ' +
+          Object.keys(payload.por_si || {}).map(function (key) {
+            return key + ' ' + payload.por_si[key];
+          }).join(' · ')));
+        var list = el(doc, 'ul', 'mesa__list');
+        (payload.itens || []).forEach(function (item) {
+          var li = el(doc, 'li');
+          li.appendChild(el(doc, 'strong', '',
+            (item.cargo && item.cargo.codigo ? item.cargo.codigo + ' · ' : '') +
+            (item.role_name || item.contest_label)));
+          li.appendChild(el(doc, 'div', 'mesa__meta',
+            item.eligibility.estado_label + ' · SI ' + item.si_label +
+            ' · atribuição ' + (item.atribuicao || '—') +
+            (item.educacao ? ' · nível ' + item.educacao.nivel +
+             ' · ' + item.educacao.kind : '')));
+          if (item.localidade) {
+            li.appendChild(el(doc, 'div', 'mesa__meta',
+              'localidade: ' + item.localidade.valor + ' (' +
+              item.localidade.nota + ')'));
+          }
+          if (item.valor_armazenado && item.valor_armazenado.length) {
+            li.appendChild(el(doc, 'div', 'mesa__meta',
+              'valor armazenado: ' + item.valor_armazenado.join(', ')));
+          }
+          (item.evidencias || []).slice(0, 1).forEach(function (evidence) {
+            li.appendChild(el(doc, 'blockquote', 'mesa__quote',
+              evidence.quote || ''));
+            li.appendChild(el(doc, 'div', 'mesa__meta',
+              (evidence.document_title || '') + ' · p' + evidence.page_number));
+          });
+          list.appendChild(li);
+        });
+        if (!list.firstChild) {
+          list.appendChild(el(doc, 'li', 'muted', 'Nenhum cargo com leitura.'));
+        }
+        wrap.appendChild(list);
+        wrap.appendChild(el(doc, 'p', 'muted', payload.limitacao || ''));
+        node.appendChild(wrap);
+        triagemStatus('eleg-review-status', '');
+      })
+      .catch(function (error) {
+        triagemStatus('eleg-review-status', 'Indisponível (' + error.message + ').');
       });
   }
 

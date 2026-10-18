@@ -554,3 +554,16 @@ Comandos de retomada, na raiz do projeto: `git status --short --branch`; `python
 - **Revisao independente**: corrigidos (1) ambiguidade apagando incompatibilidade, (2) atribuicao de cargo unico disparando em concurso multi-cargo, (3) coluna extra no quadro, (4) multiplas linhas do quadro, (5) `conflito` fora do allowlist, (6) validacao de `si`/`identity`, (7) reprocessamento de documento restrito a cargo.
 - **Base**: sem migracao (v21); 7.585 -> 7.593 propostas; 0 revisoes, 0 valores, 0 reconciliacoes.
 - **Testes**: **1.702 testes, OK** (34 novos; 1 pulado quando ha motor de OCR).
+
+### Fase 39 — Identidade por codigo, escolaridade minima e elegibilidade formal (2026-10-18)
+
+- **Piloto Quadrix 3049**: quadro por codigo lido com localidade — 200-206 (sete municipios distintos), 207, 208, 407, 408-412. Cada codigo permanece oportunidade individual; familia e apenas leitura e nao transfere dado.
+- **Juncao por codigo**: leitura de formacao pendurada no rotulo so-codigo passa ao cargo nomeado quando o codigo e unico no concurso (`atribuicao=codigo_do_cargo`); codigo ambiguo ou de outro concurso nao e usado.
+- **Localidade** (`vaga_municipio`): 55 propostas novas em 6 concursos, com evidencia da linha inteira; municipio da vaga nao e local de prova.
+- **Escolaridade minima**: novo estado `nivel_minimo_sem_area` e elegibilidade `compativel_por_nivel_minimo`; nivel e area separados; "direito de dirigir" e "area de computacao" deixaram de gerar falso positivo; licenciatura com habilitacao/magisterio e formacao especifica, nao nivel minimo.
+- **Classificacao**: 159 cargos — 61 incompatíveis, 2 compativeis (expresso + categoria), 16 por nivel minimo, 1 potencial, 51 identidade pendente, 28 insuficientes. Destaques 3 -> 11 em 6 concursos, sem incompatível.
+- **Tres compativeis reavaliados**: 404 segue expresso; 407 segue categoria; **208 passou a potencial** (exige curso tecnico, nao bacharelado).
+- **Pendencias**: 166 rotulos — 89 aguardam decisao humana, 36 duplicata, 23 sem cargo canonico, 18 so-codigo; 125 com sugestao, 41 sem.
+- **Revisao independente**: corrigidos licenciatura como nivel minimo (critico), decisao humana sobrescrita, aceitacao explicita rebaixada, educacao da evidencia errada, atribuicao sem leitura, rotulos vazios.
+- **Base**: sem migracao (v21); 7.593 -> 7.648 propostas; 0 revisoes, 0 valores, 0 reconciliacoes.
+- **Testes**: **1.748 testes, OK** (46 novos; 1 pulado quando ha motor de OCR).

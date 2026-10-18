@@ -348,12 +348,51 @@
         <p class="muted">Carregando destaques de elegibilidade.</p>
       </div>
 
+      <h4 class="study__subtitle">Pendências de identidade</h4>
+      <p class="prep__basis">
+        Rótulos ainda sem decisão humana, agrupados pela causa real. Consolidar duplicatas e
+        criar identidade continuam sendo decisões na mesa de reconciliação — este painel só
+        diagnostica.
+      </p>
+      <div class="prefs">
+        <button id="eleg-pending-refresh" type="button" class="button button--ghost">
+          Atualizar pendências
+        </button>
+        <button id="eleg-pending-goto" type="button" class="button button--ghost">
+          Ir para a reconciliação
+        </button>
+        <span id="eleg-pending-status" class="prefs__status" role="status"
+              aria-live="polite"></span>
+      </div>
+      <div id="eleg-pending-panel" class="coverage__panel" role="region"
+           aria-label="Pendências de identidade">
+        <p class="muted">Carregando pendências.</p>
+      </div>
+
+      <h4 class="study__subtitle">Revisão de compatibilidade</h4>
+      <p class="prep__basis">
+        Fichas dos cargos com leitura de formação: valor armazenado, leitura atual do texto,
+        nível educacional e evidência. Nada é confirmado aqui.
+      </p>
+      <div class="prefs">
+        <button id="eleg-review-refresh" type="button" class="button button--ghost">
+          Atualizar fichas
+        </button>
+        <span id="eleg-review-status" class="prefs__status" role="status"
+              aria-live="polite"></span>
+      </div>
+      <div id="eleg-review-panel" class="coverage__panel" role="region"
+           aria-label="Revisão de compatibilidade">
+        <p class="muted">Carregando fichas.</p>
+      </div>
+
       <form id="eleg-filters" class="prefs">
         <label class="prefs__field">Compatibilidade
           <select id="eleg-state">
             <option value="">Todas</option>
             <option value="compativel_com_vaga_indigena_cargo">Compatível + vaga indígena do cargo</option>
-            <option value="compativel_sem_vaga_indigena">Compatível</option>
+            <option value="compativel_sem_vaga_indigena">Compatível (expresso/categoria)</option>
+            <option value="compativel_por_nivel_minimo">Compatível por escolaridade mínima</option>
             <option value="compativel_por_interpretacao">Potencial (interpretar)</option>
             <option value="identidade_pendente">Identidade pendente</option>
             <option value="incompativel_por_requisito">Incompatível por requisito</option>

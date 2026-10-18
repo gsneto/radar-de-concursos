@@ -31,14 +31,16 @@ def _norm(text) -> str:
 # --- Compatibilidade com Sistemas de Informação -----------------------------
 
 SI_STATES = ("aceito_expressamente", "abrangido_por_categoria",
-             "incompativel_com_requisito_explicito", "ambiguo",
-             "nao_extraido", "nao_informado")
+             "incompativel_com_requisito_explicito", "nivel_minimo_sem_area",
+             "ambiguo", "nao_extraido", "nao_informado")
 
 _SI_LITERAL = re.compile(r"sistemas de informa", re.I)
 # Categorias amplas que abrangem computação/TI (com marcador de abertura).
 _BROAD_CATEGORY = ("tecnologia da informacao", "area de computacao", "ciencias da computacao",
                    "ciencia da computacao", "area de informatica", "computacao")
-_OPEN_MARKERS = ("correlat", "tais como", "ou outros", "ou outras", "area de", "equivalentes",
+# Marcadores de abertura da categoria. "área de" **não** entra: "em área de computação"
+# é a própria área exigida, não uma abertura a outros cursos.
+_OPEN_MARKERS = ("correlat", "tais como", "ou outros", "ou outras", "equivalentes",
                  "ou curso de", "dentre outros")
 # Áreas claramente alheias à computação (para rejeição explícita).
 _NON_COMPUTING = ("direito", "contabilidade", "ciencias contabeis", "enfermagem", "medicina",
@@ -46,7 +48,100 @@ _NON_COMPUTING = ("direito", "contabilidade", "ciencias contabeis", "enfermagem"
                   "engenharia civil", "engenharia mecanica", "engenharia quimica", "biologia",
                   "quimica", "farmacia", "odontologia", "fisioterapia", "educacao fisica",
                   "letras", "historia", "geografia", "matematica", "fisica", "administracao",
-                  "economia", "sociologia", "comunicacao social", "biblioteconomia")
+                  "economia", "sociologia", "comunicacao social", "biblioteconomia",
+                  "design", "comunicacao visual", "producao multimidia", "gestao de negocios",
+                  "recursos humanos", "ciencias atuariais", "secretariado", "arquivologia")
+# Áreas de computação/TI além das categorias amplas (para não classificar como "outra área").
+_COMPUTING_EXTRA = ("engenharia de software", "analise de sistemas", "sistemas de informacao",
+                    "informatica", "tecnologia da informacao", "computacao",
+                    "ciencia de dados", "redes de computadores", "banco de dados",
+                    "seguranca da informacao", "processamento de dados", "engenharia da computacao",
+                    "sistemas de computacao", "desenvolvimento de sistemas",
+                    "manutencao e suporte em informatica", "tecnologia em analise")
+
+
+# Nível educacional exigido pelo requisito.
+_LEVEL_MEDIO = re.compile(r"n[íi]vel\s+m[ée]dio|ensino\s+m[ée]dio", re.I)
+_LEVEL_TECNICO = re.compile(r"curso\s+t[ée]cnico|t[ée]cnico\s+em|t[ée]cnico\s+de\s+n[íi]vel",
+                            re.I)
+_LEVEL_SUPERIOR = re.compile(
+    r"n[íi]vel\s+superior|gradua[çc][ãa]o|bacharel|licenciatura|tecn[óo]logo", re.I)
+# O requisito nomeia um curso/área específica ("em Direito", "nas áreas de ...")?
+_AREA_CLAUSE = re.compile(
+    r"(?:\bcurso(?:\s+superior)?|\bgradua[çc][ãa]o|\bbacharelado|\blicenciatura|"
+    r"\bt[ée]cnico(?:\s+de\s+n[íi]vel\s+m[ée]dio)?|\bforma[çc][ãa]o)"
+    r"[^.;]{0,40}?\bem\s+([^.;]{3,120})", re.I)
+# Qualificadores que tornam a licenciatura uma formação específica (magistério, área de
+# atuação, habilitação para disciplina), não um simples nível mínimo.
+_SPECIFIC_QUALIFIER = re.compile(
+    r"licenciatura\s+(?:plena|curta)|habilita[çc][ãa]o\s+(?:para|específica)|"
+    r"magist[ée]rio|na\s+[áa]rea\s+de\s+atua[çc][ãa]o|para\s+a\s+disciplina", re.I)
+
+
+def education_level(text) -> str:
+    """Nível educacional do requisito: ``medio``, ``tecnico``, ``superior`` ou ``indefinido``.
+
+    O nível é o piso exigido, não a área. Um requisito de nível médio não é incompatível
+    com um diploma superior por si: ele apenas não pede curso superior.
+    """
+    if not isinstance(text, str) or not text.strip():
+        return "indefinido"
+    if _LEVEL_TECNICO.search(text):
+        return "tecnico"
+    if _LEVEL_SUPERIOR.search(text):
+        return "superior"
+    if _LEVEL_MEDIO.search(text):
+        return "medio"
+    return "indefinido"
+
+
+# Cláusulas genéricas que não nomeiam área alguma.
+_GENERIC_AREA = re.compile(
+    r"qualquer\s+[áa]rea|qualquer\s+curso|\b[áa]rea\s+de\s+forma[çc][ãa]o\b|"
+    r"n[íi]vel\s+superior\s+completo", re.I)
+
+
+# Formato compacto do quadro: "Nível Superior - Direito", "Nível Médio - Técnico".
+_LEVEL_AREA = re.compile(
+    r"n[íi]vel\s+(?:superior|m[ée]dio|t[ée]cnico)\s*[-–—:]\s*([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ' .]{2,60})",
+    re.I)
+
+
+def area_clause(text) -> str | None:
+    """Trecho que nomeia a área/curso exigido, ou ``None`` se o requisito é só de nível.
+
+    "Superior em qualquer área" é nível mínimo, não área específica. A área é lida da
+    cláusula ("em Direito", "nas áreas de TI"), não do texto inteiro: sem isso, "exercício
+    do direito de dirigir" viraria exigência de Direito.
+    """
+    if not isinstance(text, str):
+        return None
+    match = _AREA_CLAUSE.search(text)
+    if not match:
+        compact = _LEVEL_AREA.search(text)
+        if compact:
+            clause = compact.group(1).strip()
+            if clause and not _GENERIC_AREA.search(clause):
+                return clause
+        return None
+    clause = match.group(1).strip()
+    if not clause or _GENERIC_AREA.search(clause):
+        return None
+    return clause
+
+
+def names_specific_area(text) -> bool:
+    """O requisito nomeia curso/área específica (não apenas o nível)?"""
+    if not isinstance(text, str):
+        return False
+    if _SPECIFIC_QUALIFIER.search(text) and re.search(r"licenciatura", text, re.I):
+        return True
+    if area_clause(text) is not None:
+        return True
+    # Área de computação/TI nomeada no requisito também é formação, não só nível.
+    norm = _norm(text)
+    return any(tok in norm for tok in _BROAD_CATEGORY) or \
+        any(tok in norm for tok in _COMPUTING_EXTRA)
 
 
 def classify_si_compatibility(requirement_text) -> tuple[str, str]:
@@ -54,16 +149,44 @@ def classify_si_compatibility(requirement_text) -> tuple[str, str]:
     if not isinstance(requirement_text, str) or not requirement_text.strip():
         return "nao_informado", "sem texto de requisitos"
     norm = _norm(requirement_text)
+    level = education_level(requirement_text)
+    clause = area_clause(requirement_text)
+    clause_norm = _norm(clause) if clause else ""
     if _SI_LITERAL.search(norm):
         return "aceito_expressamente", "o edital cita 'Sistemas de Informação' nos requisitos"
     broad = [tok for tok in _BROAD_CATEGORY if tok in norm]
+    computing = bool(broad) or any(tok in norm for tok in _COMPUTING_EXTRA)
+    other_area = bool(clause_norm) and not computing
+    # Curso técnico/médio: a categoria de TI existe, mas o nível exigido é outro. Um
+    # bacharelado não satisfaz "curso técnico em ..." sem interpretação humana.
+    if level in ("medio", "tecnico"):
+        if computing:
+            return "ambiguo", ("exige curso de nível médio/técnico em área de computação; "
+                               "o nível do requisito difere de bacharelado")
+        if clause:
+            return "incompativel_com_requisito_explicito", (
+                "curso de nível médio/técnico em área específica diferente de computação")
+        return "nivel_minimo_sem_area", (
+            "exige apenas escolaridade mínima de nível médio, sem área específica")
     if broad:
         if any(marker in norm for marker in _OPEN_MARKERS):
             return "abrangido_por_categoria", (
                 "categoria ampla de computação/TI com abertura a cursos correlatos")
         return "ambiguo", "cita área de computação/TI sem abertura explícita a correlatos"
-    if any(tok in norm for tok in _NON_COMPUTING):
-        return "incompativel_com_requisito_explicito", "requisito de área alheia à computação"
+    if computing:
+        return "ambiguo", "cita área de computação/TI sem categoria formal delimitada"
+    # Licenciatura com habilitação/magistério/área de atuação é formação específica, não
+    # nível mínimo: um bacharelado não satisfaz licença para lecionar.
+    if level == "superior" and _SPECIFIC_QUALIFIER.search(requirement_text) and \
+            re.search(r"licenciatura", requirement_text, re.I):
+        return "incompativel_com_requisito_explicito", (
+            "exige licenciatura/habilitação específica para o exercício do cargo")
+    if other_area:
+        return "incompativel_com_requisito_explicito", (
+            "requisito de área específica diferente de computação")
+    if level == "superior" and not clause:
+        return "nivel_minimo_sem_area", (
+            "exige apenas nível superior, sem área específica")
     return "ambiguo", "requisitos presentes, mas a compatibilidade não é determinável"
 
 

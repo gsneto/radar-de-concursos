@@ -23,6 +23,7 @@ Regras de contagem documentadas:
 from __future__ import annotations
 
 import json
+import re
 
 # Modalidades reconhecidas nos cabeçalhos da Quadrix (rótulos curtos em maiúsculas).
 MODALITY_TOKENS = frozenset({
@@ -91,6 +92,26 @@ def parse_quadrix_proposals(blocks: list[dict], contest_id: str, *, label_prefix
             continue
         proposals.extend(_extract_page(block, index, positions, contest_id, label_prefix, method))
     return proposals
+
+
+# Localidade da vaga: aparece logo após o total da linha, antes da carga horária
+# ("Cachoeiro de Itapemirim 40h"). É lotação/município da vaga, **não** local de prova.
+_LOCALITY = re.compile(
+    r"\s+([A-ZÀ-Þ][A-Za-zÀ-ÿ'’\-]+(?:\s+(?:de|da|do|das|dos|e|[A-ZÀ-Þ][A-Za-zÀ-ÿ'’\-]+)){0,5})"
+    r"\s+\d{1,3}\s*h\b")
+
+
+def _locality_after_row(text: str, row_end: int) -> dict | None:
+    """Município/lotação imediatamente após a linha do quadro, com offsets."""
+    window = text[row_end:row_end + 140]
+    match = _LOCALITY.match(window)
+    if match is None:
+        return None
+    value = " ".join(match.group(1).split())
+    if len(value) < 3 or len(value) > 80:
+        return None
+    return {"value": value, "start": row_end + match.start(1),
+            "end": row_end + match.end(1)}
 
 
 def _extract_page(block, index, header_positions, contest_id, label_prefix, method):
@@ -210,4 +231,18 @@ def _rows(block, index, data_tokens, has_code, width, half, modalities, indigeno
                             value_json=json.dumps(value), value_type="integer",
                             extraction_method=method, ambiguity_reason=ambiguity,
                             evidence=dict(evidence)))
+        # Município/lotação do código (opção de inscrição). A evidência abrange a linha
+        # inteira (código, cargo, valores e localidade): a localidade é daquele código,
+        # e dois códigos com o mesmo município continuam sendo registros distintos.
+        locality = _locality_after_row(text, row_end)
+        if locality:
+            local_evidence = dict(evidence, quote=text[row_start:locality["end"]],
+                                  start_offset=row_start,
+                                  end_offset=locality["end"])
+            out.append(dict(contest_id=contest_id, role_id=None,
+                            field_name="vaga_municipio",
+                            value_json=json.dumps(locality["value"]),
+                            value_type="string", extraction_method=method,
+                            ambiguity_reason=ambiguity,
+                            evidence=dict(local_evidence)))
     return out

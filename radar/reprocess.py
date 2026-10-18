@@ -75,6 +75,10 @@ def propose_for_version(conn, version_id: str) -> list[dict]:
     if role_id is None:
         from radar.document_fields import _inline_vacancy_proposals
         proposals.extend(_inline_vacancy_proposals(blocks, contest_id))
+        # Fase 39: quadro da banca Quadrix (linha por código), incluindo a localidade.
+        from radar import quadrix_tables
+        proposals.extend(quadrix_tables.parse_quadrix_proposals(
+            blocks, contest_id, label_prefix=LABEL_PREFIX))
     return proposals
 
 
