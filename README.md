@@ -220,6 +220,20 @@ Decisões de identidade são **append-only** e exigem humano: `confirmada`, `rej
 
 API `GET /api/reconciliacao`, `/api/reconciliacao/historico`, `/api/conflitos-revisao`, `/api/prazos`, `/api/documentos/nominais-destino`, `POST /api/reconciliacao`; CLI `reconciliacao`, `reconciliacao-historico`, `reconciliacao-decidir`, `reconciliacao-criar-cargo`, `conflitos-revisao`, `prazos`, `documentos-nominais-destino`. Ver [`docs/superpowers/specs/2026-10-18-reconciliacao-identidades-design.md`](docs/superpowers/specs/2026-10-18-reconciliacao-identidades-design.md).
 
+## Carteira operacional e prazos atuais
+
+A seção **Carteira de oportunidades** (`#carteira`) responde o que fazer agora, sem transformar candidato em fato. São **285 oportunidades** (concurso × cargo/rótulo) com uma **prontidão determinística**: `oportunidade_historica` (todos os prazos passaram), `identidade_cargo_pendente`, `conflito_documental_pendente`, `prazo_precisa_revalidacao`, `campos_decisivos_ausentes`, `candidatos_prontos_para_revisao`, `edital_oficial_necessario`, `documentacao_insuficiente` e `informacao_confirmada` (só com decisão humana). Cada linha mostra o motivo, a urgência, a compatibilidade com Sistemas de Informação, a reserva indígena, o local de prova e a próxima ação.
+
+A **carteira inicial** (destaques) é um subconjunto controlado: edital oficial identificado e ao menos um sinal (prazo futuro, SI expresso/categoria/correlato ou reserva indígena), no máximo dois cargos por concurso, com o motivo da inclusão. Rótulo que não é cargo fica fora.
+
+O **calendário de prazos** (`GET /api/prazos/calendario`) dá estado operacional a cada prazo: `candidato_nao_revalidado`, `revalidado_na_fonte`, `conflito_documental`, `alterado_por_retificacao`, `passado_com_evidencia`, `nao_localizado`, `data_ilegivel` e `fonte_nao_confirmada`, com urgência em `America/Recife`. **Data futura não comprova inscrição aberta**; conflito **não escolhe valor** — todos os candidatos ficam visíveis com documento, página, trecho, versão e hash; retificação que repete o valor não altera o prazo; prazo passado é preservado.
+
+**Revalidação** (`prazos-revalidar`, `POST /api/prazos/revalidacao`) verifica apenas o documento oficial já conhecido: compara o sha256 servido hoje com o da coleta e registra metadados em `revalidacoes_prazo` (append-only). `fonte_inalterada` significa "documento idêntico", **não** "prazo confirmado". O padrão é simulação sem rede; `--apply` grava somente hashes/status, nunca conteúdo, e não altera propostas.
+
+O **dossiê operacional** (`carteira-dossie`) reúne identificação, vagas (total agregado, imediatas, reserva, indígenas com âmbito do concurso), formação (requisito literal, cursos aceitos, SI por cargo), prazos (incluindo a lacuna declarada de pagamento), localização (prova e lotação separadas), conflitos, lacunas e próxima ação. Cada seção aponta para a evidência na mesa de revisão.
+
+API `GET /api/carteira`, `/api/carteira/destaques`, `/api/carteira/dossie`, `/api/prazos/calendario`, `/api/prazos/revalidacao`, `/api/prazos/revalidacao/historico`, `POST /api/prazos/revalidacao`; CLI `carteira`, `carteira-destaques`, `carteira-dossie`, `prazos-calendario`, `prazos-revalidar`, `prazos-revalidacao-historico`. Ver [`docs/superpowers/specs/2026-10-18-carteira-operacional-design.md`](docs/superpowers/specs/2026-10-18-carteira-operacional-design.md).
+
 ## Revisão humana e confirmação
 
 A seção **Revisão humana** (`#review-panel`) transforma as propostas extraídas em uma fila de trabalho priorizada, paginada e auditável. Cada item mostra valor proposto, valor vigente, evidência literal (documento, versão, página, trecho e link), conflitos com outras propostas e os **fatores que elevaram ou reduziram a prioridade** — a pontuação é determinística e explicada, nunca opaca. Filtros: campo, estado, conflito, prioridade mínima, documento, fonte, período do documento e data da última revisão.

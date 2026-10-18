@@ -932,6 +932,56 @@ def _cmd_prazos(args: argparse.Namespace) -> None:
         limit=args.limit, offset=args.offset), ensure_ascii=False, default=str))
 
 
+def _cmd_carteira(args: argparse.Namespace) -> None:
+    from radar import portfolio
+    conflito = None if args.conflito is None else args.conflito == "sim"
+    print(json.dumps(portfolio.portfolio(
+        args.db, prontidao=args.prontidao, prazo=args.prazo, si=args.si,
+        indigena=args.indigena, documental=args.documental, uf=args.uf,
+        conflito=conflito, search=args.search, contest_id=args.contest_id,
+        role_id=args.role_id, limit=args.limit, offset=args.offset),
+        ensure_ascii=False, default=str))
+
+
+def _cmd_carteira_destaques(args: argparse.Namespace) -> None:
+    from radar import portfolio
+    print(json.dumps(portfolio.portfolio_highlights(args.db, limit=args.limit),
+                     ensure_ascii=False, default=str))
+
+
+def _cmd_carteira_dossie(args: argparse.Namespace) -> None:
+    from radar import portfolio
+    print(json.dumps(portfolio.portfolio_dossier(
+        args.db, args.contest_id, role_id=args.role_id, scope=args.scope),
+        ensure_ascii=False, default=str))
+
+
+def _cmd_prazos_calendario(args: argparse.Namespace) -> None:
+    from radar import deadline_calendar
+    print(json.dumps(deadline_calendar.calendar(
+        args.db, contest_id=args.contest_id, group=args.group, state=args.state,
+        urgency=args.urgency, limit=args.limit, offset=args.offset),
+        ensure_ascii=False, default=str))
+
+
+def _cmd_prazos_revalidar(args: argparse.Namespace) -> None:
+    from radar import deadline_revalidation
+    if not args.apply:
+        print(json.dumps(deadline_revalidation.plan(args.db, limit=args.limit),
+                         ensure_ascii=False, default=str))
+        return
+    print(json.dumps(deadline_revalidation.execute(
+        args.db, limit=args.limit, apply=True, checked_by=args.checked_by),
+        ensure_ascii=False, default=str))
+
+
+def _cmd_prazos_revalidacao_historico(args: argparse.Namespace) -> None:
+    from radar import deadline_revalidation
+    print(json.dumps(deadline_revalidation.history(
+        args.db, contest_id=args.contest_id, grupo=args.group, limit=args.limit,
+        offset=args.offset), ensure_ascii=False, default=str))
+
+
 def _cmd_nominais_destino(args: argparse.Namespace) -> None:
     from radar import nominal_destination
     print(json.dumps(nominal_destination.nominal_destinations(
@@ -1577,6 +1627,64 @@ def build_parser() -> argparse.ArgumentParser:
     prazos.add_argument('--limit', type=int, default=100)
     prazos.add_argument('--offset', type=int, default=0)
     prazos.set_defaults(func=_cmd_prazos)
+
+    carteira = subparsers.add_parser('carteira', help='carteira operacional de oportunidades')
+    carteira.add_argument('--db', required=True)
+    carteira.add_argument('--prontidao')
+    carteira.add_argument('--prazo')
+    carteira.add_argument('--si')
+    carteira.add_argument('--indigena')
+    carteira.add_argument('--documental')
+    carteira.add_argument('--uf')
+    carteira.add_argument('--conflito', choices=('sim', 'nao'))
+    carteira.add_argument('--search')
+    carteira.add_argument('--contest-id')
+    carteira.add_argument('--role-id')
+    carteira.add_argument('--limit', type=int, default=50)
+    carteira.add_argument('--offset', type=int, default=0)
+    carteira.set_defaults(func=_cmd_carteira)
+
+    carteira_dest = subparsers.add_parser('carteira-destaques',
+                                          help='carteira inicial controlada (com motivo)')
+    carteira_dest.add_argument('--db', required=True)
+    carteira_dest.add_argument('--limit', type=int, default=12)
+    carteira_dest.set_defaults(func=_cmd_carteira_destaques)
+
+    carteira_dossie = subparsers.add_parser('carteira-dossie',
+                                            help='dossie operacional de uma oportunidade')
+    carteira_dossie.add_argument('--db', required=True)
+    carteira_dossie.add_argument('--contest-id', required=True)
+    carteira_dossie.add_argument('--role-id')
+    carteira_dossie.add_argument('--scope')
+    carteira_dossie.set_defaults(func=_cmd_carteira_dossie)
+
+    prazos_cal = subparsers.add_parser('prazos-calendario',
+                                       help='calendario operacional de prazos')
+    prazos_cal.add_argument('--db', required=True)
+    prazos_cal.add_argument('--contest-id')
+    prazos_cal.add_argument('--group')
+    prazos_cal.add_argument('--state')
+    prazos_cal.add_argument('--urgency')
+    prazos_cal.add_argument('--limit', type=int, default=100)
+    prazos_cal.add_argument('--offset', type=int, default=0)
+    prazos_cal.set_defaults(func=_cmd_prazos_calendario)
+
+    prazos_reval = subparsers.add_parser('prazos-revalidar',
+                                         help='verifica prazos na fonte (dry-run por padrao)')
+    prazos_reval.add_argument('--db', required=True)
+    prazos_reval.add_argument('--limit', type=int, default=5)
+    prazos_reval.add_argument('--apply', action='store_true')
+    prazos_reval.add_argument('--checked-by', default='operador local')
+    prazos_reval.set_defaults(func=_cmd_prazos_revalidar)
+
+    prazos_hist = subparsers.add_parser('prazos-revalidacao-historico',
+                                        help='historico append-only das verificacoes')
+    prazos_hist.add_argument('--db', required=True)
+    prazos_hist.add_argument('--contest-id')
+    prazos_hist.add_argument('--group')
+    prazos_hist.add_argument('--limit', type=int, default=50)
+    prazos_hist.add_argument('--offset', type=int, default=0)
+    prazos_hist.set_defaults(func=_cmd_prazos_revalidacao_historico)
 
     nom_dest = subparsers.add_parser('documentos-nominais-destino',
                                      help='proposta de destino dos nominais (simulacao)')

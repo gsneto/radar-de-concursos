@@ -622,6 +622,51 @@ def _apply_v20(conn) -> None:
                  "ON reconciliacoes_cargo(contest_id,label,reconciled_at)")
 
 
+# Fase 36: verificacao registrada de prazo contra a fonte oficial. Guarda apenas metadados
+# (hashes, status, resultado) — nunca conteudo — e e append-only: uma verificacao nova nao
+# apaga a anterior. Serve para separar "documento oficial inalterado" de "prazo confirmado".
+_V21_COLUMNS = {
+    "revalidacoes_prazo": {"id", "contest_id", "grupo", "escopo", "valor", "document_id",
+                           "version_id", "checked_at", "official_url", "http_status",
+                           "stored_sha256", "observed_sha256", "result", "note",
+                           "checked_by"},
+}
+REVALIDATION_RESULTS = ("fonte_inalterada", "fonte_alterada", "fonte_indisponivel",
+                        "sem_permissao", "sem_documento", "erro")
+
+_V21_DDL = (
+    """CREATE TABLE IF NOT EXISTS revalidacoes_prazo (
+        id TEXT PRIMARY KEY,
+        contest_id TEXT NOT NULL REFERENCES concursos_identidade(id),
+        grupo TEXT NOT NULL,
+        escopo TEXT,
+        valor TEXT,
+        document_id TEXT REFERENCES documentos(id),
+        version_id TEXT REFERENCES versoes_documento(id),
+        checked_at TEXT NOT NULL,
+        official_url TEXT,
+        http_status INTEGER,
+        stored_sha256 TEXT,
+        observed_sha256 TEXT,
+        result TEXT NOT NULL
+            CHECK(result IN ('fonte_inalterada','fonte_alterada','fonte_indisponivel',
+                             'sem_permissao','sem_documento','erro')),
+        note TEXT,
+        checked_by TEXT)""",
+    "CREATE INDEX IF NOT EXISTS idx_revalidacoes_prazo "
+    "ON revalidacoes_prazo(contest_id,grupo,escopo,checked_at)",
+)
+
+
+def _apply_v21(conn) -> None:
+    present = {row[0] for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'")}
+    if "revalidacoes_prazo" not in present:
+        conn.execute(_V21_DDL[0])
+    # Índice é garantido mesmo em base que já tinha a tabela.
+    conn.execute(_V21_DDL[1])
+
+
 def _apply_v19(conn) -> None:
     columns = {row[1] for row in conn.execute("PRAGMA table_info(lote_revisao_itens)")}
     if not columns:
@@ -785,10 +830,10 @@ _V2_COLUMNS = {
 }
 
 # Versão corrente do esquema documental (v2 base + reconciliação/hash + monitoramento + fila).
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 21
 
 # Versões que as rotas de leitura aceitam sem migrar (v2..v13 + atual).
-_READABLE_VERSIONS = (2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17,
+_READABLE_VERSIONS = (2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 20,
                        SCHEMA_VERSION)
 
 
@@ -797,7 +842,7 @@ def _validate_schema(conn, statements, columns_by_table, version_label):
         "SELECT name FROM sqlite_master WHERE type IN ('table','index')")}
     expected = set()
     for statement in statements:
-        match = re.match(r"CREATE (?:TABLE|INDEX) (\w+)", statement)
+        match = re.match(r"CREATE (?:TABLE|INDEX) (?:IF NOT EXISTS )?(\w+)", statement)
         if match:
             expected.add(match.group(1))
     if not expected.issubset(present):
@@ -1071,7 +1116,7 @@ def migrate_document_schema(db_path) -> None:
         conn.execute("BEGIN IMMEDIATE")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version not in (0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-                           19, SCHEMA_VERSION):
+                           19, 20, SCHEMA_VERSION):
             raise ValueError(f"versão de esquema não suportada: {version}")
         _v3_extra = dict(
             versoes_documento=_V2_COLUMNS["versoes_documento"] | {"comparison_sha256"},
@@ -1105,11 +1150,13 @@ def migrate_document_schema(db_path) -> None:
                 _v16_columns[_table] = _columns
             _v16_columns["lote_revisao_itens"] = _V19_COLUMNS["lote_revisao_itens"]
             _v16_columns["reconciliacoes_cargo"] = _V20_COLUMNS["reconciliacoes_cargo"]
+            _v16_columns["revalidacoes_prazo"] = _V21_COLUMNS["revalidacoes_prazo"]
             # v18/v19 são da fase corrente: garante tabela/coluna antes de validar (idempotente).
             _apply_v18(conn)
             _apply_v19(conn)
             _apply_v20(conn)
-            _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL + _V12_DDL + _V14_DDL + _V15_DDL + _V16_DDL + _V18_DDL,
+            _apply_v21(conn)
+            _validate_schema(conn, _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL + _V11_DDL + _V12_DDL + _V14_DDL + _V15_DDL + _V16_DDL + _V18_DDL + _V21_DDL,
                              _v16_columns, f"v{SCHEMA_VERSION}")
             _seed_alert_watermarks(conn)
             _apply_v10(conn)  # garante índices v10 (ex.: sessão aberta única) em base já migrada
@@ -1181,6 +1228,16 @@ def migrate_document_schema(db_path) -> None:
                     _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL
                     + _V11_DDL + _V12_DDL + _V14_DDL + _V15_DDL + _V16_DDL + _V18_DDL,
                     _v19_columns, "v19")
+            elif version == 20:
+                # v20 difere de v21 apenas na tabela de revalidacao (criada abaixo).
+                _v20_columns = dict(_v15_extra, **_V16_COLUMNS, **_V18_COLUMNS)
+                _v20_columns["lote_revisao_itens"] = _V19_COLUMNS["lote_revisao_itens"]
+                _v20_columns["reconciliacoes_cargo"] = _V20_COLUMNS["reconciliacoes_cargo"]
+                _validate_schema(
+                    conn,
+                    _DDL + _V3_DDL + _V4_DDL + _V5_DDL + _V8_DDL + _V9_DDL + _V10_DDL
+                    + _V11_DDL + _V12_DDL + _V14_DDL + _V15_DDL + _V16_DDL + _V18_DDL,
+                    _v20_columns, "v20")
             else:
                 for statement in _DDL:
                     conn.execute(statement)
@@ -1202,6 +1259,7 @@ def migrate_document_schema(db_path) -> None:
             _apply_v18(conn)
             _apply_v19(conn)
             _apply_v20(conn)
+            _apply_v21(conn)
             _seed_alert_watermarks(conn)
             conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         _ensure_alert_indexes(conn)

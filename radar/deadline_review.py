@@ -131,9 +131,14 @@ def deadline_report(db_path, *, contest_id=None, group=None, state=None,
         raise ValueError("estado temporal inválido")
     now_dt = datetime.fromisoformat(now) if isinstance(now, str) else (
         now or datetime.now(timezone.utc))
-    # Data-limite é lida no fuso local: uma data brasileira não expira três horas antes
-    # por causa da meia-noite UTC.
-    today = now_dt.astimezone().date() if now_dt.tzinfo else now_dt.date()
+    # Mesma referência local do calendário operacional: uma data brasileira não expira
+    # três horas antes por causa da meia-noite UTC.
+    try:
+        from zoneinfo import ZoneInfo
+        today = (now_dt.astimezone(ZoneInfo("America/Recife")).date()
+                 if now_dt.tzinfo else now_dt.date())
+    except Exception:  # pragma: no cover - ambiente sem base IANA
+        today = now_dt.astimezone().date() if now_dt.tzinfo else now_dt.date()
 
     with closing(connect_documents(db_path)) as conn:
         if not is_readable_schema(conn):
@@ -277,8 +282,30 @@ def deadline_report(db_path, *, contest_id=None, group=None, state=None,
                 conflict = None
                 distinct = {row["value_json"] for row in scope_rows}
                 if len(distinct) > 1:
-                    conflict = {"valores": len(distinct),
-                                "propostas": len(scope_rows)}
+                    # Divergência não escolhe vencedor: todas as leituras ficam visíveis.
+                    by_value = {}
+                    for row in scope_rows:
+                        by_value.setdefault(row["value_json"], row)
+                    conflict = {
+                        "valores": len(distinct),
+                        "propostas": len(scope_rows),
+                        "candidatos": [
+                            {
+                                "valor": (json.loads(row["value_json"])
+                                          if row["value_json"] else None),
+                                "documento": row["document_title"],
+                                "documento_id": row["document_id"],
+                                "tipo_documental": row["tipo_documental"],
+                                "publicado_em": row["published_at"],
+                                "versao": row["version_id"],
+                                "sha256": row["sha256"],
+                                "pagina": row["page_number"],
+                                "trecho": row["quote"],
+                            }
+                            for _, row in sorted(by_value.items(),
+                                                 key=lambda pair: pair[1]["proposal_id"])
+                        ],
+                    }
 
                 items.append({
                     "contest_id": cid, "grupo": group_name,
@@ -292,6 +319,8 @@ def deadline_report(db_path, *, contest_id=None, group=None, state=None,
                     "pagina": vigente["page_number"], "trecho": vigente["quote"],
                     "publicado_em": vigente["published_at"],
                     "coletado_em": vigente.get("fetched_at"),
+                    "official_url": vigente["official_url"],
+                    "issuer": vigente["issuer"],
                     "escopo": scope_ref or None, "escopo_rotulo": scope_label,
                     "retificacao": retificacao, "conflito": conflict,
                     "propostas": len(scope_rows),

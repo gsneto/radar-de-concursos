@@ -299,6 +299,115 @@
            aria-label="Comparação de evidências" aria-live="polite" hidden></div>
     </section>
 
+    <section id="carteira" class="triagem" aria-labelledby="carteira-title">
+      <h2 id="carteira-title" class="results__title">Carteira de oportunidades</h2>
+      <p class="prep__basis">
+        Visão operacional por concurso e cargo. Cada linha mostra a <strong>prontidão</strong>
+        (o que impede avaliar), a urgência do prazo, a compatibilidade com Sistemas de
+        Informação, a reserva indígena e a próxima ação. Inclusão não é aprovação: candidato
+        futuro não é inscrição aberta e ausência de informação é lacuna, não resposta negativa.
+      </p>
+
+      <h3 class="study__subtitle">Carteira inicial (destaques)</h3>
+      <p class="prep__basis">
+        Subconjunto controlado: edital oficial identificado e ao menos um sinal (prazo futuro,
+        compatibilidade com SI ou reserva indígena). No máximo dois cargos por concurso.
+      </p>
+      <div class="prefs">
+        <button id="carteira-destaques-refresh" type="button" class="button button--ghost">
+          Atualizar destaques
+        </button>
+        <span id="carteira-destaques-status" class="prefs__status" role="status"
+              aria-live="polite"></span>
+      </div>
+      <div id="carteira-destaques-panel" class="coverage__panel" role="region"
+           aria-label="Carteira inicial">
+        <p class="muted">Carregando destaques.</p>
+      </div>
+
+      <h3 class="study__subtitle">Todas as oportunidades</h3>
+      <form id="carteira-filters" class="prefs">
+        <label class="prefs__field">Prontidão
+          <select id="carteira-prontidao">
+            <option value="">Todas</option>
+            <option value="prazo_precisa_revalidacao">Prazo precisa ser revalidado</option>
+            <option value="conflito_documental_pendente">Conflito documental pendente</option>
+            <option value="identidade_cargo_pendente">Identidade do cargo pendente</option>
+            <option value="campos_decisivos_ausentes">Campos decisivos ausentes</option>
+            <option value="candidatos_prontos_para_revisao">Candidatos prontos para revisão</option>
+            <option value="edital_oficial_necessario">Edital oficial necessário</option>
+            <option value="documentacao_insuficiente">Documentação insuficiente</option>
+            <option value="oportunidade_historica">Histórica</option>
+          </select>
+        </label>
+        <label class="prefs__field">Prazo
+          <select id="carteira-prazo">
+            <option value="">Todos</option>
+            <option value="hoje">Vence hoje</option>
+            <option value="ate_7_dias">Até 7 dias</option>
+            <option value="ate_30_dias">Até 30 dias</option>
+            <option value="futuro">Futuro</option>
+            <option value="vencido">Vencido</option>
+            <option value="sem_data">Sem data</option>
+          </select>
+        </label>
+        <label class="prefs__field">Sistemas de Informação
+          <select id="carteira-si">
+            <option value="">Todos</option>
+            <option value="explicito">Aceitação expressa</option>
+            <option value="categoria_inclui_curso">Categoria formal inclui</option>
+            <option value="area_correlata_interpretacao">Área correlata (interpretar)</option>
+            <option value="outras_formacoes">Enumera outras formações</option>
+            <option value="nao_encontrado">Não encontrado</option>
+            <option value="extracao_incompleta">Extração incompleta</option>
+          </select>
+        </label>
+        <label class="prefs__field">Indígena
+          <select id="carteira-indigena">
+            <option value="">Todos</option>
+            <option value="explicito_imediato">Vaga imediata explícita</option>
+            <option value="apenas_reserva">Apenas reserva</option>
+            <option value="mencao_sem_quantidade">Menção sem quantidade</option>
+            <option value="agregado_sem_modalidade">Agregado sem modalidade</option>
+            <option value="nao_mencionado">Não mencionado</option>
+          </select>
+        </label>
+        <label class="prefs__field">Documento
+          <select id="carteira-documental">
+            <option value="">Todos</option>
+            <option value="campos_candidatos">Campos candidatos</option>
+            <option value="edital_extraido">Edital extraído</option>
+            <option value="oficial_sem_extracao">Oficial sem extração</option>
+            <option value="oficial_sem_edital">Oficial sem edital</option>
+            <option value="oficial_nao_importado">Oficial não importado</option>
+            <option value="apenas_agregador">Apenas agregador</option>
+            <option value="conflito">Conflito</option>
+          </select>
+        </label>
+        <label class="prefs__field">UF da prova
+          <input id="carteira-uf" type="text" placeholder="BA" maxlength="2">
+        </label>
+        <label class="prefs__field">Conflito
+          <select id="carteira-conflito">
+            <option value="">Todos</option>
+            <option value="sim">Com conflito</option>
+            <option value="nao">Sem conflito</option>
+          </select>
+        </label>
+        <label class="prefs__field">Busca
+          <input id="carteira-search" type="text" placeholder="concurso ou cargo">
+        </label>
+        <button type="submit" class="button">Aplicar</button>
+        <span id="carteira-status" class="prefs__status" role="status" aria-live="polite"></span>
+      </form>
+      <div id="carteira-panel" class="coverage__panel" role="region"
+           aria-label="Carteira de oportunidades">
+        <p class="muted">Carregando carteira.</p>
+      </div>
+      <div id="carteira-detail" class="coverage__panel" role="region"
+           aria-label="Dossiê operacional" aria-live="polite" hidden></div>
+    </section>
+
     <section id="identidades" class="triagem" aria-labelledby="triagem-title">
       <h2 id="triagem-title" class="results__title">Identidades, conflitos e prazos</h2>
       <p class="prep__basis">
@@ -389,14 +498,28 @@
             <option value="data_prova">Data da prova</option>
           </select>
         </label>
-        <label class="prefs__field">Situação
-          <select id="prazo-state">
+        <label class="prefs__field">Urgência
+          <select id="prazo-urgency">
             <option value="">Todas</option>
-            <option value="futuro">Futuro</option>
             <option value="hoje">Vence hoje</option>
-            <option value="expirado">Passado</option>
-            <option value="data_invalida">Data inválida</option>
+            <option value="ate_7_dias">Até 7 dias</option>
+            <option value="ate_30_dias">Até 30 dias</option>
+            <option value="futuro">Futuro</option>
+            <option value="vencido">Vencido</option>
             <option value="sem_data">Sem data</option>
+          </select>
+        </label>
+        <label class="prefs__field">Estado operacional
+          <select id="prazo-state">
+            <option value="">Todos</option>
+            <option value="revalidado_na_fonte">Revalidado na fonte</option>
+            <option value="candidato_nao_revalidado">Candidato não revalidado</option>
+            <option value="conflito_documental">Conflito documental</option>
+            <option value="alterado_por_retificacao">Alterado por retificação</option>
+            <option value="passado_com_evidencia">Passado com evidência</option>
+            <option value="nao_localizado">Não localizado</option>
+            <option value="data_ilegivel">Data ilegível</option>
+            <option value="fonte_nao_confirmada">Fonte não confirmada</option>
           </select>
         </label>
         <button type="submit" class="button">Aplicar</button>

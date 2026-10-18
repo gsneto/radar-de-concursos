@@ -241,9 +241,16 @@ def _cargo_key(item):
     """
     if item["role_id"]:
         return ("role", item["role_id"]), item["role_name"]
-    match = _LABEL.match(item["ambiguity_reason"] or "")
+    reason = item["ambiguity_reason"] or ""
+    match = _LABEL.match(reason)
     if match:
         return ("label", match.group(1).strip()), match.group(1).strip()
+    # Rótulo sem a anotação do extrator ("— motivo") continua sendo um rótulo de cargo.
+    prefix = "cargo do documento não reconciliado:"
+    if reason.startswith(prefix):
+        label = reason[len(prefix):].strip()
+        if label:
+            return ("label", label), label
     return ("sem_cargo", None), None
 
 

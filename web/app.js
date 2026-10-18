@@ -3544,6 +3544,14 @@
       event.preventDefault();
       fetchDeadlines();
     });
+    var carteiraForm = doc.getElementById('carteira-filters');
+    if (carteiraForm) carteiraForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      CARTEIRA_STATE.offset = 0;
+      fetchPortfolio();
+    });
+    var highlightsRefresh = doc.getElementById('carteira-destaques-refresh');
+    if (highlightsRefresh) highlightsRefresh.addEventListener('click', fetchHighlights);
     var dupsRefresh = doc.getElementById('dups-refresh');
     if (dupsRefresh) dupsRefresh.addEventListener('click', fetchDuplicates);
     var coverageRefresh = doc.getElementById('coverage-refresh');
@@ -3572,6 +3580,8 @@
     fetchReconciliation();
     fetchConflicts();
     fetchDeadlines();
+    fetchHighlights();
+    fetchPortfolio();
     restoreMesaSession();
     fetchDuplicates();
     restoreBatch();
@@ -4455,6 +4465,396 @@
       });
   }
 
+  // --- Carteira operacional e revalidação de prazos (Fase 36) ---
+
+  var CARTEIRA_STATE = {offset: 0, limit: 25};
+
+  function carteiraFilters() {
+    var parts = ['limit=' + CARTEIRA_STATE.limit, 'offset=' + CARTEIRA_STATE.offset];
+    var map = {
+      'carteira-prontidao': 'prontidao', 'carteira-prazo': 'prazo',
+      'carteira-si': 'si', 'carteira-indigena': 'indigena',
+      'carteira-documental': 'documental', 'carteira-conflito': 'conflito',
+      'carteira-uf': 'uf', 'carteira-search': 'search'
+    };
+    Object.keys(map).forEach(function (id) {
+      var value = triagemValue(id);
+      if (value) parts.push(map[id] + '=' + encodeURIComponent(value));
+    });
+    return parts.join('&');
+  }
+
+  function fetchPortfolio() {
+    var doc = global.document;
+    if (!doc || !doc.getElementById('carteira-panel')) return Promise.resolve();
+    triagemStatus('carteira-status', 'Atualizando…');
+    return global.fetch('/api/carteira?' + carteiraFilters(),
+                        {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        var node = doc.getElementById('carteira-panel');
+        clearContainer(node);
+        node.appendChild(renderPortfolio(doc, payload));
+        triagemStatus('carteira-status', '');
+      })
+      .catch(function (error) {
+        triagemStatus('carteira-status', 'Indisponível (' + error.message + ').');
+      });
+  }
+
+  function renderPortfolio(document, payload) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    var page = Math.floor(payload.offset / payload.limit) + 1;
+    wrap.appendChild(el(document, 'p', 'prep__basis',
+      payload.total + ' oportunidade(s) · página ' + page +
+      ' · referência ' + (payload.referencia || {}).hoje_local + ' (' +
+      (payload.referencia || {}).fuso + ') · ' +
+      Object.keys(payload.por_prontidao || {}).map(function (key) {
+        return key + ': ' + payload.por_prontidao[key];
+      }).join(' · ')));
+    if (!payload.itens.length) {
+      wrap.appendChild(el(document, 'p', 'muted', 'Nenhuma oportunidade para os filtros.'));
+      return wrap;
+    }
+    var table = el(document, 'table', 'mesa__table');
+    table.appendChild(el(document, 'caption', '',
+      'Prontidão é determinística. Candidato futuro não é inscrição aberta.'));
+    var head = el(document, 'tr');
+    ['Concurso', 'Cargo', 'Prontidão', 'Prazo mais próximo', 'SI', 'Indígena',
+     'Local de prova', 'Próxima ação', '']
+      .forEach(function (label) { head.appendChild(el(document, 'th', '', label)); });
+    var thead = el(document, 'thead');
+    thead.appendChild(head);
+    table.appendChild(thead);
+    var tbody = el(document, 'tbody');
+    payload.itens.forEach(function (item) {
+      var row = el(document, 'tr');
+      row.appendChild(el(document, 'td', 'mesa__meta',
+        (item.contest_label || '—') + ' · ' + String(item.contest_id).slice(0, 8)));
+      row.appendChild(el(document, 'td', 'mesa__meta',
+        item.role_name || (item.role_reconciliado ? 'concurso' : 'rótulo não reconciliado')));
+      var readiness = el(document, 'td');
+      readiness.appendChild(el(document, 'span', 'mesa__badge mesa__badge--' +
+        (item.prontidao.estado === 'informacao_confirmada' ? 'confirmado'
+         : item.prontidao.estado === 'conflito_documental_pendente' ? 'conflito'
+         : item.prontidao.estado === 'documentacao_insuficiente' ? 'ausente'
+         : 'candidato'), item.prontidao.estado_label));
+      var reasons = el(document, 'ul', 'mesa__list');
+      (item.prontidao.motivos || []).forEach(function (reason) {
+        reasons.appendChild(el(document, 'li', 'mesa__meta', reason));
+      });
+      readiness.appendChild(reasons);
+      row.appendChild(readiness);
+      var active = (item.prazos || []).filter(function (entry) {
+        return entry.estado_temporal === 'futuro' || entry.estado_temporal === 'hoje';
+      });
+      var deadlineCell = el(document, 'td', 'mesa__meta');
+      if (active.length) {
+        active.slice(0, 2).forEach(function (entry) {
+          deadlineCell.appendChild(el(document, 'div', '',
+            entry.grupo_label + ': ' + (entry.valor || 'conflito') +
+            (entry.dias_restantes === null ? '' : ' (' + entry.dias_restantes + 'd)')));
+        });
+      } else {
+        deadlineCell.textContent = 'sem prazo futuro';
+      }
+      row.appendChild(deadlineCell);
+      row.appendChild(el(document, 'td', 'mesa__meta',
+        item.si && item.si.estado_label ? item.si.estado_label : '—'));
+      row.appendChild(el(document, 'td', 'mesa__meta',
+        item.indigenas && item.indigenas.estado_label ? item.indigenas.estado_label : '—'));
+      var location = ((item.localizacao || {}).prova || {});
+      row.appendChild(el(document, 'td', 'mesa__meta',
+        location.text || (location.state === 'a_divulgar' ? 'a divulgar' : '—')));
+      row.appendChild(el(document, 'td', 'mesa__meta', item.proxima_acao));
+      var open = el(document, 'td');
+      var button = el(document, 'button', 'mesa__row-button', 'Abrir dossiê');
+      button.type = 'button';
+      button.addEventListener('click', function () { openPortfolioItem(item); });
+      open.appendChild(button);
+      row.appendChild(open);
+      tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    var scroll = el(document, 'div', 'mesa__scroll');
+    scroll.appendChild(table);
+    wrap.appendChild(scroll);
+    var nav = el(document, 'div', 'prefs');
+    var previous = el(document, 'button', 'button button--ghost', 'Anterior');
+    previous.type = 'button';
+    previous.disabled = payload.offset <= 0;
+    previous.addEventListener('click', function () {
+      CARTEIRA_STATE.offset = Math.max(0, CARTEIRA_STATE.offset - CARTEIRA_STATE.limit);
+      fetchPortfolio();
+    });
+    var next = el(document, 'button', 'button button--ghost', 'Próxima');
+    next.type = 'button';
+    next.disabled = !payload.has_more;
+    next.addEventListener('click', function () {
+      CARTEIRA_STATE.offset += CARTEIRA_STATE.limit;
+      fetchPortfolio();
+    });
+    nav.appendChild(previous);
+    nav.appendChild(next);
+    wrap.appendChild(nav);
+    wrap.appendChild(el(document, 'p', 'muted', payload.limitacao || ''));
+    return wrap;
+  }
+
+  function openPortfolioItem(item) {
+    var doc = global.document;
+    if (!doc) return Promise.resolve();
+    var node = doc.getElementById('carteira-detail');
+    if (!node) return Promise.resolve();
+    triagemStatus('carteira-status', 'Abrindo dossiê…');
+    var parts = ['contest_id=' + encodeURIComponent(item.contest_id)];
+    if (item.role_id) parts.push('role_id=' + encodeURIComponent(item.role_id));
+    if (item.scope) parts.push('scope=' + encodeURIComponent(item.scope));
+    return global.fetch('/api/carteira/dossie?' + parts.join('&'),
+                        {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        clearContainer(node);
+        node.appendChild(renderPortfolioDossier(doc, payload));
+        node.hidden = false;
+        triagemStatus('carteira-status', '');
+        if (node.scrollIntoView) node.scrollIntoView({block: 'start'});
+      })
+      .catch(function (error) {
+        triagemStatus('carteira-status', 'Falha ao abrir dossiê (' + error.message + ').');
+      });
+  }
+
+  function evidenceList(document, title, entries) {
+    var wrap = el(document, 'div');
+    wrap.appendChild(el(document, 'h4', 'study__subtitle', title));
+    var list = el(document, 'ul', 'mesa__list');
+    (entries || []).forEach(function (entry) {
+      var li = el(document, 'li');
+      li.appendChild(el(document, 'strong', '', String(entry.value === undefined
+        ? entry.valor : entry.value)));
+      li.appendChild(el(document, 'div', 'mesa__meta',
+        (entry.document_title || entry.documento || 'documento') + ' · ' +
+        (entry.document_type || entry.tipo_documental || '') + ' · ' +
+        (entry.published_at || entry.publicado_em || 'sem data') +
+        ' · p' + (entry.page_number === undefined ? (entry.pagina === null ? '—' : entry.pagina)
+                  : entry.page_number)));
+      if (entry.quote || entry.trecho) {
+        li.appendChild(el(document, 'blockquote', 'mesa__quote',
+          entry.quote || entry.trecho));
+      }
+      list.appendChild(li);
+    });
+    if (!list.firstChild) {
+      list.appendChild(el(document, 'li', 'muted', 'Sem evidência registrada.'));
+    }
+    wrap.appendChild(list);
+    return wrap;
+  }
+
+  function renderPortfolioDossier(document, payload) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    var ident = payload.identificacao || {};
+    var head = el(document, 'div', 'mesa__session');
+    head.appendChild(el(document, 'strong', '',
+      ident.contest_label || ident.contest_title || payload.contest_id));
+    head.appendChild(el(document, 'span', 'mesa__badge mesa__badge--' +
+      (payload.prontidao.estado === 'informacao_confirmada' ? 'confirmado'
+       : payload.prontidao.estado === 'conflito_documental_pendente' ? 'conflito'
+       : 'candidato'), payload.prontidao.estado_label));
+    var roleLabel = ident.role_name
+      ? (ident.role_name + (ident.role_reconciliado
+          ? ' · cargo reconciliado' : ' · cargo não reconciliado'))
+      : 'concurso (sem cargo específico)';
+    head.appendChild(el(document, 'span', 'mesa__meta', roleLabel));
+    wrap.appendChild(head);
+
+    var reasons = el(document, 'ul', 'mesa__list');
+    (payload.prontidao.motivos || []).forEach(function (reason) {
+      reasons.appendChild(el(document, 'li', 'mesa__meta', reason));
+    });
+    wrap.appendChild(reasons);
+
+    var docs = el(document, 'ul', 'mesa__list');
+    if (ident.edital_principal) {
+      docs.appendChild(el(document, 'li', 'mesa__meta',
+        'Edital: ' + ident.edital_principal.title + ' · ' +
+        (ident.edital_principal.published_at || 'sem data')));
+    }
+    (ident.retificacoes || []).forEach(function (doc) {
+      docs.appendChild(el(document, 'li', 'mesa__meta',
+        'Retificação: ' + doc.title + ' · ' + (doc.published_at || 'sem data')));
+    });
+    if (!docs.firstChild) {
+      docs.appendChild(el(document, 'li', 'muted', 'Nenhum edital identificado.'));
+    }
+    wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Documentos'));
+    wrap.appendChild(docs);
+
+    var vagas = payload.vagas || {};
+    wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Vagas'));
+    wrap.appendChild(el(document, 'p', 'prep__basis', vagas.nota || ''));
+    wrap.appendChild(evidenceList(document, 'Vagas imediatas',
+      (vagas.imediatas || {}).evidencias));
+    wrap.appendChild(evidenceList(document, 'Cadastro de reserva',
+      (vagas.reserva || {}).evidencias));
+    var indig = vagas.indigenas || {};
+    wrap.appendChild(el(document, 'p', 'mesa__meta',
+      'Indígenas: ' + (indig.estado_label || 'sem informação')));
+    wrap.appendChild(evidenceList(document, 'Vagas indígenas imediatas',
+      indig.imediata));
+    wrap.appendChild(evidenceList(document, 'Reserva indígena', indig.reserva));
+
+    var formacao = payload.formacao || {};
+    wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Formação'));
+    wrap.appendChild(el(document, 'p', 'prep__basis', formacao.nota || ''));
+    wrap.appendChild(el(document, 'p', 'mesa__meta',
+      'Sistemas de Informação: ' +
+      ((formacao.si_por_cargo || {}).estado_label || 'sem informação')));
+    wrap.appendChild(evidenceList(document, 'Requisito literal',
+      (formacao.requisito || {}).evidencias));
+    wrap.appendChild(evidenceList(document, 'Cursos aceitos',
+      (formacao.cursos_aceitos || {}).evidencias));
+
+    wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Prazos'));
+    var prazos = el(document, 'ul', 'mesa__list');
+    (payload.prazos || []).forEach(function (entry) {
+      var li = el(document, 'li');
+      li.appendChild(el(document, 'strong', '',
+        entry.grupo_label + ': ' + (entry.valor || '—')));
+      li.appendChild(el(document, 'div', 'mesa__meta',
+        entry.estado_operacional_label + ' · ' + entry.urgencia_label +
+        (entry.dias_restantes === null ? '' : ' · ' + entry.dias_restantes + ' dia(s)') +
+        (entry.documento ? ' · ' + entry.documento : '')));
+      if (entry.trecho) {
+        li.appendChild(el(document, 'blockquote', 'mesa__quote', entry.trecho));
+      }
+      if (entry.conflito && entry.candidatos) {
+        entry.candidatos.forEach(function (candidate) {
+          li.appendChild(el(document, 'div', 'mesa__meta',
+            'candidato: ' + String(candidate.valor) + ' · ' +
+            (candidate.documento || '') + ' · p' + candidate.pagina));
+        });
+      }
+      prazos.appendChild(li);
+    });
+    if (!prazos.firstChild) {
+      prazos.appendChild(el(document, 'li', 'muted', 'Nenhum prazo localizado.'));
+    }
+    wrap.appendChild(prazos);
+
+    var local = ((payload.localizacao || {}).prova || {});
+    wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Localização'));
+    wrap.appendChild(el(document, 'p', 'mesa__meta',
+      'Local de prova: ' + (local.text || local.state || 'não informado')));
+    wrap.appendChild(el(document, 'p', 'mesa__meta',
+      'Lotação: ' + (((payload.localizacao || {}).lotacao || {}).text || 'não informado')));
+    wrap.appendChild(el(document, 'p', 'muted',
+      'Lotação não substitui local de prova.'));
+
+    wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Lacunas'));
+    var gaps = el(document, 'ul', 'mesa__list');
+    (payload.lacunas || []).forEach(function (gap) {
+      gaps.appendChild(el(document, 'li', 'mesa__meta', gap));
+    });
+    if (!gaps.firstChild) gaps.appendChild(el(document, 'li', 'muted', 'Nenhuma lacuna.'));
+    wrap.appendChild(gaps);
+
+    wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Próxima ação'));
+    wrap.appendChild(el(document, 'p', 'prep__basis', payload.proxima_acao || ''));
+    var link = el(document, 'button', 'button', 'Abrir na mesa de revisão');
+    link.type = 'button';
+    link.addEventListener('click', function () {
+      openDossier(payload.contest_id, payload.scope || payload.role_id)
+        .then(function () {
+          var mesa = document.getElementById('mesa-dossier');
+          if (mesa && mesa.scrollIntoView) mesa.scrollIntoView({block: 'start'});
+        })
+        .catch(function (error) {
+          triagemStatus('carteira-status', 'Falha ao abrir a mesa (' + error.message + ').');
+        });
+    });
+    wrap.appendChild(link);
+    wrap.appendChild(el(document, 'p', 'muted', payload.limitacao || ''));
+    return wrap;
+  }
+
+  function fetchHighlights() {
+    var doc = global.document;
+    if (!doc || !doc.getElementById('carteira-destaques-panel')) return Promise.resolve();
+    triagemStatus('carteira-destaques-status', 'Atualizando…');
+    return global.fetch('/api/carteira/destaques?limit=12',
+                        {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        var node = doc.getElementById('carteira-destaques-panel');
+        clearContainer(node);
+        var wrap = el(doc, 'div', 'coverage__inner');
+        wrap.appendChild(el(doc, 'p', 'prep__basis',
+          payload.total + ' destaque(s) em ' + payload.concursos + ' concurso(s) · ' +
+          payload.criterio));
+        var list = el(doc, 'ul', 'mesa__list');
+        payload.itens.forEach(function (item) {
+          var li = el(doc, 'li');
+          var button = el(doc, 'button', 'mesa__row-button',
+            (item.contest_label || item.contest_id) + ' · ' +
+            (item.role_name || 'concurso'));
+          button.type = 'button';
+          button.addEventListener('click', function () { openPortfolioItem(item); });
+          li.appendChild(button);
+          li.appendChild(el(doc, 'div', 'mesa__meta',
+            item.prontidao.estado_label + ' · ' + (item.motivo_inclusao || []).join('; ')));
+          list.appendChild(li);
+        });
+        if (!list.firstChild) {
+          list.appendChild(el(doc, 'li', 'muted', 'Nenhum destaque no momento.'));
+        }
+        wrap.appendChild(list);
+        wrap.appendChild(el(doc, 'p', 'muted', payload.limitacao || ''));
+        node.appendChild(wrap);
+        triagemStatus('carteira-destaques-status', '');
+      })
+      .catch(function (error) {
+        triagemStatus('carteira-destaques-status', 'Indisponível (' + error.message + ').');
+      });
+  }
+
+  function revalidateDeadline(item, button) {
+    if (!item || !item.contest_id) return Promise.resolve();
+    button.disabled = true;
+    triagemStatus('prazo-status', 'Verificando documento oficial…');
+    var body = {contest_id: item.contest_id, group: item.grupo, limit: 1,
+                dry_run: false, checked_by: 'operador local (interface)'};
+    if (item.escopo) body.escopo = item.escopo;
+    return global.fetch('/api/prazos/revalidacao', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    }).then(function (response) {
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      return response.json();
+    }).then(function (payload) {
+      var result = (payload.itens || [])[0] || {};
+      var message = 'Verificação: ' + (result.result || 'sem resultado') + '. ' +
+        (result.note || '');
+      return fetchDeadlines().then(function () {
+        triagemStatus('prazo-status', message);
+      });
+    }).catch(function (error) {
+      button.disabled = false;
+      triagemStatus('prazo-status', 'Falha na verificação (' + error.message + ').');
+    });
+  }
+
   // --- Reconciliação, conflitos e prazos (Fase 35) ---
 
   var REC_STATE_VARIANT = {
@@ -4868,8 +5268,9 @@
   function renderDeadlines(document, payload) {
     var wrap = el(document, 'div', 'coverage__inner');
     wrap.appendChild(el(document, 'p', 'prep__basis',
-      payload.total + ' prazo(s) · referência ' + (payload.referencia || {}).agora +
-      ' · ' + Object.keys(payload.por_estado || {}).map(function (key) {
+      payload.total + ' prazo(s) · referência ' + (payload.referencia || {}).hoje_local +
+      ' (' + (payload.referencia || {}).fuso + ') · ' +
+      Object.keys(payload.por_estado || {}).map(function (key) {
         return key + ': ' + payload.por_estado[key];
       }).join(' · ')));
     if (!payload.itens.length) {
@@ -4878,7 +5279,8 @@
     }
     var table = el(document, 'table', 'mesa__table');
     var head = el(document, 'tr');
-    ['Prazo', 'Valor', 'Situação', 'Documento', 'Retificação', 'Conflito', 'Próxima ação']
+    ['Prazo', 'Valor', 'Situação operacional', 'Urgência', 'Documento', 'Revalidação',
+     'Próxima ação']
       .forEach(function (label) { head.appendChild(el(document, 'th', '', label)); });
     var thead = el(document, 'thead');
     thead.appendChild(head);
@@ -4887,23 +5289,37 @@
     payload.itens.forEach(function (item) {
       var row = el(document, 'tr');
       row.appendChild(el(document, 'td', '', item.grupo_label));
-      row.appendChild(el(document, 'td', '', String(item.valor === null ? '—' : item.valor)));
+      row.appendChild(el(document, 'td', '', item.valor === null
+        ? (item.conflito ? 'conflito (' + item.conflito.valores + ' valores)' : '—')
+        : String(item.valor)));
       var stateCell = el(document, 'td');
-      var variant = item.estado === 'expirado' ? 'ausente'
-        : item.estado === 'futuro' || item.estado === 'hoje' ? 'candidato' : 'ausente';
+      var variant = item.estado_operacional === 'revalidado_na_fonte' ? 'candidato'
+        : item.estado_operacional === 'conflito_documental' ? 'conflito'
+        : item.estado_operacional === 'candidato_nao_revalidado' ? 'candidato'
+        : 'ausente';
       stateCell.appendChild(el(document, 'span', 'mesa__badge mesa__badge--' + variant,
-        item.estado_label));
+        item.estado_operacional_label));
       row.appendChild(stateCell);
+      row.appendChild(el(document, 'td', 'mesa__meta', item.urgencia_label +
+        (item.dias_restantes === null ? '' : ' · ' + item.dias_restantes + ' dia(s)')));
       row.appendChild(el(document, 'td', 'mesa__meta',
         (item.documento || '—') + ' · p' + (item.pagina === null ? '—' : item.pagina)));
-      row.appendChild(el(document, 'td', 'mesa__meta',
-        item.retificacao
-          ? (item.retificacao.altera_o_prazo ? 'altera o prazo'
-             : item.retificacao.mencoes_ao_campo ? 'menciona, sem alterar'
-             : 'não menciona este prazo')
-          : '—'));
-      row.appendChild(el(document, 'td', 'num', item.conflito
-        ? String(item.conflito.valores) : '—'));
+      var revalidation = el(document, 'td', 'mesa__meta');
+      if (item.revalidacao) {
+        revalidation.appendChild(el(document, 'div', '',
+          item.revalidacao.result + ' · ' + String(item.revalidacao.checked_at).slice(0, 10)));
+      } else {
+        revalidation.appendChild(el(document, 'div', '', 'sem verificação registrada'));
+      }
+      if (item.precisa_revalidacao) {
+        var revalidate = el(document, 'button', 'button button--ghost', 'Revalidar');
+        revalidate.type = 'button';
+        revalidate.addEventListener('click', function () {
+          revalidateDeadline(item, revalidate);
+        });
+        revalidation.appendChild(revalidate);
+      }
+      row.appendChild(revalidation);
       var actionCell = el(document, 'td');
       actionCell.appendChild(el(document, 'div', 'mesa__meta', item.proxima_acao));
       if (item.trecho) {
@@ -4931,7 +5347,10 @@
     if (triagemValue('prazo-state')) {
       parts.push('state=' + encodeURIComponent(triagemValue('prazo-state')));
     }
-    return global.fetch('/api/prazos?' + parts.join('&'),
+    if (triagemValue('prazo-urgency')) {
+      parts.push('urgency=' + encodeURIComponent(triagemValue('prazo-urgency')));
+    }
+    return global.fetch('/api/prazos/calendario?' + parts.join('&'),
                         {headers: {Accept: 'application/json'}})
       .then(function (response) {
         if (!response.ok) throw new Error('HTTP ' + response.status);
