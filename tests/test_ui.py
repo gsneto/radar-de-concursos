@@ -257,6 +257,21 @@ class TestAppStatic(unittest.TestCase):
                       "Pipeline documental"):
             self.assertIn(token, html)
 
+    def test_renders_official_coverage_and_decisive_fields(self):
+        js = read(APP_PATH)
+        for token in ("renderOfficialCoverage", "fetchOfficialCoverage",
+                      "renderDecisive", "renderVersionConflicts",
+                      "/api/cobertura/estados", "/api/campos-decisivos", "/api/conflitos",
+                      "official-coverage-panel", "decisive-panel", "conflicts-panel",
+                      "agregado"):
+            self.assertIn(token, js, "app.js deve apresentar %r" % token)
+        html = read(os.path.join(WEB, "index.html"))
+        for token in ('id="official-coverage-panel"', 'id="official-refresh"',
+                      'id="decisive-panel"', 'id="conflicts-panel"',
+                      "Cobertura oficial e campos decisivos",
+                      "lotação não é local de prova"):
+            self.assertIn(token, html)
+
     def test_renders_sources_catalog(self):
         js = read(APP_PATH)
         for token in ("renderSources", "fetchSources", "/api/fontes", "sources-panel",

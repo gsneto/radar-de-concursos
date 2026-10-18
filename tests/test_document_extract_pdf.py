@@ -57,6 +57,22 @@ class PdfQuotaTableTest(unittest.TestCase):
         self.assertEqual(dates.get("registration_start"), "2026-07-10")
         self.assertEqual(dates.get("registration_end"), "2026-07-30")
 
+    def test_exemption_period_is_not_registration_period(self):
+        text = ("Os pedidos de isenção poderão ser feitos dia 21 de setembro de 2026 "
+                "até as 16h do dia 22 de setembro de 2026.")
+        proposals = extract_field_proposals([_block(text)], "v", "c")
+        self.assertEqual([p for p in proposals
+                          if p["field_name"] in ("registration_start", "registration_end")], [])
+
+    def test_registration_period_with_anchor_is_extracted(self):
+        text = ("As inscrições estarão abertas dia 21 de setembro de 2026 até as 16h "
+                "do dia 30 de outubro de 2026.")
+        proposals = extract_field_proposals([_block(text)], "v", "c")
+        values = {p["field_name"]: json.loads(p["value_json"]) for p in proposals
+                  if p["field_name"] in ("registration_start", "registration_end")}
+        self.assertEqual(values.get("registration_start"), "2026-09-21")
+        self.assertEqual(values.get("registration_end"), "2026-10-30")
+
     def test_unanchored_pdf_facts_are_scope_ambiguous(self):
         generic = [p for p in self.proposals if p["extraction_method"] == "regex"]
         self.assertTrue(generic)

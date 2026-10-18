@@ -50,6 +50,23 @@ class ParseTest(unittest.TestCase):
     def test_nome_de_rua_nao_vira_municipio(self):
         self.assertIsNone(location.parse_location("Avenida Bahia - SP"))
 
+    def test_municipio_com_nome_de_estado_com_uf_explicita(self):
+        # "Rio de Janeiro/RJ" e "São Paulo/SP" são municípios, não o estado.
+        out = location.parse_location("Rio de Janeiro/RJ")
+        self.assertEqual((out["municipio"], out["uf"]), ("Rio de Janeiro", "RJ"))
+        out = location.parse_location("São Paulo/SP")
+        self.assertEqual((out["municipio"], out["uf"]), ("São Paulo", "SP"))
+        # Sem UF explícita, o nome continua tratado como estado (não se inventa município).
+        out = location.parse_location("Rio de Janeiro")
+        self.assertIsNone(out["municipio"])
+        self.assertEqual(out["uf"], "RJ")
+
+    def test_municipio_sem_uf_tem_confianca_baixa(self):
+        out = location.parse_location("Porto Alegre –")
+        self.assertEqual(out["municipio"], "Porto Alegre")
+        self.assertIsNone(out["uf"])
+        self.assertEqual(out["confidence"], "baixa")
+
     def test_estados_acentuados(self):
         # Regressão: nomes de estado acentuados devem casar.
         self.assertEqual(location.parse_location("Goiânia - Goiás")["uf"], "GO")

@@ -2341,6 +2341,171 @@
       });
   }
 
+  // --- Cobertura oficial e campos decisivos (Fase 33) ---
+
+  var OFFICIAL_STATE_LABEL = {
+    campos_confirmados: 'Campos revisados e confirmados',
+    conflito: 'Documentação conflitante ou incompleta',
+    campos_candidatos: 'Campos candidatos para revisão',
+    edital_extraido: 'Edital extraído, sem campo decisivo',
+    oficial_sem_extracao: 'Documento oficial sem extração',
+    oficial_sem_edital: 'Documento oficial, sem edital classificado',
+    identidade_pendente: 'Identidade pendente',
+    obtencao_nao_autorizada: 'Obtenção não autorizada pela política',
+    oficial_nao_importado: 'Edital oficial acessível, não importado',
+    apenas_agregador: 'Apenas agregador/notícia',
+    sem_documento: 'Nenhum documento localizado'
+  };
+
+  function officialStatus(message) {
+    var doc = global.document;
+    var node = doc && doc.getElementById('official-status');
+    if (node) node.textContent = message || '';
+  }
+
+  function renderOfficialCoverage(document, payload) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    var stats = el(document, 'ul', 'study__revisions');
+    (payload.funil || []).forEach(function (step) {
+      stats.appendChild(el(document, 'li', 'study__revision',
+        step.etapa + ': ' + step.quantidade + ' de ' + step.de +
+        (step.pct === null || step.pct === undefined ? '' : ' (' + step.pct + '%)')));
+    });
+    wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Funil documental'));
+    wrap.appendChild(stats);
+    var states = el(document, 'ul', 'study__revisions');
+    (payload.estados || []).forEach(function (item) {
+      if (!item.quantidade) return;
+      states.appendChild(el(document, 'li', 'study__revision',
+        (OFFICIAL_STATE_LABEL[item.estado] || item.estado) + ': ' + item.quantidade +
+        ' de ' + item.de + (item.pct === null ? '' : ' (' + item.pct + '%)') +
+        ' — próxima ação: ' + item.proxima_acao));
+    });
+    wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Estados por certame'));
+    wrap.appendChild(states);
+    if (payload.fontes && payload.fontes.length) {
+      var sources = el(document, 'ul', 'study__revisions');
+      payload.fontes.forEach(function (source) {
+        sources.appendChild(el(document, 'li', 'study__revision',
+          source.source_id + ' (' + source.nature + '): ' + source.documentos +
+          ' documento(s) em ' + source.concursos + ' concurso(s)'));
+      });
+      wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Fontes que trouxeram documento'));
+      wrap.appendChild(sources);
+    }
+    if (payload.fontes_restritas && payload.fontes_restritas.length) {
+      var restricted = el(document, 'ul', 'study__revisions');
+      payload.fontes_restritas.forEach(function (source) {
+        restricted.appendChild(el(document, 'li', 'study__revision',
+          source.source_id + ': ' + source.status + ' (' + source.motivo + ')'));
+      });
+      wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Fontes que exigem operador'));
+      wrap.appendChild(restricted);
+    }
+    wrap.appendChild(el(document, 'p', 'muted',
+      'Documentos sem identidade: ' + payload.documentos_sem_identidade +
+      '. ' + ((payload.limitacoes || []).join(' '))));
+    return wrap;
+  }
+
+  var DECISIVE_LABEL = {
+    indigenas: 'Vagas indígenas',
+    sistemas_de_informacao: 'Sistemas de Informação',
+    prazos: 'Prazos (fim da inscrição)',
+    local_prova: 'Local de prova'
+  };
+
+  function renderDecisive(document, payload) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    var list = el(document, 'ul', 'study__revisions');
+    Object.keys(DECISIVE_LABEL).forEach(function (key) {
+      var counts = (payload.resumo || {})[key] || [];
+      var parts = [];
+      counts.forEach(function (item) {
+        if (item.quantidade) parts.push(item.estado + ': ' + item.quantidade);
+      });
+      list.appendChild(el(document, 'li', 'study__revision',
+        DECISIVE_LABEL[key] + ' — ' + (parts.join(' · ') || 'sem dado')));
+    });
+    wrap.appendChild(list);
+    var withData = (payload.itens || []).filter(function (item) {
+      return item.indigenas && (item.indigenas.estado === 'explicito_imediato' ||
+        item.indigenas.estado === 'apenas_reserva') ||
+        item.sistemas_de_informacao && item.sistemas_de_informacao.estado === 'explicito' ||
+        item.prazos && item.prazos.inscricao_fim && item.prazos.inscricao_fim.estado === 'candidato';
+    }).slice(0, 12);
+    if (withData.length) {
+      var items = el(document, 'ul', 'study__revisions');
+      withData.forEach(function (item) {
+        var prova = (item.local && item.local.prova) || {};
+        var fim = (item.prazos && item.prazos.inscricao_fim) || {};
+        var si = item.sistemas_de_informacao || {};
+        var ind = item.indigenas || {};
+        items.appendChild(el(document, 'li', 'study__revision',
+          shortId(item.contest_id) + ' · indígena: ' + ind.estado +
+          ' · SI: ' + si.estado +
+          ' · inscrição até: ' + ((fim.vigente && fim.vigente.value) || 'não localizado') +
+          ' · prova: ' + (prova.municipios && prova.municipios.length ?
+            prova.municipios.join(', ') : prova.state || 'não informado')));
+      });
+      wrap.appendChild(el(document, 'h4', 'study__subtitle', 'Concursos com dado decisivo'));
+      wrap.appendChild(items);
+    }
+    wrap.appendChild(el(document, 'p', 'muted', payload.limitacao || ''));
+    return wrap;
+  }
+
+  function renderVersionConflicts(document, payload) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    if (!payload.total) {
+      wrap.appendChild(el(document, 'p', 'muted', 'Nenhum conflito registrado.'));
+      return wrap;
+    }
+    var list = el(document, 'ul', 'study__revisions');
+    (payload.itens || []).forEach(function (item) {
+      var values = (item.valores || []).map(function (value) {
+        return String(value.value);
+      }).slice(0, 4).join(', ');
+      list.appendChild(el(document, 'li', 'study__revision',
+        shortId(item.contest_id) + ' · ' + item.field_name + ' · ' + item.tipo +
+        ': ' + values));
+    });
+    wrap.appendChild(list);
+    wrap.appendChild(el(document, 'p', 'muted', payload.limitacao || ''));
+    return wrap;
+  }
+
+  function fetchOfficialCoverage() {
+    var doc = global.document;
+    if (!doc || !doc.getElementById('official-coverage-panel')) return Promise.resolve();
+    officialStatus('Atualizando…');
+    var requests = [
+      ['/api/cobertura/estados', 'official-coverage-panel', renderOfficialCoverage],
+      ['/api/campos-decisivos', 'decisive-panel', renderDecisive],
+      ['/api/conflitos', 'conflicts-panel', renderVersionConflicts]
+    ];
+    return Promise.all(requests.map(function (entry) {
+      return global.fetch(entry[0], {headers: {Accept: 'application/json'}})
+        .then(function (response) {
+          if (!response.ok) throw new Error('HTTP ' + response.status);
+          return response.json();
+        })
+        .then(function (payload) {
+          var node = doc.getElementById(entry[1]);
+          if (!node) return;
+          clearContainer(node);
+          node.appendChild(entry[2](doc, payload));
+        })
+        .catch(function () {
+          var node = doc.getElementById(entry[1]);
+          if (node) {
+            clearContainer(node);
+            node.appendChild(el(doc, 'p', 'muted', 'Indisponível no momento.'));
+          }
+        });
+    })).then(function () { officialStatus(''); });
+  }
+
   // --- Catálogo de fontes (Fase 29) ---
 
   var SOURCE_STATUS_LABEL = {
@@ -3340,6 +3505,8 @@
     if (sourcesRefresh) sourcesRefresh.addEventListener('click', fetchSources);
     var pipelineRefresh = doc.getElementById('pipeline-refresh');
     if (pipelineRefresh) pipelineRefresh.addEventListener('click', fetchPipeline);
+    var officialRefresh = doc.getElementById('official-refresh');
+    if (officialRefresh) officialRefresh.addEventListener('click', fetchOfficialCoverage);
     var dupsRefresh = doc.getElementById('dups-refresh');
     if (dupsRefresh) dupsRefresh.addEventListener('click', fetchDuplicates);
     var coverageRefresh = doc.getElementById('coverage-refresh');
@@ -3359,6 +3526,7 @@
     fetchAssociations();
     fetchSources();
     fetchPipeline();
+    fetchOfficialCoverage();
     fetchDuplicates();
     restoreBatch();
     startAutoRefresh();
@@ -3402,6 +3570,10 @@
     renderSources: renderSources,
     fetchSources: fetchSources,
     renderPipeline: renderPipeline,
+    renderOfficialCoverage: renderOfficialCoverage,
+    renderDecisive: renderDecisive,
+    renderConflicts: renderVersionConflicts,
+    fetchOfficialCoverage: fetchOfficialCoverage,
     fetchPipeline: fetchPipeline,
     renderDuplicates: renderDuplicates,
     fetchDuplicates: fetchDuplicates,

@@ -805,6 +805,56 @@ def _cmd_documentos_lote(args: argparse.Namespace) -> None:
         max_pages=args.max_pages, dry_run=not args.apply, checkpoint=args.checkpoint)
     print(json.dumps(report, ensure_ascii=False, default=str))
 
+def _cmd_cobertura_estados(args: argparse.Namespace) -> None:
+    from radar import coverage_states
+    print(json.dumps(coverage_states.coverage_report(args.db, limit=args.limit),
+                     ensure_ascii=False, default=str))
+
+
+def _cmd_documentos_nominais(args: argparse.Namespace) -> None:
+    from radar import coverage_states
+    print(json.dumps(coverage_states.nominal_documents(args.db, limit=args.limit),
+                     ensure_ascii=False, default=str))
+
+
+def _cmd_editais_faltantes(args: argparse.Namespace) -> None:
+    from radar import acquisition
+    print(json.dumps(acquisition.targets(args.db, source_id=args.source, limit=args.limit),
+                     ensure_ascii=False, default=str))
+
+
+def _cmd_aquisicao_planejar(args: argparse.Namespace) -> None:
+    from radar import acquisition
+    print(json.dumps(acquisition.plan_acquisition(
+        args.db, source_id=args.source, contest_ids=args.contest_id,
+        max_contests=args.max_contests,
+        max_documents_per_contest=args.max_documents),
+        ensure_ascii=False, default=str))
+
+
+def _cmd_aquisicao_executar(args: argparse.Namespace) -> None:
+    from radar import acquisition
+    print(json.dumps(acquisition.execute_acquisition(
+        args.db, source_id=args.source, contest_ids=args.contest_id,
+        max_contests=args.max_contests,
+        max_documents_per_contest=args.max_documents, analyze=not args.no_analyze,
+        checkpoint=args.checkpoint, apply=args.apply),
+        ensure_ascii=False, default=str))
+
+
+def _cmd_campos_decisivos(args: argparse.Namespace) -> None:
+    from radar import decisive_fields
+    print(json.dumps(decisive_fields.decisive_report(
+        args.db, contest_ids=args.contest_id, limit=args.limit),
+        ensure_ascii=False, default=str))
+
+
+def _cmd_conflitos_versao(args: argparse.Namespace) -> None:
+    from radar import version_conflicts
+    print(json.dumps(version_conflicts.conflicts(
+        args.db, contest_id=args.contest_id, limit=args.limit),
+        ensure_ascii=False, default=str))
+
 def _cmd_documentos_pendentes(args: argparse.Namespace) -> None:
     from radar import pipeline
     itens = pipeline.pending_versions(
@@ -1335,6 +1385,60 @@ def build_parser() -> argparse.ArgumentParser:
     pipe_cob.add_argument('--db', required=True)
     pipe_cob.add_argument('--limit', type=int, default=500)
     pipe_cob.set_defaults(func=_cmd_pipeline_cobertura)
+    cob_est = subparsers.add_parser('cobertura-estados',
+                                    help='cobertura documental por certame (10 estados)')
+    cob_est.add_argument('--db', required=True)
+    cob_est.add_argument('--limit', type=int, default=5000)
+    cob_est.set_defaults(func=_cmd_cobertura_estados)
+
+    doc_nom = subparsers.add_parser('documentos-nominais',
+                                    help='documentos de lista nominal (dado pessoal)')
+    doc_nom.add_argument('--db', required=True)
+    doc_nom.add_argument('--limit', type=int, default=200)
+    doc_nom.set_defaults(func=_cmd_documentos_nominais)
+
+    ed_falta = subparsers.add_parser('editais-faltantes',
+                                     help='certames com fonte oficial e sem documento')
+    ed_falta.add_argument('--db', required=True)
+    ed_falta.add_argument('--source')
+    ed_falta.add_argument('--limit', type=int, default=50)
+    ed_falta.set_defaults(func=_cmd_editais_faltantes)
+
+    acq_plan = subparsers.add_parser('aquisicao-planejar',
+                                     help='simula aquisição limitada de editais oficiais')
+    acq_plan.add_argument('--db', required=True)
+    acq_plan.add_argument('--source', default='fgv-conhecimento')
+    acq_plan.add_argument('--max-contests', type=int, default=3)
+    acq_plan.add_argument('--max-documents', type=int, default=3)
+    acq_plan.add_argument('--contest-id', action='append')
+    acq_plan.set_defaults(func=_cmd_aquisicao_planejar)
+
+    acq_run = subparsers.add_parser('aquisicao-executar',
+                                    help='executa aquisição limitada (dry-run por padrão)')
+    acq_run.add_argument('--db', required=True)
+    acq_run.add_argument('--source', default='fgv-conhecimento')
+    acq_run.add_argument('--max-contests', type=int, default=3)
+    acq_run.add_argument('--max-documents', type=int, default=3)
+    acq_run.add_argument('--checkpoint')
+    acq_run.add_argument('--no-analyze', action='store_true')
+    acq_run.add_argument('--contest-id', action='append')
+    acq_run.add_argument('--apply', action='store_true')
+    acq_run.set_defaults(func=_cmd_aquisicao_executar)
+
+    campos = subparsers.add_parser('campos-decisivos',
+                                   help='vagas indígenas, SI, prazos e local de prova')
+    campos.add_argument('--db', required=True)
+    campos.add_argument('--contest-id', action='append')
+    campos.add_argument('--limit', type=int, default=200)
+    campos.set_defaults(func=_cmd_campos_decisivos)
+
+    confl = subparsers.add_parser('conflitos-versao',
+                                  help='divergências entre documentos e retificações')
+    confl.add_argument('--db', required=True)
+    confl.add_argument('--contest-id')
+    confl.add_argument('--limit', type=int, default=200)
+    confl.set_defaults(func=_cmd_conflitos_versao)
+
     pipe_cont = subparsers.add_parser('pipeline-continuidade',
                                       help='quadros de vagas que atravessam páginas')
     pipe_cont.add_argument('--db', required=True)

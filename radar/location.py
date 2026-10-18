@@ -106,13 +106,19 @@ def _title(text: str) -> str:
     return " ".join(out)
 
 
-def _clean_municipio(group: str):
-    """Município plausível a partir de um grupo, ou ``None`` (texto corrido é rejeitado)."""
+def _clean_municipio(group: str, *, allow_state_name: bool = False):
+    """Município plausível a partir de um grupo, ou ``None`` (texto corrido é rejeitado).
+
+    ``allow_state_name`` existe para ``Município/UF`` explícito: "Rio de Janeiro/RJ" e
+    "São Paulo/SP" são municípios cujo nome coincide com o estado. Sem UF explícita, o
+    nome de estado continua recusado (não se inventa município).
+    """
     words = [w for w in re.split(r"\s+", group.strip(" .,;:-\u2013\u2014")) if w]
     # Descarta palavras iniciais de texto corrido ("cidade de Paulo Afonso" -> "Paulo Afonso").
     start = 0
     while start < len(words) and _norm(words[start]) in _PROSE_STOPWORDS:
         start += 1
+    skipped = start
     words = words[start:]
     if not words or len(words) > 3:
         return None
@@ -123,8 +129,10 @@ def _clean_municipio(group: str):
     if not words[0][:1].isupper():
         return None
     name = " ".join(words)
-    if _norm(name) in _UF_BY_NAME:
-        return None  # nome de estado não é município
+    # Nome de estado só vira município quando o grupo **é** o nome (ex.: "Rio de Janeiro/RJ").
+    # Se houve palavra de texto corrido antes ("Avenida Bahia - SP"), continua recusado.
+    if (not allow_state_name or skipped) and _norm(name) in _UF_BY_NAME:
+        return None
     return _title(name)
 
 
@@ -153,14 +161,14 @@ def parse_location(text) -> dict | None:
                 "confidence": "alta", "reason": "abrangência nacional declarada"}
     match = _MUN_UF.search(raw)
     if match:
-        municipio = _clean_municipio(match.group(1))
+        municipio = _clean_municipio(match.group(1), allow_state_name=True)
         uf = match.group(2).upper()
         if uf in UFS and municipio:
             return {"municipio": municipio, "uf": uf, "scope": "municipal",
                     "confidence": "alta", "reason": "município com UF explícitos"}
     named = _MUN_UF_NAME.search(raw)
     if named:
-        municipio = _clean_municipio(named.group(1))
+        municipio = _clean_municipio(named.group(1), allow_state_name=True)
         uf = _UF_BY_NAME.get(_norm(named.group(2)))
         if municipio and uf:
             return {"municipio": municipio, "uf": uf, "scope": "municipal",
@@ -180,6 +188,17 @@ def parse_location(text) -> dict | None:
     if named_state:
         return {"municipio": None, "uf": named_state, "scope": "estadual",
                 "confidence": "media", "reason": "apenas o estado foi identificado"}
+    # Município isolado sem UF ("Porto Alegre –", "Salvador"): município identificado, UF
+    # desconhecida. Não é inferência de UF nem de local: a confiança fica baixa e a UF nula.
+    # Só aceita texto que **parece** nome de município: sem barra, sem número e sem sufixo
+    # de UF inválida ("Cidade/XX", "Avenida Bahia - SP" continuam recusados).
+    if not re.search(r"[/\d]", raw) and not re.search(
+            r"[-\u2013\u2014]\s*[A-Za-z]{2}\s*$", raw):
+        municipio = _clean_municipio(raw)
+        if municipio:
+            return {"municipio": municipio, "uf": None, "scope": "municipal",
+                    "confidence": "baixa",
+                    "reason": "município identificado sem UF explícita"}
     return None
 
 
@@ -191,6 +210,10 @@ def _state_from_items(items: list[dict]) -> tuple[str, dict | None]:
     distinct = {_norm(item.get("value")) for item in items}
     if "validado" in states:
         return "confirmado_documentalmente", _pick(items, "validado")
+    # "a_divulgar" + local concreto são escopos diferentes (etapas distintas), não dois
+    # valores do mesmo campo: é ambiguidade documental, não conflito de valor.
+    if len(distinct) > 1 and ("a_divulgar" in distinct or "a divulgar" in distinct):
+        return "ambiguo", _pick(items, "ambiguo") or items[0]
     if len(distinct) > 1:
         return "em_conflito", _pick(items, "ambiguo") or items[0]
     if states == {"ambiguo"}:

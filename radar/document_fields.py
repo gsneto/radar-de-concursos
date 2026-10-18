@@ -63,6 +63,13 @@ def _registration_dates(block_text: str):
         found.append(('registration_start', start.isoformat(), match.group(), match.start(), match.end()))
         found.append(('registration_end', end.isoformat(), match.group(), match.start(), match.end()))
     for match in _TEXT_PERIOD.finditer(block_text):
+        # _TEXT_PERIOD não tem âncora própria: exige contexto de inscrição próximo e não
+        # pode capturar período de isenção/recurso (que também usa "dia X ... dia Y").
+        context = block_text[max(0, match.start() - 240):match.start()].lower()
+        last_inscricao = max(context.rfind("inscri"), context.rfind("inscrição"))
+        last_isencao = max(context.rfind("isen"), context.rfind("isenc"))
+        if last_inscricao < 0 or last_isencao > last_inscricao:
+            continue
         try:
             start = date(int(match.group(3)), int(_MONTHS[match.group(2).lower()]), int(match.group(1)))
             end = date(int(match.group(6)), int(_MONTHS[match.group(5).lower()]), int(match.group(4)))

@@ -53,6 +53,47 @@ def classify(title: str) -> str:
     return "outro"
 
 
+# Títulos de **lista nominal**: publicam nome/inscrição/nota de candidato, não a regra do
+# certame. Um título assim não deve ser adquirido nem processado para campos, mesmo que a
+# banca o rotule como "Retificação" (ex.: "Retificação - Relação de inscritos provisórios").
+NOMINAL_TITLE_MARKERS = (
+    # Listas nominais explícitas.
+    "relação de inscritos", "relacao de inscritos", "lista de inscritos",
+    "relação de candidatos", "relacao de candidatos", "lista de candidatos",
+    "relação nominal", "relacao nominal", "lista nominal",
+    "inscritos provisórios", "inscritos provisorios", "inscrições homologadas",
+    "inscricoes homologadas", "inscrições deferidas", "inscricoes deferidas",
+    # Resultado/classificação: sempre lista de pessoas ou de notas.
+    "resultado", "homologa", "convoc", "gabarito",
+    "aprovad", "classificad", "habilitad", "selecionad", "eliminad",
+    "nota final", "notas", "classificação", "classificacao", "pontuação", "pontuacao",
+)
+# Marcadores de que o documento **altera regra** do certame. Servem para confirmar, nunca
+# para transformar uma retificação comum em lista nominal: "1ª Retificação" é regra.
+RULE_MARKERS = (
+    "edital", "cronograma", "anexo", "prazo", "requisito", "conteúdo programático",
+    "conteudo programatico", "vagas", "retificação do edital", "retificacao do edital",
+    "errata",
+)
+
+
+def is_nominal_title(title: str) -> bool:
+    """True quando o título indica lista de pessoas/notas (dado pessoal), não regra.
+
+    A decisão é por marcador nominal no título. "1ª Retificação" sem marcador nominal é
+    documento de regra (é assim que a FGV publica); "Retificação - Relação de aprovados" é
+    lista nominal e não é adquirida.
+    """
+    if not isinstance(title, str):
+        return False
+    norm = " ".join(title.lower().split())
+    if not norm:
+        return False
+    if any(marker in norm for marker in RULE_MARKERS):
+        return False
+    return any(marker in norm for marker in NOMINAL_TITLE_MARKERS)
+
+
 # --- Classificação por fonte (Fase 26) ----------------------------------------
 # O bucket `kind` continua grosseiro. O tipo fino ganha valores de **página**, para separar
 # descoberta (agregador) de fonte oficial sem promover nada a edital.

@@ -133,6 +133,30 @@
       <div id="pipeline-panel" class="coverage__panel"></div>
     </section>
 
+    <section class="official" aria-labelledby="official-title">
+      <h2 id="official-title" class="results__title">Cobertura oficial e campos decisivos</h2>
+      <p class="prep__basis">
+        Cobertura oficial conta apenas documentos de fonte oficial ou banca: página de agregador
+        não é edital. Cada certame recebe um estado explícito e uma próxima ação. Total agregado
+        não vira vaga indígena; lotação não é local de prova; proposta não é campo confirmado.
+      </p>
+      <div class="prefs">
+        <button id="official-refresh" type="button" class="button button--ghost">Atualizar</button>
+        <span id="official-status" class="prefs__status" role="status" aria-live="polite"></span>
+      </div>
+      <div id="official-coverage-panel" class="coverage__panel">
+        <p class="muted">Carregando cobertura oficial.</p>
+      </div>
+      <h3 class="study__subtitle">Campos decisivos</h3>
+      <div id="decisive-panel" class="coverage__panel">
+        <p class="muted">Carregando campos decisivos.</p>
+      </div>
+      <h3 class="study__subtitle">Conflitos entre versões</h3>
+      <div id="conflicts-panel" class="coverage__panel">
+        <p class="muted">Carregando conflitos.</p>
+      </div>
+    </section>
+
     <section class="sources" aria-labelledby="sources-title">
       <h2 id="sources-title" class="results__title">Catálogo de fontes</h2>
       <p class="prep__basis">

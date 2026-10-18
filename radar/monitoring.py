@@ -229,6 +229,7 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
     if contest_id is not None:
         involved_contests.add(contest_id)
     documents_new = 0
+    nominal_skipped = 0
     new_ids = []
     skip_download = {}
     allowed_hosts = {}
@@ -284,6 +285,13 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
             known_by_obs[obs_id].add(document_id)
             documents_new += 1
             new_ids.append(document_id)
+        from radar.document_types import is_nominal_title
+        if is_nominal_title(candidate.get("title")):
+            # Lista nominal (nomes/notas de candidatos): metadados ficam, o corpo não é
+            # baixado nem extraído. Vale mesmo quando a banca rotula como "Retificação".
+            skip_download[document_id] = "lista_nominal"
+            nominal_skipped += 1
+            continue
         if body_denied:
             # Corpo de terceiro não autorizado: nem download, nem versão. Metadados ficam.
             skip_download[document_id] = "politica_conteudo"
@@ -405,7 +413,8 @@ def _run_source(db_path, cycle_id, source, transport, analyze, now) -> dict:
             "changes_pending": pending, "coverage_state": coverage, "errors": errors,
             "downloads_bloqueados": bloqueados,
             "politica_nao_persistido": len(policy_skipped),
-            "politica_sem_corpo": len(policy_stripped)}
+            "politica_sem_corpo": len(policy_stripped),
+            "nominais_ignorados": nominal_skipped}
 
 
 def _insert_fonte(db_path, fonte_id, cycle_id, source_url, state, checked_at, last_success_at,

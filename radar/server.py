@@ -553,6 +553,71 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 return
             from radar import table_continuity
             self._serve_study(table_continuity.continuity_report_all)
+        elif path == "/api/cobertura/estados":
+            query = parse_qs(parts.query)
+            if set(query) - {"limit"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["5000"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            if limit < 0:
+                self._bad_request("limit inválido")
+                return
+            from radar import coverage_states
+            self._serve_study(coverage_states.coverage_report, limit=limit)
+        elif path == "/api/campos-decisivos":
+            query = parse_qs(parts.query)
+            if set(query) - {"limit", "contest_id"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["200"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            if limit < 0:
+                self._bad_request("limit inválido")
+                return
+            from radar import decisive_fields
+            contest_ids = query.get("contest_id") or None
+            self._serve_study(decisive_fields.decisive_report,
+                              contest_ids=contest_ids, limit=limit)
+        elif path == "/api/conflitos":
+            query = parse_qs(parts.query)
+            if set(query) - {"limit", "contest_id"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["200"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            if limit < 0:
+                self._bad_request("limit inválido")
+                return
+            from radar import version_conflicts
+            self._serve_study(version_conflicts.conflicts,
+                              contest_id=(query.get("contest_id") or [None])[0],
+                              limit=limit)
+        elif path == "/api/editais-faltantes":
+            query = parse_qs(parts.query)
+            if set(query) - {"limit", "source"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["50"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            if limit < 1:
+                self._bad_request("limit inválido")
+                return
+            from radar import acquisition
+            self._serve_study(acquisition.targets,
+                              source_id=(query.get("source") or [None])[0], limit=limit)
         elif path == "/api/pipeline/parciais":
             query = parse_qs(parts.query)
             if set(query) - {"limit"}:

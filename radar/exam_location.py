@@ -37,7 +37,7 @@ _PENDING = re.compile(
 _CITY = re.compile(
     r"\b(?:na|no|em)\s+(?:cidade|munic[ií]pio)\s+(?:de|do|da)\s+"
     r"([A-ZÀ-Þ][^,;.()/]{2,60})"
-    r"(?:\s*/\s*([A-Z]{2})\b)?"
+    r"(?:\s*[/\-\u2013\u2014]\s*([A-Z]{2})\b)?"
     r"(?:,\s*([A-Za-zÀ-ÿ ]{2,20}))?",
     re.I)
 # "nas cidades de Curitiba/PR e Maringá/PR" (lista de municípios)
@@ -76,7 +76,8 @@ _SENTENCE_SPLIT = re.compile(
 
 
 def _clean(value: str) -> str:
-    return " ".join((value or "").split()).strip(" .,;:-")
+    # Travessão/en-dash também são separadores ("Porto Alegre – RS") e não fazem parte do nome.
+    return " ".join((value or "").split()).strip(" .,;:-\u2013\u2014")
 
 
 VALID_UFS = frozenset(_STATE_NAMES.values()) | {"DF"}
@@ -108,7 +109,7 @@ def _city_name(raw: str) -> str:
                     text)[0]
     # Conjunção seguida de minúscula encerra o nome ("Macapá e o candidato ...").
     text = re.split(r"\s+e\s+(?=[a-zà-ÿ])", text)[0]
-    text = re.split(r"\s*[/-]\s*[A-Z]{2}\s*$", text)[0]
+    text = re.split(r"\s*[/\-\u2013\u2014]\s*[A-Z]{2}\s*$", text)[0]
     text = re.split(r"\s+[A-Z]{2}\s*$", text)[0]
     text = _clean(text)
     # Remove sufixos genéricos de local ("Município de X" já foi consumido pela âncora).
@@ -172,6 +173,11 @@ def find_exam_locations(blocks: list[dict]) -> list[dict]:
             for match in _CITY.finditer(sentence):
                 city = _city_name(match.group(1))
                 uf = _valid_uf(match.group(2)) or _uf_from_text(sentence)
+                if not uf:
+                    # "cidade de Porto Alegre – RS": a UF vem depois do travessão.
+                    tail = re.search(r"[/\-\u2013\u2014]\s*([A-Z]{2})\s*$",
+                                     _clean(match.group(1)))
+                    uf = _valid_uf(tail.group(1)) if tail else None
                 if not uf and match.group(3):
                     raw = _clean(match.group(3))
                     uf = (_valid_uf(raw) if len(raw) == 2
@@ -236,6 +242,9 @@ def extract_exam_location(blocks: list[dict], contest_id: str, *, label_prefix: 
             value = "; ".join(parts)
             note = ("local de aplicação citado no documento; revisar se vale para a etapa "
                     "de prova objetiva e se a lista está completa")
+        evidence = dict(block_index=item["block_index"], quote=quote,
+                        start_offset=item["start_offset"], end_offset=item["end_offset"],
+                        page_number=item["page_number"], header="Local de prova")
         # "Salvador" e "Salvador/BA" são o mesmo local: a UF só qualifica, não diferencia.
         key = ("exam_location", re.sub(r"/[A-Z]{2}$", "", value).lower())
         if key in seen:
@@ -252,9 +261,6 @@ def extract_exam_location(blocks: list[dict], contest_id: str, *, label_prefix: 
             continue
         seen.add(key)
         ambiguity = f"{label_prefix}local de prova candidato — {note}"
-        evidence = dict(block_index=item["block_index"], quote=quote,
-                        start_offset=item["start_offset"], end_offset=item["end_offset"],
-                        page_number=item["page_number"], header="Local de prova")
         proposals.append(_proposal(contest_id, "exam_location", value, ambiguity, evidence))
         if not item["pending"] and len(item["cities"]) == 1:
             city, uf = item["cities"][0]

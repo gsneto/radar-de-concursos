@@ -148,6 +148,16 @@ class CycleTest(unittest.TestCase):
         self.assertEqual(second["documents_new"], 0)
         self.assertEqual(second["versions_new"], 0)
 
+    def test_lista_nominal_e_registrada_sem_download_nem_versao(self):
+        url = "https://guajaramirim.ro.gov.br/inscritos.pdf"
+        source = _source(lambda: "x", [
+            (url, "edital", "Retificação - Relação de inscritos provisórios")])
+        result = run_cycle(self.db, sources=[source], transport=_pdf_transport())
+        self.assertEqual(result["documents_new"], 1)
+        self.assertEqual(result["versions_new"], 0)
+        self.assertEqual(result["sources"][0]["nominais_ignorados"], 1)
+        self.assertEqual(self._version_count(), 0)
+
     def test_volatile_telemetry_does_not_create_a_version(self):
         url = "https://guajaramirim.ro.gov.br/edital.html"
         source = _source(lambda: "x", [(url, "edital", "Edital")])
