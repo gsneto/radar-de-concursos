@@ -187,8 +187,9 @@ class IndigenousScopeTest(Base):
         self.prop(version=version, field="indigenous_reserve_vacancies", value=1,
                   quote="CARGO A 1 - - - - 25 2 10 1 1 40")
         item = self.row()
+        # F40: zero imediato publicado + reserva quantificada é estado próprio, não lacuna.
         self.assertEqual(item["indigenous"]["estado"],
-                         "cargo_sem_imediata_com_reserva")
+                         "cargo_zero_imediato_com_reserva")
         self.assertEqual(item["eligibility"]["estado"], "compativel_sem_vaga_indigena")
 
     def test_cadastro_de_reserva_geral_nao_e_indigena(self):

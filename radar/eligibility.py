@@ -25,11 +25,11 @@ import re
 from contextlib import closing
 
 from radar import (deadline_calendar, decisive_fields, edital_requirements,
-                   portfolio, review, role_identity)
+                   indigenous_scope, portfolio, review, role_identity)
 from radar.document_store import (connect_documents, is_readable_schema,
                                   normalize_role)
 
-ELIGIBILITY_VERSION = "eligibility_v2"
+ELIGIBILITY_VERSION = "eligibility_v3"
 
 # Perfil pretendido. Configurável; o padrão é o perfil prioritário da fase.
 PROFILES = {
@@ -67,12 +67,17 @@ ELIGIBILITY_LABELS = {
 # Estados do escopo indígena — exclusivos, por cargo.
 INDIGENOUS_SCOPE_STATES = (
     "cargo_imediata",
+    "cargo_zero_imediato_com_reserva",
     "cargo_sem_imediata_com_reserva",
     "cargo_explicito_zero",
     "distribuido_por_cargo",
     "concurso_imediata_sem_distribuicao",
+    "concurso_sem_imediata_com_reserva",
+    "concurso_explicito_zero",
     "reserva_sem_quantidade",
+    "reserva_combinada_com_outros_grupos",
     "mencao_sem_quantidade",
+    "mencao_fora_do_escopo_de_reserva",
     "ausente_no_documento",
     "nao_localizado",
     "conflito",
@@ -80,20 +85,35 @@ INDIGENOUS_SCOPE_STATES = (
 )
 INDIGENOUS_SCOPE_LABELS = {
     "cargo_imediata": "Vaga indígena imediata publicada para este cargo",
-    "cargo_sem_imediata_com_reserva": ("Sem vaga imediata indígena; reserva indígena "
-                                      "publicada para o cargo"),
+    "cargo_zero_imediato_com_reserva": ("Tabela do cargo publica zero vaga indígena imediata "
+                                        "e reserva indígena quantificada"),
+    "cargo_sem_imediata_com_reserva": ("Reserva indígena publicada para o cargo, sem coluna "
+                                       "de vaga imediata indígena na mesma tabela"),
     "cargo_explicito_zero": "Zero indígena publicado para este cargo (tabela completa)",
     "distribuido_por_cargo": ("Informação indígena publicada por cargo (ver cada cargo; "
                               "o total do concurso não é distribuído aqui)"),
     "concurso_imediata_sem_distribuicao": ("Vaga indígena imediata publicada apenas no "
                                            "âmbito do concurso"),
+    "concurso_sem_imediata_com_reserva": ("Concurso publica reserva indígena sem vaga "
+                                          "imediata; sem distribuição por cargo"),
+    "concurso_explicito_zero": ("Concurso publica zero vaga indígena imediata e nenhuma "
+                                "reserva quantificada"),
     "reserva_sem_quantidade": "Reserva indígena mencionada, sem quantidade comprovada",
-    "mencao_sem_quantidade": "Menção a indígenas sem quantidade ou escopo suficiente",
+    "reserva_combinada_com_outros_grupos": ("Reserva indígena publicada somente em coluna "
+                                            "combinada com outros grupos; quantidade "
+                                            "indígena não separável"),
+    "mencao_sem_quantidade": ("Regra de reserva indígena mencionada, sem quantidade "
+                              "extraída para o cargo"),
+    "mencao_fora_do_escopo_de_reserva": ("Palavra 'indígena' no documento fora de regra de "
+                                         "reserva (identificação, vestuário, conteúdo ou "
+                                         "procedimento)"),
     "ausente_no_documento": "Documento examinado não traz a modalidade indígena",
     "nao_localizado": "Informação indígena não localizada",
     "conflito": "Conflito documental na informação indígena",
     "extracao_insuficiente": "Documento ou extração insuficiente",
 }
+
+# Contexto da menção textual vem de radar.indigenous_scope.
 
 # Situação temporal (dimensão separada, nunca usada para "abrir" a oportunidade).
 TEMPORAL_STATES = ("revalidado_na_fonte", "candidato", "conflito", "expirado",
@@ -426,15 +446,37 @@ def _numbers(items):
 
 
 def _indigenous_state(cargo_items, cargo_reserve, contest_items, contest_reserve,
-                      mention, analyzed):
-    """Estado indígena do cargo, sem herdar a quantidade do concurso."""
+                      mention, analyzed, mention_context=None, contest_row=False):
+    """Estado indígena do cargo, sem herdar a quantidade do concurso.
+
+    Zero imediato publicado numa tabela completa e reserva quantificada é um estado
+    próprio: não é lacuna nem reserva apenas mencionada. Reserva combinada com outros
+    grupos não vira cota indígena, e menção lexical fora de reserva não é reserva.
+    """
+    state, evidence = _indigenous_state_for_cargo(
+        cargo_items, cargo_reserve, contest_items, contest_reserve, mention, analyzed,
+        mention_context)
+    if not contest_row:
+        return state, evidence
+    # Linha do concurso não pode carregar rótulo de cargo ("tabela do cargo").
+    if state == "cargo_imediata":
+        return "concurso_imediata_sem_distribuicao", evidence
+    if state in ("cargo_zero_imediato_com_reserva", "cargo_sem_imediata_com_reserva"):
+        return "concurso_sem_imediata_com_reserva", evidence
+    if state == "cargo_explicito_zero":
+        return "concurso_explicito_zero", evidence
+    return state, evidence
+
+
+def _indigenous_state_for_cargo(cargo_items, cargo_reserve, contest_items,
+                                contest_reserve, mention, analyzed, mention_context):
     if cargo_items:
         values = _numbers(cargo_items)
         if any(value > 0 for value in values):
             return "cargo_imediata", [_brief(row) for row in cargo_items]
         if values:
             if cargo_reserve and any(value > 0 for value in _numbers(cargo_reserve)):
-                return "cargo_sem_imediata_com_reserva", (
+                return "cargo_zero_imediato_com_reserva", (
                     [_brief(row) for row in cargo_items]
                     + [_brief(row) for row in cargo_reserve])
             return "cargo_explicito_zero", [_brief(row) for row in cargo_items]
@@ -442,11 +484,24 @@ def _indigenous_state(cargo_items, cargo_reserve, contest_items, contest_reserve
         return "cargo_sem_imediata_com_reserva", [_brief(row) for row in cargo_reserve]
     if contest_items and any(value > 0 for value in _numbers(contest_items)):
         return "concurso_imediata_sem_distribuicao", [_brief(row) for row in contest_items]
+    if contest_items and _numbers(contest_items):
+        if contest_reserve and any(value > 0 for value in _numbers(contest_reserve)):
+            return "concurso_sem_imediata_com_reserva", (
+                [_brief(row) for row in contest_items]
+                + [_brief(row) for row in contest_reserve])
+        return "concurso_explicito_zero", [_brief(row) for row in contest_items]
     if contest_reserve:
         evidence = [_brief(row) for row in contest_reserve]
+        if any(value > 0 for value in _numbers(contest_reserve)):
+            return "concurso_sem_imediata_com_reserva", evidence
         return "reserva_sem_quantidade", evidence
     if mention:
-        return "mencao_sem_quantidade", [mention]
+        context = mention_context or "outro"
+        if context == "regra_de_reserva":
+            return "mencao_sem_quantidade", [mention]
+        if context == "regra_de_reserva_combinada":
+            return "reserva_combinada_com_outros_grupos", [mention]
+        return "mencao_fora_do_escopo_de_reserva", [mention]
     if not analyzed:
         return "nao_localizado", []
     return "ausente_no_documento", []
@@ -543,23 +598,26 @@ def matrix(db_path, *, profile=None, eligibility=None, indigenous=None,
             "JOIN versoes_documento v ON v.document_id=d.id "
             "JOIN blocos_documento b ON b.version_id=v.id "
             "WHERE d.tipo_documental IN ('edital_abertura','edital_retificado')")}
-        # Menção textual a indígenas no documento, sem quantidade extraída.
+        # Menção textual a indígenas no documento, classificada por contexto. Só a
+        # regra de reserva sustenta estado de reserva; as demais menções ficam nomeadas.
+        # A melhor janela (não a primeira) define contexto e evidência.
         mentions = {}
-        for contest, page, text in conn.execute(
-                "SELECT d.contest_id, b.page_number, b.text FROM blocos_documento b "
+        mention_rank = {}
+        for contest, page, text, title in conn.execute(
+                "SELECT d.contest_id, b.page_number, b.text, d.title FROM blocos_documento b "
                 "JOIN versoes_documento v ON v.id=b.version_id "
                 "JOIN documentos d ON d.id=v.document_id "
                 "WHERE d.tipo_documental IN ('edital_abertura','edital_retificado') "
                 "AND b.page_number IS NOT NULL "
                 "AND (lower(b.text) LIKE '%indígen%' OR lower(b.text) LIKE '%indigen%')"):
-            if contest in mentions:
+            context, position, strength = indigenous_scope.classify(text, title)
+            if contest in mentions and strength <= mention_rank.get(contest, -1):
                 continue
-            low = (text or "").lower()
-            index = low.find("indígen")
-            if index < 0:
-                index = low.find("indigen")
-            snippet = " ".join((text or "")[max(0, index - 80):index + 160].split())
-            mentions[contest] = {"quote": snippet[:200], "page_number": page}
+            mention_rank[contest] = strength
+            mentions[contest] = {
+                "quote": indigenous_scope.snippet(text, position), "page_number": page,
+                "contexto": context,
+                "contexto_label": indigenous_scope.MENTION_CONTEXT_LABELS[context]}
     by_scope = _scope_rows(rows, reconciled)
     cargolike = _cargolike_labels(rows, reconciled)
     # Rótulos só com código ("200") e códigos dos rótulos nomeados, para a junção por
@@ -653,11 +711,17 @@ def matrix(db_path, *, profile=None, eligibility=None, indigenous=None,
         if not scope:
             identity_state = "reconciliado"
         mention = mentions.get(cid)
+        if scope:
+            cargo_indigenous = entry.get("indigenous") or []
+            cargo_reserve = entry.get("indigenous_reserve") or []
+        else:
+            # Linha do concurso: o dado do concurso não é dado de cargo.
+            cargo_indigenous, cargo_reserve = [], []
         indigenous_state, indigenous_evidence = _indigenous_state(
-            entry.get("indigenous") or [], entry.get("indigenous_reserve") or [],
+            cargo_indigenous, cargo_reserve,
             contest_entry.get("indigenous") or [],
             contest_entry.get("indigenous_reserve") or [],
-            mention, cid in analyzed)
+            mention, cid in analyzed, (mention or {}).get("contexto"), not scope)
         if not scope:
             # Linha do concurso: se a informação está por cargo, não se distribui nem
             # se inventa um total; apenas se declara onde ela está.
@@ -698,6 +762,8 @@ def matrix(db_path, *, profile=None, eligibility=None, indigenous=None,
                            "ambito": ("cargo" if indigenous_state.startswith("cargo_")
                                       else "concurso" if indigenous_state in
                                       ("concurso_imediata_sem_distribuicao",
+                                       "concurso_sem_imediata_com_reserva",
+                                       "concurso_explicito_zero",
                                        "distribuido_por_cargo")
                                       else "indefinido"),
                            "evidencias": indigenous_evidence},
@@ -797,7 +863,9 @@ def matrix(db_path, *, profile=None, eligibility=None, indigenous=None,
                         "contest_id": contest_id, "role_id": role_id},
             "precedencia": list(ELIGIBILITY_STATES),
             "indigena": ("cargo_* vem de tabela com linha por cargo; "
-                         "concurso_imediata_sem_distribuicao nunca é distribuído por cargo"),
+                         "concurso_imediata_sem_distribuicao nunca é distribuído por cargo; "
+                         "zero imediato publicado com reserva quantificada não é lacuna; "
+                         "menção lexical só conta como reserva no contexto de regra de reserva"),
         },
         "limit": limit, "offset": offset, "has_more": offset + limit < total,
         "itens": items[offset:offset + limit],
@@ -819,6 +887,21 @@ def _reason(elig, si_view, indigenous_state, identity, atribuicao=None):
         return ("requisito sustenta o perfil e a tabela do edital publica vaga indígena "
                 "para este cargo")
     if elig == "compativel_sem_vaga_indigena":
+        if indigenous_state == "cargo_zero_imediato_com_reserva":
+            return ("requisito sustenta o perfil; a tabela do cargo publica zero vaga "
+                    "indígena imediata e reserva indígena quantificada")
+        if indigenous_state == "cargo_sem_imediata_com_reserva":
+            return ("requisito sustenta o perfil; a reserva indígena do cargo está "
+                    "quantificada, mas não há coluna de vaga imediata indígena")
+        if indigenous_state == "concurso_sem_imediata_com_reserva":
+            return ("requisito sustenta o perfil; o concurso publica reserva indígena sem "
+                    "vaga imediata e sem distribuição por cargo")
+        if indigenous_state == "reserva_combinada_com_outros_grupos":
+            return ("requisito sustenta o perfil; a reserva indígena só aparece em coluna "
+                    "combinada com outros grupos e não é separável")
+        if indigenous_state == "mencao_fora_do_escopo_de_reserva":
+            return ("requisito sustenta o perfil; a palavra 'indígena' no documento não é "
+                    "regra de reserva")
         return "requisito sustenta o perfil; a reserva indígena não está quantificada no cargo"
     if elig == "compativel_por_interpretacao":
         return "o requisito é de área correlata e exige interpretação humana"
@@ -866,10 +949,16 @@ def highlights(db_path, *, profile=None, limit=12, now=None) -> dict:
                 reasons.append("nível " + item["si"]["educacao"]["nivel"])
         elif item["eligibility"]["estado"] == "compativel_sem_vaga_indigena":
             reasons.append("requisito sustenta o perfil")
-            if item["indigenous"]["estado"] == "cargo_sem_imediata_com_reserva":
+            if item["indigenous"]["estado"] == "cargo_zero_imediato_com_reserva":
+                reasons.append("tabela do cargo publica zero imediato e reserva indígena")
+            elif item["indigenous"]["estado"] == "cargo_sem_imediata_com_reserva":
                 reasons.append("reserva indígena do cargo sem vaga imediata")
             elif item["indigenous"]["estado"] == "cargo_explicito_zero":
                 reasons.append("tabela do cargo publica zero indígena")
+            elif item["indigenous"]["estado"] == "reserva_combinada_com_outros_grupos":
+                reasons.append("reserva indígena apenas em coluna combinada com outros grupos")
+            elif item["indigenous"]["estado"] == "mencao_fora_do_escopo_de_reserva":
+                reasons.append("sem reserva indígena identificada (menção fora de regra)")
             else:
                 reasons.append("reserva indígena não quantificada para o cargo")
         else:

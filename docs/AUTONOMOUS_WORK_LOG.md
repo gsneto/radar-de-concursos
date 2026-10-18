@@ -567,3 +567,13 @@ Comandos de retomada, na raiz do projeto: `git status --short --branch`; `python
 - **Revisao independente**: corrigidos licenciatura como nivel minimo (critico), decisao humana sobrescrita, aceitacao explicita rebaixada, educacao da evidencia errada, atribuicao sem leitura, rotulos vazios.
 - **Base**: sem migracao (v21); 7.593 -> 7.648 propostas; 0 revisoes, 0 valores, 0 reconciliacoes.
 - **Testes**: **1.748 testes, OK** (46 novos; 1 pulado quando ha motor de OCR).
+
+### Fase 40 - Zero publicado, reserva combinada e mencao fora de reserva (2026-10-18)
+
+- **Os 55 nao eram lacunas**: seis concursos Quadrix publicam `-` em vagas efetivas indigenas e reserva positiva. Estado proprio `cargo_zero_imediato_com_reserva`; `cargo_sem_imediata_com_reserva` fica so para reserva publicada sem coluna de vaga imediata. Nenhum total rateado.
+- **As 89 mencoes**: 83 sao `mencao_fora_do_escopo_de_reserva` (RANI, vestuario, conteudo programatico, heteroidentificacao), 3 sao regra de reserva sem quantidade extraida (TJAP `CR*`, TJRS, SEDUC-PA) e 3 sao `reserva_combinada_com_outros_grupos` (SEPLAG-RJ com legenda `N/I`, MPRJ, IBFC). 83+3+3 = 89, sem sobra.
+- **Contexto compartilhado** (`radar/indigenous_scope.py`): janela de +-220 caracteres por ocorrencia; reserva exclusiva > combinada > demais contextos; percentual nao conta quando outro grupo esta entre o numero e "indigena"; ano de lei entre parenteses nao e percentual. Matriz e carteira usam o mesmo classificador.
+- **SEDUC-PA**: Anexo II (p. 63-83) traz `AC PcD PP PI PQ PPIQ PI/PQ Total` por cargo e DRE, com soma fechando o total. Identificado como maior oportunidade de extracao por cargo; nao implementado nesta fase.
+- **Superficie**: 2 estados novos na matriz e 2 na carteira, filtros de UI atualizados, versao `eligibility_v3`, contrato HTTP inalterado.
+- **Base**: sem migracao (v21); 7.648 propostas inalteradas; 0 revisoes, 0 valores, 0 reconciliacoes; `integrity ok`, FK vazia.
+- **Testes**: **1.775 testes, OK** (27 novos; 1 pulado quando ha motor de OCR).

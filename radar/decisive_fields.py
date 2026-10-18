@@ -24,7 +24,7 @@ import re
 from contextlib import closing
 from datetime import date
 
-from radar import location, version_conflicts
+from radar import indigenous_scope, location, version_conflicts
 from radar.document_store import connect_documents, is_readable_schema
 from radar.edital_requirements import SI_STATES
 
@@ -48,6 +48,8 @@ INDIGENOUS_STATES = (
     "apenas_reserva",
     "explicito_sem_vaga_imediata",
     "mencao_sem_quantidade",
+    "reserva_combinada_com_outros_grupos",
+    "mencao_fora_do_escopo_de_reserva",
     "agregado_sem_modalidade",
     "nao_mencionado",
     "nao_pesquisado",
@@ -56,7 +58,11 @@ INDIGENOUS_LABELS = {
     "explicito_imediato": "Vaga imediata indígena explícita",
     "apenas_reserva": "Apenas reserva indígena (sem vaga imediata)",
     "explicito_sem_vaga_imediata": "Modalidade indígena explícita, sem vaga imediata",
-    "mencao_sem_quantidade": "Menção a indígena sem quantidade extraída",
+    "mencao_sem_quantidade": "Regra de reserva indígena sem quantidade extraída",
+    "reserva_combinada_com_outros_grupos": ("Reserva indígena apenas em coluna combinada "
+                                            "com outros grupos"),
+    "mencao_fora_do_escopo_de_reserva": ("Palavra 'indígena' fora de regra de reserva "
+                                         "(identificação, vestuário, conteúdo, procedimento)"),
     "agregado_sem_modalidade": "Apenas total agregado publicado (não distribuir)",
     "nao_mencionado": "Edital extraído sem menção a vaga indígena",
     "nao_pesquisado": "Sem edital extraído",
@@ -178,13 +184,22 @@ def _indigenous(data, contest_id, conflict_fields):
                  if item["contest_id"] == contest_id
                  and item["field_name"] == "vagas_total_publicado"]
     analyzed = contest_id in data["analyzed"]
+    # A melhor janela (não a primeira página) define contexto e evidência: uma página de
+    # conteúdo antes da regra de reserva não pode esconder a reserva.
     mentioned = None
+    best_rank = -1
     for version_id, page, text in data["contest_pages"].get(contest_id, []):
-        hint = _HEADER_HINT.search(text or "")
-        if hint:
-            mentioned = {"quote": " ".join(hint.group(0).split())[:200],
-                         "page_number": page}
-            break
+        low = (text or "").lower()
+        if "indígen" not in low and "indigen" not in low:
+            continue
+        context, position, strength = indigenous_scope.classify(text)
+        if strength <= best_rank:
+            continue
+        best_rank = strength
+        mentioned = {"quote": indigenous_scope.snippet(text, position, radius=60),
+                     "page_number": page, "contexto": context,
+                     "contexto_label":
+                         indigenous_scope.MENTION_CONTEXT_LABELS[context]}
     if not analyzed and not proposals:
         state = "nao_pesquisado"
     elif any(field in INDIGENOUS_FIELDS for field in conflict_fields):
@@ -196,7 +211,13 @@ def _indigenous(data, contest_id, conflict_fields):
     elif immediate:
         state = "explicito_sem_vaga_imediata"
     elif mentioned:
-        state = "mencao_sem_quantidade"
+        context = mentioned["contexto"]
+        if context == "regra_de_reserva":
+            state = "mencao_sem_quantidade"
+        elif context == "regra_de_reserva_combinada":
+            state = "reserva_combinada_com_outros_grupos"
+        else:
+            state = "mencao_fora_do_escopo_de_reserva"
     elif aggregate:
         state = "agregado_sem_modalidade"
     else:

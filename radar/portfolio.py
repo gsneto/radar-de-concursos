@@ -82,6 +82,8 @@ INDIGENOUS_RANK = {
     "explicito_imediato": 4,
     "apenas_reserva": 3,
     "mencao_sem_quantidade": 2,
+    "reserva_combinada_com_outros_grupos": 2,
+    "mencao_fora_do_escopo_de_reserva": 0,
     "agregado_sem_modalidade": 1,
     "explicito_sem_vaga_imediata": 1,
     "nao_mencionado": 0,
@@ -184,8 +186,12 @@ def _indigenous_for(dec, item):
     base = dict((dec or {}).get("indigenas") or {})
     base["ambito"] = "concurso"
     if item.get("scope"):
-        base["nota_cargo"] = ("o quantitativo indígena é do concurso; não há distribuição "
-                              "por cargo comprovada neste dado")
+        if base.get("estado") == "mencao_fora_do_escopo_de_reserva":
+            base["nota_cargo"] = ("a menção a indígenas no documento não é regra de reserva; "
+                                  "nada é atribuído ao cargo")
+        else:
+            base["nota_cargo"] = ("o quantitativo indígena é do concurso; não há distribuição "
+                                  "por cargo comprovada neste dado")
     return base
 
 
@@ -314,7 +320,9 @@ def _gaps(item, dec, deadlines, si):
         if state in (None, "nao_extraido"):
             gaps.append(f"campo ausente: {field}")
     indigenous = (dec or {}).get("indigenas") or {}
-    if indigenous.get("estado") in ("mencao_sem_quantidade", "agregado_sem_modalidade",
+    if indigenous.get("estado") in ("mencao_sem_quantidade",
+                                    "reserva_combinada_com_outros_grupos",
+                                    "agregado_sem_modalidade",
                                     "nao_mencionado", "nao_pesquisado"):
         prefixo = "no concurso, vagas indígenas: " if item.get("scope") \
             else "vagas indígenas: "
@@ -347,6 +355,8 @@ def _next_action(readiness, item, deadlines, si, indigenous):
         return "manter como histórica; acompanhar nova publicação"
     if SI_RANK.get((si or {}).get("estado"), 0) == 2:
         return "revisar requisito de formação (Sistemas de Informação)"
+    if (indigenous or {}).get("estado") == "reserva_combinada_com_outros_grupos":
+        return "separar a reserva indígena da coluna combinada no edital"
     if (indigenous or {}).get("estado") in ("mencao_sem_quantidade",
                                             "agregado_sem_modalidade"):
         return "revisar reserva de vagas indígenas no edital"
@@ -500,7 +510,8 @@ def portfolio(db_path, *, prontidao=None, prazo=None, si=None, indigena=None,
 
 HIGHLIGHT_SI = ("explicito", "categoria_inclui_curso",
                 "area_correlata_interpretacao")
-HIGHLIGHT_INDIGENOUS = ("explicito_imediato", "apenas_reserva", "mencao_sem_quantidade")
+HIGHLIGHT_INDIGENOUS = ("explicito_imediato", "apenas_reserva", "mencao_sem_quantidade",
+                       "reserva_combinada_com_outros_grupos")
 MAX_PER_CONTEST = 2
 
 
