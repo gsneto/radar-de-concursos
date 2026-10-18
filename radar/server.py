@@ -735,6 +735,50 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                               search=query.get("search", [None])[0],
                               contest_id=query.get("contest_id", [None])[0],
                               role_id=query.get("role_id", [None])[0])
+        elif path == "/api/elegibilidade":
+            query = parse_qs(parts.query)
+            allowed = {"limit", "offset", "profile", "eligibility", "indigenous",
+                       "temporal", "identity", "si", "uf", "conflict", "conflito",
+                       "search", "contest_id", "role_id"}
+            if set(query) - allowed:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["50"])[0])
+                offset = int(query.get("offset", ["0"])[0])
+            except ValueError:
+                self._bad_request("parâmetros inválidos")
+                return
+            conflict = query.get("conflito", query.get("conflict", [None]))[0]
+            if conflict not in (None, "sim", "nao"):
+                self._bad_request("conflito inválido")
+                return
+            from radar import eligibility
+            self._serve_study(eligibility.matrix, limit=limit, offset=offset,
+                              profile=query.get("profile", [None])[0],
+                              eligibility=query.get("eligibility", [None])[0],
+                              indigenous=query.get("indigenous", [None])[0],
+                              temporal=query.get("temporal", [None])[0],
+                              identity=query.get("identity", [None])[0],
+                              si=query.get("si", [None])[0],
+                              uf=query.get("uf", [None])[0],
+                              conflict=None if conflict is None else conflict == "sim",
+                              search=query.get("search", [None])[0],
+                              contest_id=query.get("contest_id", [None])[0],
+                              role_id=query.get("role_id", [None])[0])
+        elif path == "/api/elegibilidade/destaques":
+            query = parse_qs(parts.query)
+            if set(query) - {"limit", "profile"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["12"])[0])
+            except ValueError:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import eligibility
+            self._serve_study(eligibility.highlights, limit=limit,
+                              profile=query.get("profile", [None])[0])
         elif path == "/api/carteira/destaques":
             query = parse_qs(parts.query)
             if set(query) - {"limit"}:

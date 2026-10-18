@@ -541,3 +541,16 @@ Comandos de retomada, na raiz do projeto: `git status --short --branch`; `python
 - **Auditorias de apoio**: 11 revalidacoes (todas `fonte_inalterada`, 0 decisoes); 12 destaques em 8 concursos; SI 3 explicitos / 5 categoria / 53 correlatos / 80 outras / 144 sem leitura, separados por escopo; indigena 0 imediato, 103 reserva, 168 mencao, 14 nao mencionado; 287 nominais (131 metadados, 156 retirar), crescimento explicado pelo ciclo.
 - **Base**: sem migracao (v21); nenhuma revisao, valor vigente ou reconciliacao criada; 1 revalidacao nova. Ciclo nao rodou durante a fase.
 - **Testes**: **1.668 testes, OK** (31 novos; 1 pulado quando ha motor de OCR).
+
+### Fase 38 — Matriz de elegibilidade por cargo e escopo indigena (2026-10-18)
+
+- **Caso TJSC (4f495c42)**: quadro de vagas em texto passou a ser lido — 15 vagas imediatas e **1 indigena** para "Juiz Substituto"; requisito de bacharelado em Direito representado como `incompativel_por_requisito`; inscricoes 19/10 a 26/11/2026 no evento correto; nenhuma decisao criada.
+- **Elegibilidade** (`radar/eligibility.py`): 6 estados exclusivos com precedencia (incompativel > compativel com vaga indigena do cargo > compativel > potencial > identidade pendente > insuficiente); 159 cargos: 44 incompatíveis, 3 compativeis, 84 identidade pendente, 28 insuficientes.
+- **Guardas de texto**: "ambiguo" so vira potencial quando o trecho e de formacao e cita area de computacao/TI; "conhecimentos basicos em informatica" nao conta; leitura ambigua nao apaga incompatibilidade explicita.
+- **Escopo indigena**: 9 estados com `ambito`; quantidade do concurso nunca distribuida por cargo; "CR" e "-" nao viram zero nem vaga imediata; 1 cargo com vaga imediata, 55 com reserva sem imediata, 89 mencoes sem quantidade, 3 zero explicito, 9 linhas de concurso com distribuicao por cargo.
+- **Quadro de vagas em texto** (`document_fields._inline_vacancy_proposals`): parser posicional por cabecalho, com guardas contra prosa, numeracao de topicos, celula extra e "N + CR"; multi-linha. 3 documentos afetados, +8 propostas candidatas, nenhuma reescrita.
+- **Destaques**: 12 em 8 concursos (Fase 37) -> **3 em 2 concursos**, so requisito sustentado; cargo incompativel com vaga indigena ficou fora.
+- **Superficie**: 2 rotas aditivas, 2 comandos CLI, secao "Matriz de elegibilidade" com filtros (compatibilidade, indigena, prazo, identidade, UF) e destaques com motivo.
+- **Revisao independente**: corrigidos (1) ambiguidade apagando incompatibilidade, (2) atribuicao de cargo unico disparando em concurso multi-cargo, (3) coluna extra no quadro, (4) multiplas linhas do quadro, (5) `conflito` fora do allowlist, (6) validacao de `si`/`identity`, (7) reprocessamento de documento restrito a cargo.
+- **Base**: sem migracao (v21); 7.585 -> 7.593 propostas; 0 revisoes, 0 valores, 0 reconciliacoes.
+- **Testes**: **1.702 testes, OK** (34 novos; 1 pulado quando ha motor de OCR).

@@ -3544,6 +3544,16 @@
       event.preventDefault();
       fetchDeadlines();
     });
+    var elegForm = doc.getElementById('eleg-filters');
+    if (elegForm) elegForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      ELEG_STATE.offset = 0;
+      fetchEligibility();
+    });
+    var elegHighlightsRefresh = doc.getElementById('eleg-highlights-refresh');
+    if (elegHighlightsRefresh) {
+      elegHighlightsRefresh.addEventListener('click', fetchEligibilityHighlights);
+    }
     var carteiraForm = doc.getElementById('carteira-filters');
     if (carteiraForm) carteiraForm.addEventListener('submit', function (event) {
       event.preventDefault();
@@ -3582,6 +3592,8 @@
     fetchDeadlines();
     fetchHighlights();
     fetchPortfolio();
+    fetchEligibility();
+    fetchEligibilityHighlights();
     restoreMesaSession();
     fetchDuplicates();
     restoreBatch();
@@ -4638,6 +4650,188 @@
     wrap.appendChild(el(document, 'p', 'muted', proposal.nota || ''));
     wrap.appendChild(el(document, 'p', 'muted', payload.limitacao || ''));
     return wrap;
+  }
+
+  // --- Matriz de elegibilidade (Fase 38) ---
+
+  var ELEG_STATE = {offset: 0, limit: 25};
+  var ELEG_VARIANT = {
+    compativel_com_vaga_indigena_cargo: 'confirmado',
+    compativel_sem_vaga_indigena: 'confirmado',
+    compativel_por_interpretacao: 'candidato',
+    identidade_pendente: 'candidato',
+    incompativel_por_requisito: 'conflito',
+    informacao_insuficiente: 'ausente'
+  };
+
+  function eligibilityFilters() {
+    var parts = ['limit=' + ELEG_STATE.limit, 'offset=' + ELEG_STATE.offset];
+    var map = {
+      'eleg-state': 'eligibility', 'eleg-indigenous': 'indigenous',
+      'eleg-temporal': 'temporal', 'eleg-identity': 'identity', 'eleg-uf': 'uf'
+    };
+    Object.keys(map).forEach(function (id) {
+      var value = triagemValue(id);
+      if (value) parts.push(map[id] + '=' + encodeURIComponent(value));
+    });
+    return parts.join('&');
+  }
+
+  function fetchEligibility() {
+    var doc = global.document;
+    if (!doc || !doc.getElementById('eleg-panel')) return Promise.resolve();
+    triagemStatus('eleg-status', 'Atualizando…');
+    return global.fetch('/api/elegibilidade?' + eligibilityFilters(),
+                        {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        var node = doc.getElementById('eleg-panel');
+        clearContainer(node);
+        node.appendChild(renderEligibility(doc, payload));
+        triagemStatus('eleg-status', '');
+      })
+      .catch(function (error) {
+        triagemStatus('eleg-status', 'Indisponível (' + error.message + ').');
+      });
+  }
+
+  function renderEligibility(document, payload) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    wrap.appendChild(el(document, 'p', 'prep__basis',
+      payload.total + ' cargo(s) · perfil ' + payload.profile.label +
+      ' · ' + Object.keys(payload.por_elegibilidade || {}).map(function (key) {
+        return key + ' ' + payload.por_elegibilidade[key];
+      }).join(' · ')));
+    if (!payload.itens.length) {
+      wrap.appendChild(el(document, 'p', 'muted', 'Nenhum cargo para os filtros.'));
+      return wrap;
+    }
+    var table = el(document, 'table', 'mesa__table');
+    table.appendChild(el(document, 'caption', '',
+      'Elegibilidade por cargo. Reserva do concurso não é vaga do cargo.'));
+    var head = el(document, 'tr');
+    ['Concurso', 'Cargo', 'Identidade', 'Elegibilidade', 'Indígena', 'Vagas', 'Prazo',
+     'Próxima ação', '']
+      .forEach(function (label) { head.appendChild(el(document, 'th', '', label)); });
+    var thead = el(document, 'thead');
+    thead.appendChild(head);
+    table.appendChild(thead);
+    var tbody = el(document, 'tbody');
+    payload.itens.forEach(function (item) {
+      var row = el(document, 'tr');
+      row.appendChild(el(document, 'td', 'mesa__meta',
+        (item.contest_label || '—') + ' · ' + String(item.contest_id).slice(0, 8)));
+      row.appendChild(el(document, 'td', 'mesa__meta',
+        item.role_name || (item.scope ? item.scope : 'concurso')));
+      row.appendChild(el(document, 'td', 'mesa__meta',
+        item.identity === 'reconciliado' ? 'reconciliada' : 'pendente'));
+      var stateCell = el(document, 'td');
+      stateCell.appendChild(el(document, 'span', 'mesa__badge mesa__badge--' +
+        (ELEG_VARIANT[item.eligibility.estado] || 'ausente'),
+        item.eligibility.estado_label));
+      stateCell.appendChild(el(document, 'div', 'mesa__meta',
+        item.eligibility.motivo));
+      row.appendChild(stateCell);
+      var indig = el(document, 'td', 'mesa__meta');
+      indig.appendChild(el(document, 'div', '', item.indigenous.estado_label));
+      indig.appendChild(el(document, 'div', 'mesa__meta',
+        'âmbito: ' + item.indigenous.ambito));
+      row.appendChild(indig);
+      var vacancies = el(document, 'td', 'mesa__meta');
+      var immediate = (item.vacancies.immediate || [])[0];
+      var reserve = (item.vacancies.reserve || [])[0];
+      vacancies.appendChild(el(document, 'div', '',
+        'imediatas: ' + (immediate ? immediate.value : '—')));
+      vacancies.appendChild(el(document, 'div', 'mesa__meta',
+        'reserva: ' + (reserve ? reserve.value : '—')));
+      row.appendChild(vacancies);
+      row.appendChild(el(document, 'td', 'mesa__meta', item.temporal.estado_label));
+      row.appendChild(el(document, 'td', 'mesa__meta', item.proxima_acao));
+      var action = el(document, 'td');
+      var open = el(document, 'button', 'mesa__row-button', 'Dossiê');
+      open.type = 'button';
+      open.addEventListener('click', function () {
+        openPortfolioItem({contest_id: item.contest_id, role_id: item.role_id,
+                           scope: item.scope});
+      });
+      action.appendChild(open);
+      row.appendChild(action);
+      tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    var scroll = el(document, 'div', 'mesa__scroll');
+    scroll.appendChild(table);
+    wrap.appendChild(scroll);
+    var nav = el(document, 'div', 'prefs');
+    var previous = el(document, 'button', 'button button--ghost', 'Anterior');
+    previous.type = 'button';
+    previous.disabled = payload.offset <= 0;
+    previous.addEventListener('click', function () {
+      ELEG_STATE.offset = Math.max(0, ELEG_STATE.offset - ELEG_STATE.limit);
+      fetchEligibility();
+    });
+    var next = el(document, 'button', 'button button--ghost', 'Próxima');
+    next.type = 'button';
+    next.disabled = !payload.has_more;
+    next.addEventListener('click', function () {
+      ELEG_STATE.offset += ELEG_STATE.limit;
+      fetchEligibility();
+    });
+    nav.appendChild(previous);
+    nav.appendChild(next);
+    wrap.appendChild(nav);
+    wrap.appendChild(el(document, 'p', 'muted', payload.limitacao || ''));
+    return wrap;
+  }
+
+  function fetchEligibilityHighlights() {
+    var doc = global.document;
+    if (!doc || !doc.getElementById('eleg-highlights')) return Promise.resolve();
+    triagemStatus('eleg-highlights-status', 'Atualizando…');
+    return global.fetch('/api/elegibilidade/destaques?limit=12',
+                        {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        var node = doc.getElementById('eleg-highlights');
+        clearContainer(node);
+        var wrap = el(doc, 'div', 'coverage__inner');
+        wrap.appendChild(el(doc, 'p', 'prep__basis',
+          payload.total + ' destaque(s) em ' + payload.concursos + ' concurso(s) · ' +
+          payload.criterio));
+        var list = el(doc, 'ul', 'mesa__list');
+        payload.itens.forEach(function (item) {
+          var li = el(doc, 'li');
+          var button = el(doc, 'button', 'mesa__row-button',
+            (item.role_name || item.contest_label) + ' · ' + item.contest_label);
+          button.type = 'button';
+          button.addEventListener('click', function () {
+            openPortfolioItem({contest_id: item.contest_id, role_id: item.role_id,
+                               scope: item.scope});
+          });
+          li.appendChild(button);
+          li.appendChild(el(doc, 'div', 'mesa__meta',
+            item.eligibility.estado_label + ' · ' +
+            (item.motivo_inclusao || []).join('; ')));
+          list.appendChild(li);
+        });
+        if (!list.firstChild) {
+          list.appendChild(el(doc, 'li', 'muted',
+            'Nenhum cargo com requisito sustentado no momento.'));
+        }
+        wrap.appendChild(list);
+        wrap.appendChild(el(doc, 'p', 'muted', payload.limitacao || ''));
+        node.appendChild(wrap);
+        triagemStatus('eleg-highlights-status', '');
+      })
+      .catch(function (error) {
+        triagemStatus('eleg-highlights-status', 'Indisponível (' + error.message + ').');
+      });
   }
 
   // --- Carteira operacional e revalidação de prazos (Fase 36) ---

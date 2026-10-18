@@ -220,6 +220,20 @@ Decisões de identidade são **append-only** e exigem humano: `confirmada`, `rej
 
 API `GET /api/reconciliacao`, `/api/reconciliacao/historico`, `/api/conflitos-revisao`, `/api/prazos`, `/api/documentos/nominais-destino`, `POST /api/reconciliacao`; CLI `reconciliacao`, `reconciliacao-historico`, `reconciliacao-decidir`, `reconciliacao-criar-cargo`, `conflitos-revisao`, `prazos`, `documentos-nominais-destino`. Ver [`docs/superpowers/specs/2026-10-18-reconciliacao-identidades-design.md`](docs/superpowers/specs/2026-10-18-reconciliacao-identidades-design.md).
 
+## Elegibilidade por cargo e reserva indígena
+
+A **Matriz de elegibilidade** (`#eleg-panel`, `GET /api/elegibilidade`, CLI `elegibilidade`) responde, **por cargo**, se o requisito formal aceita o Bacharelado em Sistemas de Informação e se existe vaga indígena para aquele cargo. Seis estados exclusivos, com precedência: `incompativel_por_requisito`, `compativel_com_vaga_indigena_cargo`, `compativel_sem_vaga_indigena`, `compativel_por_interpretacao`, `identidade_pendente` e `informacao_insuficiente`.
+
+**Incompatibilidade vem primeiro.** Um cargo com vaga indígena imediata e requisito de Direito continua incompatível — reserva não torna o cargo elegível. "Ambíguo" só é compatibilidade potencial quando o trecho é de formação **e** cita área de computação/TI; "conhecimentos básicos em informática" não conta. Um cargo nunca herda o estado de outro, nem o agregado do concurso.
+
+A **reserva indígena** tem escopo declarado: `cargo_imediata`, `cargo_sem_imediata_com_reserva`, `cargo_explicito_zero`, `concurso_imediata_sem_distribuicao`, `distribuido_por_cargo`, `reserva_sem_quantidade`, `mencao_sem_quantidade`, `ausente_no_documento` e `nao_localizado`. Quantidade publicada apenas para o concurso **não** é distribuída por cargo; "CR" não é zero nem vaga imediata; total agregado nunca vira vaga indígena.
+
+O **quadro de vagas em texto de PDF** passou a ser lido (`tabela-texto`): o cabeçalho é reconhecido pelas modalidades e cada linha traz um valor por coluna. Isso revelou, por exemplo, o quadro do TJSC Juiz Substituto 2026 — 15 vagas imediatas, **1 indígena**, cadastro de reserva "CR" — que antes não era extraído.
+
+Os **destaques por elegibilidade** (`GET /api/elegibilidade/destaques`, CLI `elegibilidade-destaques`) incluem apenas cargo cujo requisito sustenta o perfil, no máximo dois por concurso, com motivo legível. Cargo incompatível fica fora mesmo com vaga indígena.
+
+Ver [`docs/superpowers/specs/2026-10-18-elegibilidade-cargo-design.md`](docs/superpowers/specs/2026-10-18-elegibilidade-cargo-design.md).
+
 ## Auditoria de prazos e ficha de decisão
 
 Cada prazo do calendário tem uma **ficha** (`GET /api/prazos/caso`, `prazos-caso`, botão "Ficha"): todos os candidatos com trecho, contexto anterior e posterior, página, offsets, versão, sha256 e URL; o **evento** a que o trecho se refere (inscrição, isenção, prova, recurso); se o extrator atual ainda reproduz o valor; as verificações de documento registradas; e uma **proposta de correção explicitamente não executada**.

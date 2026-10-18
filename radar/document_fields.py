@@ -276,6 +276,144 @@ def _pdf_table_proposals(blocks: list[dict], contest_id: str, role_id: str | Non
     return proposals
 
 
+# Quadro de vagas em texto corrido (PDF sem tabela estruturada). O cabeçalho nomeia as
+# colunas por modalidade; a linha de dados traz o rótulo do cargo e um valor por coluna.
+_INLINE_HEADER_TOKENS = (
+    ("AMPLA", re.compile(r"ampla\s+concorr", re.I)),
+    ("PCD", re.compile(r"pessoa\s+com\s+defici|\bPCD\b", re.I)),
+    ("NEGROS", re.compile(r"\bnegros?\b|\bnegras?\b", re.I)),
+    ("INDIGENA", re.compile(r"ind[íi]genas?", re.I)),
+    ("QUILOMBOLA", re.compile(r"quilombolas?", re.I)),
+    ("TOTAL", re.compile(r"total\s+de\s+vagas|\btotal\b", re.I)),
+)
+# Célula de quantidade: inteiro, "CR" (cadastro de reserva sem número) ou "N + CR".
+_INLINE_CELL = re.compile(r"(?<![\d/.,])(\d+\s*\+\s*CR|\d+|CR)(?![\w/.,])",
+                       re.I)
+# Cabeçalho precisa estar ancorado num rótulo de quadro próximo antes da 1ª modalidade.
+_INLINE_HEADER_ANCHOR = re.compile(r"quadro\s+de\s+vagas|cargo", re.I)
+
+
+def _inline_header_columns(text: str, start: int):
+    """Colunas de modalidade a partir de ``start``, ou ``None`` se não for um quadro.
+
+    Exige o rótulo do quadro imediatamente antes da primeira modalidade e todas as
+    modalidades num trecho curto: um parágrafo que apenas cita "cargo" e "indígenas"
+    em pontos distantes do texto não é um quadro de vagas.
+    """
+    window = text[start:start + 400]
+    anchor = _INLINE_HEADER_ANCHOR.search(window)
+    if anchor is None:
+        return None, None
+    found = []
+    for name, pattern in _INLINE_HEADER_TOKENS:
+        match = pattern.search(window, anchor.end())
+        if match:
+            found.append((match.start(), match.end(), name))
+    if len(found) < 5:
+        return None, None
+    found.sort()
+    # Cabeçalho compacto: da primeira à última modalidade em até 220 caracteres.
+    if found[-1][0] - found[0][0] > 220:
+        return None, None
+    # O rótulo do quadro precisa estar colado na primeira modalidade.
+    if found[0][0] - anchor.end() > 60:
+        return None, None
+    names = [name for _, _, name in found]
+    if "AMPLA" not in names or "INDIGENA" not in names or "TOTAL" not in names:
+        return None, None
+    return names, start + found[-1][1]
+
+
+def _inline_cells(segment: str, count: int):
+    """Primeiras ``count`` células do segmento, o rótulo e o fim da última célula."""
+    matches = list(_INLINE_CELL.finditer(segment))
+    if len(matches) < count:
+        return None, None, None
+    head = matches[:count]
+    label = " ".join(segment[:head[0].start()].split()).strip(" |;,-")
+    if not label or len(label) > 120:
+        return None, None, None
+    if label.rstrip().endswith(":"):
+        return None, None, None
+    # Contiguidade: entre células só pode haver espaço/separador.
+    for before, after in zip(head, head[1:]):
+        if segment[before.end():after.start()].strip(" \t|;,-"):
+            return None, None, None
+    # Mais células que colunas = coluna extra (ex.: total duplicado). Não mapear às cegas.
+    if len(matches) > count and not segment[head[-1].end():matches[count].start()].strip(
+            " \t|;,-"):
+        return None, None, None
+    return label, [match.group(1) for match in head], head[-1].end()
+
+
+def _cell_quantity(cell: str):
+    """Quantidade imediata da célula; ``None`` para "CR" puro (sem número)."""
+    match = re.match(r"(\d+)", cell)
+    return int(match.group(1)) if match else None
+
+
+def _inline_vacancy_proposals(blocks: list[dict], contest_id: str) -> list[dict]:
+    """Quadro de vagas por cargo e modalidade em texto de PDF (sem tabela estruturada).
+
+    Só reconhece o quadro quando o **cabeçalho** nomeia as modalidades e a **linha**
+    traz um valor por coluna. A quantidade indígena fica no escopo do cargo (rótulo do
+    próprio quadro); "CR" não vira zero nem vaga imediata; modalidade não é somada.
+    """
+    proposals = []
+    for index, block in enumerate(blocks):
+        if block.get("page_number") is None:
+            continue
+        text = block["text"]
+        if "QUADRO GERAL DE VAGAS" in text:
+            continue  # layout já coberto por `_pdf_table_proposals`
+        position = 0
+        while position < len(text):
+            anchor = _INLINE_HEADER_ANCHOR.search(text, position)
+            if anchor is None:
+                break
+            columns, data_start = _inline_header_columns(text, anchor.start())
+            if columns is None:
+                position = anchor.end()
+                continue
+            # Uma linha por cargo: continua lendo enquanto as linhas seguintes tiverem
+            # exatamente uma célula por coluna (o cabeçalho vale para todo o quadro).
+            cursor = data_start
+            while cursor < len(text):
+                segment = text[cursor:cursor + 400]
+                label, cells, cells_end = _inline_cells(segment, len(columns))
+                if label is None:
+                    break
+                values = dict(zip(columns, cells))
+                lead = len(segment) - len(segment.lstrip())
+                evidence = dict(block_index=index,
+                                quote=segment[lead:cells_end].strip(),
+                                start_offset=cursor + lead,
+                                end_offset=cursor + cells_end)
+                immediate = _cell_quantity(values.get("TOTAL", ""))
+                if immediate is not None:
+                    proposals.append(dict(
+                        contest_id=contest_id, role_id=None,
+                        field_name="immediate_vacancies",
+                        value_json=json.dumps(immediate), value_type="integer",
+                        extraction_method="tabela-texto",
+                        ambiguity_reason=LABEL_PREFIX + label,
+                        evidence=dict(evidence)))
+                indigenous = _cell_quantity(values.get("INDIGENA", ""))
+                if indigenous is not None:
+                    proposals.append(dict(
+                        contest_id=contest_id, role_id=None,
+                        field_name="indigenous_vacancies",
+                        value_json=json.dumps(indigenous), value_type="integer",
+                        extraction_method="tabela-texto",
+                        ambiguity_reason=LABEL_PREFIX + label,
+                        evidence=dict(evidence)))
+                cursor = cursor + cells_end
+            position = max(cursor, anchor.end())
+            continue
+
+    return proposals
+
+
 def invalid_registration_period(blocks: list[dict]) -> bool:
     """Identifica calendário/período reconhecido, mas impossível, para diagnóstico."""
     for block in blocks:
@@ -329,6 +467,7 @@ def extract_field_proposals(blocks: list[dict], version_id: str, contest_id: str
     if role_id is None:
         proposals.extend(_table_proposals(blocks, contest_id, role_id))
         proposals.extend(_pdf_table_proposals(blocks, contest_id, role_id))
+        proposals.extend(_inline_vacancy_proposals(blocks, contest_id))
         # Quadro com total agregado (ex.: IBFC): publica apenas `vagas_total_publicado`,
         # sem distribuir por modalidade e sem tocar em vagas indígenas.
         from radar import vacancy_aggregate

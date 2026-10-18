@@ -325,6 +325,84 @@
         <p class="muted">Carregando destaques.</p>
       </div>
 
+      <h3 class="study__subtitle">Matriz de elegibilidade (Sistemas de Informação)</h3>
+      <p class="prep__basis">
+        Elegibilidade é <strong>por cargo</strong>: um cargo de tecnologia não herda o estado
+        de outro e a reserva indígena do concurso não é distribuída por cargo. Requisito
+        ausente não é incompatibilidade; nada aqui é confirmado.
+      </p>
+      <h4 class="study__subtitle">Destaques por elegibilidade</h4>
+      <p class="prep__basis">
+        Só entra cargo cujo requisito sustenta o perfil. Cargo incompatível por requisito
+        expresso fica fora, mesmo com vaga indígena imediata.
+      </p>
+      <div class="prefs">
+        <button id="eleg-highlights-refresh" type="button" class="button button--ghost">
+          Atualizar destaques
+        </button>
+        <span id="eleg-highlights-status" class="prefs__status" role="status"
+              aria-live="polite"></span>
+      </div>
+      <div id="eleg-highlights" class="coverage__panel" role="region"
+           aria-label="Destaques por elegibilidade">
+        <p class="muted">Carregando destaques de elegibilidade.</p>
+      </div>
+
+      <form id="eleg-filters" class="prefs">
+        <label class="prefs__field">Compatibilidade
+          <select id="eleg-state">
+            <option value="">Todas</option>
+            <option value="compativel_com_vaga_indigena_cargo">Compatível + vaga indígena do cargo</option>
+            <option value="compativel_sem_vaga_indigena">Compatível</option>
+            <option value="compativel_por_interpretacao">Potencial (interpretar)</option>
+            <option value="identidade_pendente">Identidade pendente</option>
+            <option value="incompativel_por_requisito">Incompatível por requisito</option>
+            <option value="informacao_insuficiente">Informação insuficiente</option>
+          </select>
+        </label>
+        <label class="prefs__field">Indígena (escopo)
+          <select id="eleg-indigenous">
+            <option value="">Todos</option>
+            <option value="cargo_imediata">Vaga imediata do cargo</option>
+            <option value="cargo_sem_imediata_com_reserva">Sem imediata, com reserva</option>
+            <option value="cargo_explicito_zero">Zero do cargo</option>
+            <option value="concurso_imediata_sem_distribuicao">Só no concurso</option>
+            <option value="distribuido_por_cargo">Publicada por cargo</option>
+            <option value="reserva_sem_quantidade">Reserva sem quantidade</option>
+            <option value="mencao_sem_quantidade">Menção sem quantidade</option>
+            <option value="ausente_no_documento">Ausente no documento</option>
+            <option value="nao_localizado">Não localizado</option>
+          </select>
+        </label>
+        <label class="prefs__field">Prazo
+          <select id="eleg-temporal">
+            <option value="">Todos</option>
+            <option value="revalidado_na_fonte">Futuro revalidado</option>
+            <option value="candidato">Futuro candidato</option>
+            <option value="conflito">Em conflito</option>
+            <option value="expirado">Expirado</option>
+            <option value="nao_localizado">Não localizado</option>
+            <option value="sem_candidatura">Sem candidatura</option>
+          </select>
+        </label>
+        <label class="prefs__field">Identidade
+          <select id="eleg-identity">
+            <option value="">Todas</option>
+            <option value="reconciliado">Reconciliada</option>
+            <option value="pendente">Pendente</option>
+          </select>
+        </label>
+        <label class="prefs__field">UF da prova
+          <input id="eleg-uf" type="text" placeholder="BA" maxlength="2">
+        </label>
+        <button type="submit" class="button">Aplicar</button>
+        <span id="eleg-status" class="prefs__status" role="status" aria-live="polite"></span>
+      </form>
+      <div id="eleg-panel" class="coverage__panel" role="region"
+           aria-label="Matriz de elegibilidade">
+        <p class="muted">Carregando matriz.</p>
+      </div>
+
       <h3 class="study__subtitle">Todas as oportunidades</h3>
       <form id="carteira-filters" class="prefs">
         <label class="prefs__field">Prontidão

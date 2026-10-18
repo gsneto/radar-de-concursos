@@ -70,6 +70,11 @@ def propose_for_version(conn, version_id: str) -> list[dict]:
     # Fase 31: requisito em texto corrido ("Requisito: ...").
     proposals.extend(inline_requirements.extract_inline_requirements(
         blocks, contest_id, label_prefix=LABEL_PREFIX))
+    # Fase 38: quadro de vagas por cargo em texto de PDF (modalidade por coluna).
+    # Documento restrito a um cargo não publica quadro do concurso.
+    if role_id is None:
+        from radar.document_fields import _inline_vacancy_proposals
+        proposals.extend(_inline_vacancy_proposals(blocks, contest_id))
     return proposals
 
 

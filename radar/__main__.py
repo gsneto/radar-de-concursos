@@ -932,6 +932,24 @@ def _cmd_prazos(args: argparse.Namespace) -> None:
         limit=args.limit, offset=args.offset), ensure_ascii=False, default=str))
 
 
+def _cmd_elegibilidade(args: argparse.Namespace) -> None:
+    from radar import eligibility
+    conflict = None if args.conflict is None else args.conflict == "sim"
+    print(json.dumps(eligibility.matrix(
+        args.db, profile=args.profile, eligibility=args.eligibility,
+        indigenous=args.indigenous, temporal=args.temporal, identity=args.identity,
+        si=args.si, uf=args.uf, conflict=conflict, search=args.search,
+        contest_id=args.contest_id, role_id=args.role_id, limit=args.limit,
+        offset=args.offset), ensure_ascii=False, default=str))
+
+
+def _cmd_elegibilidade_destaques(args: argparse.Namespace) -> None:
+    from radar import eligibility
+    print(json.dumps(eligibility.highlights(
+        args.db, profile=args.profile, limit=args.limit),
+        ensure_ascii=False, default=str))
+
+
 def _cmd_carteira(args: argparse.Namespace) -> None:
     from radar import portfolio
     conflito = None if args.conflito is None else args.conflito == "sim"
@@ -1649,6 +1667,31 @@ def build_parser() -> argparse.ArgumentParser:
     prazos.add_argument('--limit', type=int, default=100)
     prazos.add_argument('--offset', type=int, default=0)
     prazos.set_defaults(func=_cmd_prazos)
+
+    eleg = subparsers.add_parser('elegibilidade',
+                                 help='matriz de elegibilidade por cargo')
+    eleg.add_argument('--db', required=True)
+    eleg.add_argument('--profile')
+    eleg.add_argument('--eligibility')
+    eleg.add_argument('--indigenous')
+    eleg.add_argument('--temporal')
+    eleg.add_argument('--identity')
+    eleg.add_argument('--si')
+    eleg.add_argument('--uf')
+    eleg.add_argument('--conflict', choices=('sim', 'nao'))
+    eleg.add_argument('--search')
+    eleg.add_argument('--contest-id')
+    eleg.add_argument('--role-id')
+    eleg.add_argument('--limit', type=int, default=50)
+    eleg.add_argument('--offset', type=int, default=0)
+    eleg.set_defaults(func=_cmd_elegibilidade)
+
+    eleg_high = subparsers.add_parser('elegibilidade-destaques',
+                                      help='destaques por elegibilidade (com motivo)')
+    eleg_high.add_argument('--db', required=True)
+    eleg_high.add_argument('--profile')
+    eleg_high.add_argument('--limit', type=int, default=12)
+    eleg_high.set_defaults(func=_cmd_elegibilidade_destaques)
 
     carteira = subparsers.add_parser('carteira', help='carteira operacional de oportunidades')
     carteira.add_argument('--db', required=True)
