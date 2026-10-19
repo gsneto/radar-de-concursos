@@ -978,6 +978,30 @@ def _cmd_quadro_auditoria(args: argparse.Namespace) -> None:
         ensure_ascii=False, default=str))
 
 
+def _cmd_piloto_revisao(args: argparse.Namespace) -> None:
+    from radar import pilot
+    print(json.dumps(pilot.report(args.db, contest_id=args.contest_id,
+                                  size=args.size),
+                     ensure_ascii=False, default=str))
+
+
+def _cmd_revisao_prewarm(args: argparse.Namespace) -> None:
+    from radar import pilot
+    print(json.dumps(pilot.prewarm(args.db, contest_id=args.contest_id),
+                     ensure_ascii=False, default=str))
+
+
+def _cmd_pilotos(args: argparse.Namespace) -> None:
+    from radar import pilot
+    print(json.dumps(pilot.available(args.db), ensure_ascii=False, default=str))
+
+
+def _cmd_identidades_sugeridas(args: argparse.Namespace) -> None:
+    from radar import identity_suggestions
+    print(json.dumps(identity_suggestions.report(
+        args.db, contest_id=args.contest_id), ensure_ascii=False, default=str))
+
+
 def _cmd_revisao_grupos(args: argparse.Namespace) -> None:
     from radar import review_groups
     print(json.dumps(review_groups.groups(
@@ -1760,6 +1784,29 @@ def build_parser() -> argparse.ArgumentParser:
     quadro_aud.add_argument('--contest-id')
     quadro_aud.add_argument('--version-id')
     quadro_aud.set_defaults(func=_cmd_quadro_auditoria)
+
+    piloto = subparsers.add_parser('piloto-revisao',
+                                     help='piloto de revisao humana por linha')
+    piloto.add_argument('--db', required=True)
+    piloto.add_argument('--contest-id', required=True)
+    piloto.add_argument('--size', type=int, default=16)
+    piloto.set_defaults(func=_cmd_piloto_revisao)
+
+    prewarm = subparsers.add_parser('revisao-prewarm',
+                                    help='aquece o cache de contexto (somente leitura)')
+    prewarm.add_argument('--db', required=True)
+    prewarm.add_argument('--contest-id', required=True)
+    prewarm.set_defaults(func=_cmd_revisao_prewarm)
+
+    pilotos = subparsers.add_parser('pilotos', help='concursos com linhas de quadro')
+    pilotos.add_argument('--db', required=True)
+    pilotos.set_defaults(func=_cmd_pilotos)
+
+    identidades = subparsers.add_parser('identidades-sugeridas',
+                                        help='sugestoes de identidade por cargo+formacao')
+    identidades.add_argument('--db', required=True)
+    identidades.add_argument('--contest-id', required=True)
+    identidades.set_defaults(func=_cmd_identidades_sugeridas)
 
     grupos = subparsers.add_parser('revisao-grupos',
                                    help='revisao agrupada por linha documental')

@@ -213,6 +213,28 @@
       </div>
       <div id="review-detail" class="coverage__panel" role="region" aria-live="polite" hidden></div>
       <div id="review-batch" class="coverage__panel" role="region" aria-live="polite" hidden></div>
+      <h3 class="study__subtitle">Piloto de revisão</h3>
+      <p class="prep__basis">
+        Seleção determinística de 16 linhas do Anexo II com casos diversos (vaga exclusiva,
+        unificadas, zero publicado e linha que atravessa página). O progresso conta apenas
+        decisões registradas — abrir uma linha não revisa nada. Cada campo é decidido
+        separadamente.
+      </p>
+      <div class="prefs">
+        <label class="prefs__field">Piloto
+          <select id="piloto-select"></select>
+        </label>
+        <button id="piloto-reload" type="button" class="button button--ghost">
+          Atualizar piloto
+        </button>
+        <span id="piloto-status" class="prefs__status" role="status" aria-live="polite"></span>
+      </div>
+      <div id="piloto-panel" class="coverage__panel" role="region"
+           aria-label="Piloto de revisão">
+        <p class="muted">Carregando pilotos.</p>
+      </div>
+      <div id="piloto-linha" class="coverage__panel" role="region"
+           aria-label="Linha do piloto" hidden></div>
       <h3 class="study__subtitle">Revisão por linha documental</h3>
       <p class="prep__basis">
         Agrupa as propostas pelo trecho que as sustenta (versão, bloco, página e offsets) —

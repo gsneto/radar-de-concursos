@@ -20,7 +20,7 @@ import json
 import sqlite3
 from uuid import UUID
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse, urlsplit
 
@@ -45,8 +45,16 @@ _ASSET_ROUTES = {
 }
 
 
-class _RadarHTTPServer(HTTPServer):
-    """HTTPServer que carrega o caminho do banco para o handler."""
+class _RadarHTTPServer(ThreadingHTTPServer):
+    """Servidor concorrente que carrega o caminho do banco para o handler.
+
+    Cada requisição abre a própria conexão SQLite. Sem threads, um painel lento (contexto
+    de quadro) bloqueia todos os outros e a revisão parece travada. Escritas continuam
+    serializadas pelo `BEGIN IMMEDIATE` do SQLite.
+    """
+
+    daemon_threads = True
+    allow_reuse_address = True
 
     def __init__(self, server_address, db_path, config_path=None):
         super().__init__(server_address, _RadarRequestHandler)
@@ -1138,10 +1146,36 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                               source_id=query.get("source_id", [None])[0], limit=limit)
         elif path == "/api/revisao/fila":
             self._review_queue(parts)
+        elif path == "/api/revisao/pilotos":
+            if parts.query:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import pilot
+            self._serve_study(pilot.available)
+        elif path == "/api/revisao/piloto":
+            query = parse_qs(parts.query)
+            if set(query) - {"contest_id", "size"} or "contest_id" not in query:
+                self._bad_request("contest_id obrigatório")
+                return
+            try:
+                size = int(query.get("size", ["16"])[0])
+            except ValueError:
+                self._bad_request("tamanho inválido")
+                return
+            from radar import pilot
+            self._serve_study(pilot.report, contest_id=query["contest_id"][0], size=size)
+        elif path == "/api/revisao/identidades":
+            query = parse_qs(parts.query)
+            if set(query) - {"contest_id"} or "contest_id" not in query:
+                self._bad_request("contest_id obrigatório")
+                return
+            from radar import identity_suggestions
+            self._serve_study(identity_suggestions.report,
+                              contest_id=query["contest_id"][0])
         elif path == "/api/revisao/grupos":
             query = parse_qs(parts.query)
             allowed = {"limit", "offset", "state", "field", "contest_id", "document_id",
-                       "version_id", "contexto"}
+                       "version_id", "contexto", "linha"}
             if set(query) - allowed:
                 self._bad_request("parâmetros inválidos")
                 return
@@ -1159,7 +1193,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                               document_id=query.get("document_id", [None])[0],
                               version_id=query.get("version_id", [None])[0],
                               contexto={"1": True, "0": False}.get(
-                                  query.get("contexto", [None])[0]))
+                                  query.get("contexto", [None])[0]),
+                              linha=query.get("linha", [None])[0])
         elif path.startswith("/api/revisao/proposta/"):
             proposal_id = path[len("/api/revisao/proposta/"):]
             if not proposal_id or "/" in proposal_id or parts.query:
@@ -1469,12 +1504,17 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             body = self._read_json()
             if body is None:
                 return
+            if not body.get("evidence_sha256"):
+                # Decisão pela interface sempre declara a impressão da evidência vista.
+                self._bad_request("evidence_sha256 obrigatório")
+                return
             self._serve_study(review.decide_proposal, proposal_id, body.get("decision"),
                               reviewer=body.get("reviewer"), reason=body.get("reason"),
                               origin="interface",
                               value=body.get("value"),
                               expected_evidence_sha256=body.get("evidence_sha256"),
-                              lote_id=body.get("lote_id"))
+                              lote_id=body.get("lote_id"),
+                              expected_scope_snapshot=body.get("scope_snapshot"))
             return
         if path == "/api/reconciliacao":
             if parts.query:

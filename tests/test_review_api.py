@@ -112,9 +112,14 @@ class ReviewApiTest(unittest.TestCase):
         self.assertTrue(payload["evidence"]["quote"])
         self.assertTrue(payload["evidence_sha256"])
 
+    def evidence_sha(self):
+        _, body = self.request(f"/api/revisao/proposta/{self.proposal}")
+        return json.loads(body)["evidence_sha256"]
+
     def test_decidir_e_idempotente(self):
         body = json.dumps({"decision": "validado", "reviewer": "Ana",
-                           "reason": "conferido"})
+                           "reason": "conferido",
+                           "evidence_sha256": self.evidence_sha()})
         first = self.request(f"/api/revisao/proposta/{self.proposal}", "POST", body)
         second = self.request(f"/api/revisao/proposta/{self.proposal}", "POST", body)
         self.assertEqual(first[0], 200)
@@ -123,7 +128,14 @@ class ReviewApiTest(unittest.TestCase):
 
     def test_decidir_sem_justificativa_falha(self):
         status, _ = self.request(f"/api/revisao/proposta/{self.proposal}", "POST",
-                                 json.dumps({"decision": "validado", "reviewer": "Ana"}))
+                                 json.dumps({"decision": "validado", "reviewer": "Ana",
+                                             "evidence_sha256": self.evidence_sha()}))
+        self.assertEqual(status, 400)
+
+    def test_decidir_sem_impressao_da_evidencia_falha(self):
+        status, _ = self.request(f"/api/revisao/proposta/{self.proposal}", "POST",
+                                 json.dumps({"decision": "validado", "reviewer": "Ana",
+                                             "reason": "conferido"}))
         self.assertEqual(status, 400)
 
     def test_selecionar_exige_validacao(self):
@@ -131,7 +143,8 @@ class ReviewApiTest(unittest.TestCase):
             "proposal_id": self.proposal, "reviewer": "Ana", "reason": "cedo"}))
         self.assertEqual(status, 400)
         self.request(f"/api/revisao/proposta/{self.proposal}", "POST", json.dumps({
-            "decision": "validado", "reviewer": "Ana", "reason": "conferido"}))
+            "decision": "validado", "reviewer": "Ana", "reason": "conferido",
+            "evidence_sha256": self.evidence_sha()}))
         status, body = self.request("/api/revisao/selecionar", "POST", json.dumps({
             "proposal_id": self.proposal, "reviewer": "Ana", "reason": "vigente"}))
         self.assertEqual(status, 200)

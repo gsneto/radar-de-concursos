@@ -600,3 +600,14 @@ Comandos de retomada, na raiz do projeto: `git status --short --branch`; `python
 - **Superficie**: `GET /api/revisao/grupos`, CLI `revisao-grupos` e `quadro-auditoria`, secao "Revisao por linha documental" na Revisao humana com acoes por campo.
 - **Base**: sem migracao (v21); 9.211 propostas inalteradas; 0 revisoes, 0 valores, 0 reconciliacoes; +8 eventos documentais; `integrity ok`, FK vazia.
 - **Testes**: **1.833 testes, OK** (18 novos; 1 pulado quando ha motor de OCR).
+
+### Fase 43 - Piloto operacional de revisao e reconciliacao assistida (2026-10-19)
+
+- **Piloto** (`radar/pilot.py`): 16 linhas deterministicas do Anexo II com cotas de caso (PI exclusivo, PPIQ, PI/PQ, zero explicito, multipagina, cargo continuado) e diversidade de cargo/formacao/regional (10 regionais, 5 cargos, max 2 por regional). 82 campos, todos com trecho literal; fichas com motivo, documento/versao/hash, campos incertos, identidade e efeito de cada decisao.
+- **Granularidade** (`radar/identity_suggestions.py`): 381 linhas -> 26 identidades (cargo+formacao) em 24 regionais; regional e dimensao, nao identidade. Recomposicao de palavra partida so com prova no proprio edital ("Administracao" existe; "Especialistaem" nao). Cargo terminando em conectivo recebe a formacao como continuacao. Nada gravado.
+- **UI**: painel do piloto com progresso por decisao registrada, proxima pendente, avisos de vaga unificada, efeito de confirmar, historico por campo e retomada por hash. Decisao continua unitaria (um proposal_id por acao).
+- **Concorrencia**: servidor passou a `ThreadingHTTPServer` (um painel lento nao bloqueia os demais); escritas seguem serializadas.
+- **Prova real da UI** (Chromium, copia isolada): decisao gravada em 1 campo apenas; evidencia alterada bloqueada com "evidencia mudou desde a exportacao"; progresso 0/82 -> 1/82; retomada por hash. Copia removida ao final; base real intacta.
+- **Desempenho**: groups frio 3,45 s / quente 0,33 s; pilot 3,60 s / 0,37 s. `revisao-prewarm` aquece sem gravar.
+- **Base**: sem migracao (v21); 9.211 propostas; 0 revisoes, 0 valores, 0 reconciliacoes, 0 lotes; `integrity ok`, FK vazia.
+- **Testes**: **1.867 testes, OK** (34 novos; 1 pulado quando ha motor de OCR).

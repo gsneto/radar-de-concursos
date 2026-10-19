@@ -921,6 +921,37 @@ const perfText = flattenText(perf);
 assert.ok(perfText.includes('67% sobre 2'), 'denominador do desempenho explicado');
 assert.ok(perfText.includes('Mat: 2/2'), 'desempenho por disciplina');
 
+// Piloto: progresso conta decisões registradas, não linhas abertas.
+const piloto = Radar.renderPiloto(doc, {
+  contest_id: 'c1', linhas_selecionadas: 2, universo: 381,
+  revisao: {campos_decididos: 1, campos_totais: 8, linhas_decididas: 0,
+            linhas_parciais: 1, decisoes_registradas: 1, proxima_linha_id: 'L2'},
+  fichas: [
+    {linha_id: 'L1', pagina: 63, paginas: [63], estado_revisao: 'parcial',
+     linha: {cargo: 'Professor', formacao: 'Matemática', regional: 'BELÉM'},
+     porque: [{caso: 'pi_exclusivo', motivo: 'publica vaga exclusiva indígena (PI > 0)'}]},
+    {linha_id: 'L2', pagina: 64, paginas: [64], estado_revisao: 'pendente',
+     linha: {cargo: 'Professor', formacao: 'Física', regional: 'ABAETETUBA'},
+     porque: [{caso: 'ppiq', motivo: 'publica vaga unificada PPIQ'}]},
+  ],
+  limitacao: 'Preparação de candidatos, não revisão.'});
+const pilotoText = flattenText(piloto);
+assert.ok(pilotoText.includes('1/8 campo(s) decidido(s)'), 'progresso por decisão registrada');
+assert.ok(pilotoText.includes('0 linha(s) concluída(s)'), 'linha aberta não conta como concluída');
+assert.ok(pilotoText.includes('Próxima linha pendente'), 'navegação para a próxima pendente');
+assert.ok(pilotoText.includes('publica vaga exclusiva indígena'), 'motivo da seleção exibido');
+
+// Hash do piloto: retomada do contexto após recarregar.
+eq(Radar.pilotoHashFor('c1', 'L2'), '#piloto=c1&linha=L2');
+eq(Radar.pilotoHashFor('c1', null), '#piloto=c1');
+eq(Radar.pilotoHashFor('', 'L2'), '');
+const savedLocation = global.location;
+global.location = {hash: '#piloto=c1&linha=L2'};
+const restored = Radar.pilotoLerHash();
+eq(restored.piloto, 'c1');
+eq(restored.linha, 'L2');
+global.location = savedLocation;
+
 console.log('OK');
 """
 

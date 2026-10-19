@@ -44,6 +44,19 @@ FIELD_LABELS = {
     "si_compatibility": "Compatibilidade de formação",
     "education": "Escolaridade",
 }
+FIELD_CONSEQUENCE = {
+    "immediate_vacancies": ("Total publicado da linha. Confirmar registra a conferência "
+                            "deste total; não confirma PI, PPIQ nem PI/PQ."),
+    "indigenous_vacancies": ("Vaga exclusiva indígena. Confirmar não confirma as colunas "
+                             "unificadas nem o total."),
+    "unified_ppiq_vacancies": ("Vaga unificada (PP+PI+PQ). Não é vaga exclusiva indígena "
+                               "e não pode ser somada à coluna PI."),
+    "unified_pi_pq_vacancies": ("Vaga unificada (PI+PQ). Não é vaga exclusiva indígena e "
+                                "não pode ser somada à coluna PI."),
+    "indigenous_reserve_notation": ("Reserva publicada sem quantidade. Não vira zero nem "
+                                    "vaga imediata."),
+    "vaga_municipio": ("Município/lotação do código; não é local de prova."),
+}
 COLUMN_NATURE = {
     "AC": "ampla concorrência", "PcD": "pessoa com deficiência",
     "PP": "pretas e pardas", "PI": "indígena exclusiva", "PQ": "quilombola",
@@ -56,6 +69,7 @@ TABLE_METHODS = ("quadro-colunas-pdf", "distribuicao-texto")
 # Cache em processo do contexto de linha. A chave inclui a versão (imutável) e a versão do
 # parser: mudar o parser invalida; a base não muda o resultado de uma versão já gravada.
 _CONTEXT_CACHE: dict = {}
+_CONTEXT_LOCK = __import__("threading").Lock()
 
 
 def _now(now=None):
@@ -75,6 +89,12 @@ def linha_id(key: tuple) -> str:
     return sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
+def cache_stats() -> dict:
+    """Situação do cache em processo (diagnóstico; não expõe conteúdo)."""
+    with _CONTEXT_LOCK:
+        return {"versoes": len(_CONTEXT_CACHE)}
+
+
 def _contexts(db_path, versions):
     """Contexto de linha por versão, lido do parser atual (somente leitura)."""
     from radar import modality_legend, reprocess, vacancy_columns, vacancy_inline
@@ -83,8 +103,10 @@ def _contexts(db_path, versions):
     out = {}
     for version in versions:
         cache_key = (str(db_path), version, parser_version)
-        if cache_key in _CONTEXT_CACHE:
-            out[version] = _CONTEXT_CACHE[cache_key]
+        with _CONTEXT_LOCK:
+            cached = _CONTEXT_CACHE.get(cache_key)
+        if cached is not None:
+            out[version] = cached
             continue
         with closing(connect_documents(db_path)) as conn:
             blocks = reprocess.stored_blocks(conn, version)
@@ -103,9 +125,13 @@ def _contexts(db_path, versions):
             blocks, "", label_prefix=LABEL_PREFIX)
         out[version] = {"definicoes": definitions, "wide": wide, "notation": notation,
                         "inline": inline}
-        _CONTEXT_CACHE[cache_key] = out[version]
-        if len(_CONTEXT_CACHE) > 8:
-            _CONTEXT_CACHE.pop(next(iter(_CONTEXT_CACHE)))
+        # Não guarda contexto vazio: PDF ausente ou leitura que falhou não pode envenenar
+        # a versão (o artefato pode aparecer depois; o parser pode ser reinstalado).
+        if artifact is not None and (wide["rows"] or notation["rows"] or inline["rows"]):
+            with _CONTEXT_LOCK:
+                _CONTEXT_CACHE[cache_key] = out[version]
+                if len(_CONTEXT_CACHE) > 8:
+                    _CONTEXT_CACHE.pop(next(iter(_CONTEXT_CACHE)), None)
     return out
 
 
@@ -263,13 +289,13 @@ def _next_action(group):
 
 
 def groups(db_path, *, contest_id=None, document_id=None, version_id=None,
-           state="aberto", field_name=None, contexto=None, limit=25, offset=0,
-           now=None) -> dict:
+           state="aberto", field_name=None, contexto=None, linha=None, limit=25,
+           offset=0, now=None) -> dict:
     """Grupos de revisão por linha documental, com contexto e validação."""
     if state not in ("aberto", "pendente", "decidido", "todos"):
         raise ValueError("estado de grupo inválido")
     limit, offset = int(limit), int(offset)
-    if limit < 1 or limit > 100:
+    if limit < 1 or limit > 500:
         raise ValueError("limite fora da faixa")
     if offset < 0:
         raise ValueError("deslocamento inválido")
@@ -323,8 +349,28 @@ def groups(db_path, *, contest_id=None, document_id=None, version_id=None,
                        if row["extraction_method"] in TABLE_METHODS})
     contexts = _contexts(db_path, versions) if versions else {}
 
+    scope_ids = {}
+    for row in filtered:
+        scope_name = review.role_scope(row, reconciled)[0]
+        scope_ids.setdefault((row["contest_id"], scope_name, row["field_name"]),
+                             set()).add(row["proposal_id"])
+
+    page_ids = [row["proposal_id"] for group_rows in grouped.values()
+                for row in group_rows]
+    history_rows = []
+    if page_ids:
+        with closing(connect_documents(db_path)) as conn:
+            marks = ",".join("?" for _ in page_ids)
+            history_rows = conn.execute(
+                "SELECT proposal_id, decision, reviewed_at, reviewer, reason "
+                "FROM revisoes_campo WHERE proposal_id IN (" + marks + ") "
+                "ORDER BY reviewed_at DESC, rowid DESC", page_ids).fetchall()
+    conn_history = history_rows
+
     items = []
     for key, group_rows in grouped.items():
+        if linha and linha != linha_id(key):
+            continue
         scopes = {}
         for row in group_rows:
             scope = review.role_scope(row, reconciled)[0]
@@ -358,6 +404,14 @@ def groups(db_path, *, contest_id=None, document_id=None, version_id=None,
             current = context["rotulo_parser"][len(LABEL_PREFIX):].strip()
             if current and current != label:
                 rotulo_divergente = {"armazenado": label, "parser": current}
+        history = {}
+        for proposal_id, decision, reviewed_at, reviewer, reason in conn_history:
+            history.setdefault(proposal_id, [])
+            if len(history[proposal_id]) < 5:
+                history[proposal_id].append({"decision": decision,
+                                             "reviewed_at": reviewed_at,
+                                             "reviewer": reviewer,
+                                             "reason": reason})
         proposals = []
         for row in sorted(group_rows, key=lambda item: (
                 FIELD_ORDER.index(item["field_name"])
@@ -370,11 +424,16 @@ def groups(db_path, *, contest_id=None, document_id=None, version_id=None,
                 "state": review._state(row["last_decision"], row["selected"]),
                 "last_decision": row["last_decision"],
                 "selected": bool(row["selected"]),
+                "consequencia": FIELD_CONSEQUENCE.get(row["field_name"]),
+                "historico": history.get(row["proposal_id"], []),
                 "ambiguity_reason": row["ambiguity_reason"],
                 "extraction_method": row["extraction_method"],
                 "evidence_sha256": review._evidence_hash(
                     row["value_json"], row["quote"], row["version_id"],
                     row["start_offset"], row["end_offset"]),
+                "scope_snapshot": sorted(scope_ids.get(
+                    (row["contest_id"], review.role_scope(row, reconciled)[0],
+                     row["field_name"]), ())),
                 "evidence": {"quote": row["quote"], "page_number": row["page_number"],
                              "version_id": row["version_id"],
                              "start_offset": row["start_offset"],
@@ -389,6 +448,7 @@ def groups(db_path, *, contest_id=None, document_id=None, version_id=None,
             "document_title": group_rows[0]["document_title"],
             "tipo_documental": group_rows[0]["tipo_documental"],
             "issuer": group_rows[0]["issuer"],
+            "official_url": group_rows[0].get("official_url"),
             "version_id": group_rows[0]["version_id"],
             "sha256": group_rows[0]["sha256"],
             "page_number": group_rows[0]["page_number"],
@@ -452,7 +512,8 @@ def groups(db_path, *, contest_id=None, document_id=None, version_id=None,
         "has_more": offset + len(page) < total,
         "filtros": {"contest_id": contest_id, "document_id": document_id,
                     "version_id": version_id, "state": state,
-                    "field_name": field_name, "contexto": contexto},
+                    "field_name": field_name, "contexto": contexto,
+                    "linha_id": linha},
         "resumo": summary,
         "denominador": {
             "unidade": "linha documental (versão × bloco × página × offsets)",

@@ -2658,7 +2658,7 @@
 
   var reviewState = {limit: 10, offset: 0, total: 0, field: '', state: 'pendente',
                      conflict: '', minPriority: '', loteId: null, items: [],
-                     selected: null};
+                     selected: null, detail: null};
   var pendingImports = {};
 
   function reviewStatus(message) {
@@ -2817,7 +2817,7 @@
     return el(document, 'span', 'mesa__badge mesa__badge--' + variante, texto);
   }
 
-  function decidirCampo(proposalId, decision, reason, evidenceSha) {
+  function decidirCampo(proposalId, decision, reason, evidenceSha, scopeSnapshot) {
     if (!reason) {
       gruposStatus('Justificativa obrigatória para registrar a decisão.');
       return Promise.resolve();
@@ -2825,11 +2825,14 @@
     return studyPost('/api/revisao/proposta/' + encodeURIComponent(proposalId),
                      {decision: decision, reviewer: reviewReviewer(), reason: reason,
                       origin: 'interface',
-                      evidence_sha256: evidenceSha || undefined})
+                      evidence_sha256: evidenceSha,
+                      scope_snapshot: scopeSnapshot})
       .then(function (result) {
         gruposStatus(result.duplicada ? 'Decisão já registrada (idempotente).'
                                       : 'Decisão registrada.');
-        return fetchGrupos();
+        var refresh = [fetchGrupos()];
+        if (pilotoState.contest) refresh.push(fetchPiloto(pilotoState.contest));
+        return Promise.all(refresh);
       })
       .catch(function (error) { gruposStatus('Falha: ' + error.message); });
   }
@@ -2868,6 +2871,21 @@
       wrap.appendChild(el(document, 'p', 'mesa__meta',
         'Validação: ' + gruposValidacaoTexto(validacao) + ' — ' + validacao.regra));
     }
+    if (contexto && contexto.colunas) {
+      var unificadas = contexto.colunas.filter(function (coluna) {
+        return coluna.natureza && coluna.natureza.indexOf('unificada') === 0;
+      });
+      if (unificadas.length) {
+        wrap.appendChild(el(document, 'p', 'grupos__aviso',
+          'Atenção: ' + unificadas.map(function (coluna) {
+            return coluna.sigla + ' é vaga unificada (' + coluna.natureza + ')';
+          }).join('; ') + '. Vaga unificada não é vaga exclusiva indígena e não pode ' +
+          'ser somada à coluna PI.'));
+      }
+      wrap.appendChild(el(document, 'p', 'mesa__meta',
+        'O total publicado é o valor do documento; a soma das colunas é apenas ' +
+        'conferência e nunca substitui o total.'));
+    }
     var reasonLabel = el(document, 'label', 'prefs__field',
       'Justificativa (obrigatória para decidir)');
     var reason = el(document, 'input', '');
@@ -2901,6 +2919,22 @@
       var trecho = el(document, 'div', 'grupos__quote',
         proposta.evidence.quote || 'sem trecho literal');
       evidencia.appendChild(trecho);
+      if (proposta.consequencia) {
+        evidencia.appendChild(el(document, 'div', 'mesa__meta',
+          'Efeito de confirmar: ' + proposta.consequencia));
+      }
+      if (proposta.historico && proposta.historico.length) {
+        var hist = el(document, 'details', 'grupos__historico');
+        hist.appendChild(el(document, 'summary', '',
+          'Histórico (' + proposta.historico.length + ')'));
+        proposta.historico.forEach(function (entrada) {
+          hist.appendChild(el(document, 'div', 'mesa__meta',
+            entrada.decision + ' · ' + entrada.reviewer + ' · ' +
+            String(entrada.reviewed_at || '').slice(0, 19).replace('T', ' ') +
+            ' · ' + (entrada.reason || 'sem justificativa')));
+        });
+        evidencia.appendChild(hist);
+      }
       row.appendChild(evidencia);
       var acoes = el(document, 'td');
       [['validado', 'Confirmar'], ['rejeitado', 'Rejeitar'],
@@ -2912,7 +2946,7 @@
           var node = document.getElementById(reason.id);
           decidirCampo(proposta.proposal_id, par[0],
                        node && node.value ? node.value.trim() : '',
-                       proposta.evidence_sha256);
+                       proposta.evidence_sha256, proposta.scope_snapshot);
         });
         acoes.appendChild(botao);
       });
@@ -3024,6 +3058,245 @@
     panel.appendChild(renderGrupos(doc, payload));
   }
 
+  var pilotoState = {contest: null, report: null, linha: null, detalhe: null};
+
+  function pilotoStatus(message) {
+    var doc = global.document;
+    var node = doc && doc.getElementById('piloto-status');
+    if (node) node.textContent = message || '';
+  }
+
+  function pilotoHashFor(contest, linha) {
+    if (!contest) return '';
+    var parts = ['piloto=' + encodeURIComponent(contest)];
+    if (linha) parts.push('linha=' + encodeURIComponent(linha));
+    return '#' + parts.join('&');
+  }
+
+  function pilotoHash() {
+    return pilotoHashFor(pilotoState.contest, pilotoState.linha);
+  }
+
+  function pilotoLerHash() {
+    var hash = (global.location && global.location.hash) || '';
+    if (hash.indexOf('#piloto=') !== 0) return null;
+    var out = {};
+    hash.slice(1).split('&').forEach(function (part) {
+      var pair = part.split('=');
+      if (pair.length === 2) out[pair[0]] = decodeURIComponent(pair[1]);
+    });
+    return out.piloto ? out : null;
+  }
+
+  function renderPiloto(document, payload) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    var revisao = payload.revisao || {};
+    wrap.appendChild(el(document, 'p', 'prep__basis',
+      payload.linhas_selecionadas + ' linha(s) no piloto · ' +
+      revisao.campos_decididos + '/' + revisao.campos_totais + ' campo(s) decidido(s) · ' +
+      revisao.linhas_decididas + ' linha(s) concluída(s) · ' +
+      revisao.linhas_parciais + ' parcial(is) · ' +
+      revisao.decisoes_registradas + ' decisão(ões) registrada(s)'));
+    var progress = el(document, 'progress');
+    progress.max = revisao.campos_totais || 1;
+    progress.value = revisao.campos_decididos || 0;
+    progress.setAttribute('aria-label', 'Campos decididos no piloto');
+    wrap.appendChild(progress);
+    var actions = el(document, 'div', 'prefs');
+    var next = el(document, 'button', 'button button--ghost', 'Próxima linha pendente');
+    next.type = 'button';
+    next.disabled = !revisao.proxima_linha_id;
+    next.addEventListener('click', function () {
+      if (revisao.proxima_linha_id) abrirLinha(payload.contest_id,
+                                               revisao.proxima_linha_id);
+    });
+    actions.appendChild(next);
+    wrap.appendChild(actions);
+
+    var table = el(document, 'table', 'mesa__table');
+    var head = el(document, 'tr');
+    ['Página', 'Regional', 'Cargo / formação', 'Por que está no piloto', 'Estado', '']
+      .forEach(function (label) { head.appendChild(el(document, 'th', '', label)); });
+    var thead = el(document, 'thead');
+    thead.appendChild(head);
+    table.appendChild(thead);
+    var tbody = el(document, 'tbody');
+    payload.fichas.forEach(function (ficha) {
+      var row = el(document, 'tr');
+      row.appendChild(el(document, 'td', '',
+        (ficha.paginas || [ficha.pagina]).join('+')));
+      row.appendChild(el(document, 'td', '', ficha.linha.regional || '—'));
+      row.appendChild(el(document, 'td', '',
+        [ficha.linha.cargo, ficha.linha.formacao].filter(Boolean).join(' / ')));
+      row.appendChild(el(document, 'td', 'mesa__meta',
+        ficha.porque.map(function (item) { return item.motivo; }).join(' · ')));
+      row.appendChild(el(document, 'td', '', ficha.estado_revisao));
+      var cell = el(document, 'td');
+      var open = el(document, 'button', 'button button--ghost', 'Abrir linha');
+      open.type = 'button';
+      open.addEventListener('click', function () {
+        abrirLinha(payload.contest_id, ficha.linha_id);
+      });
+      cell.appendChild(open);
+      row.appendChild(cell);
+      tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    var scroll = el(document, 'div', 'mesa__scroll');
+    scroll.appendChild(table);
+    wrap.appendChild(scroll);
+    wrap.appendChild(el(document, 'p', 'muted', payload.limitacao || ''));
+    return wrap;
+  }
+
+  function renderPilotoLinha(document, item, ficha) {
+    var wrap = el(document, 'div', 'grupos__detalhe');
+    if (ficha) {
+      wrap.appendChild(el(document, 'p', 'prep__basis',
+        'Ficha do piloto: ' + ficha.porque.map(function (motivo) {
+          return motivo.motivo;
+        }).join(' · ')));
+      var ident = ficha.identidade || {};
+      if (ident.sugestao) {
+        wrap.appendChild(el(document, 'p', 'mesa__meta',
+          'Identidade sugerida: ' + [ident.sugestao.cargo, ident.sugestao.especialidade]
+            .filter(Boolean).join(' / ') + ' (' + ident.sugestao.acao_sugerida +
+          '; ' + ident.sugestao.linhas_na_identidade + ' linha(s) nesta identidade)'));
+      }
+      (ident.avisos || []).forEach(function (aviso) {
+        wrap.appendChild(el(document, 'p', 'mesa__meta',
+          'Aviso de identidade: ' + aviso.texto));
+      });
+      if (ficha.campos_incertos && ficha.campos_incertos.length) {
+        var list = el(document, 'ul', 'grupos__notas');
+        ficha.campos_incertos.forEach(function (campo) {
+          list.appendChild(el(document, 'li', '',
+            campo.field_label + ': ' + campo.motivo));
+        });
+        wrap.appendChild(el(document, 'p', 'mesa__meta', 'Campos com incerteza:'));
+        wrap.appendChild(list);
+      }
+    }
+    wrap.appendChild(gruposDetalhe(document, item));
+    return wrap;
+  }
+
+  function abrirLinha(contestId, linhaId) {
+    pilotoState.contest = contestId;
+    pilotoState.linha = linhaId;
+    if (global.location && global.history && global.history.replaceState) {
+      global.history.replaceState(null, '', pilotoHash());
+    }
+    var query = '/api/revisao/grupos?limit=5&state=todos&contest_id=' +
+      encodeURIComponent(contestId) + '&linha=' + encodeURIComponent(linhaId);
+    return global.fetch(query, {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        var item = payload.itens && payload.itens[0];
+        if (!item) {
+          pilotoStatus('Linha não encontrada (a base pode ter mudado).');
+          return;
+        }
+        var ficha = null;
+        if (pilotoState.report) {
+          ficha = pilotoState.report.fichas.filter(function (entry) {
+            return entry.linha_id === linhaId;
+          })[0] || null;
+        }
+        var panel = global.document.getElementById('piloto-linha');
+        if (!panel) return;
+        panel.textContent = '';
+        panel.hidden = false;
+        panel.appendChild(renderPilotoLinha(global.document, item, ficha));
+      })
+      .catch(function (error) { pilotoStatus('Falha: ' + error.message); });
+  }
+
+  function fetchPiloto(contestId) {
+    pilotoState.contest = contestId;
+    pilotoStatus('Carregando piloto…');
+    return global.fetch('/api/revisao/piloto?contest_id=' + encodeURIComponent(contestId) +
+                        '&size=16', {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        pilotoState.report = payload;
+        var panel = global.document.getElementById('piloto-panel');
+        if (panel) {
+          panel.textContent = '';
+          panel.appendChild(renderPiloto(global.document, payload));
+        }
+        pilotoStatus('');
+        if (pilotoState.linha) return abrirLinha(contestId, pilotoState.linha);
+        return undefined;
+      })
+      .catch(function (error) {
+        pilotoState.report = null;
+        var panel = global.document.getElementById('piloto-panel');
+        if (panel) {
+          panel.textContent = '';
+          panel.appendChild(el(global.document, 'p', 'muted',
+            'Piloto indisponível para este concurso.'));
+        }
+        pilotoStatus('Falha: ' + error.message);
+      });
+  }
+
+  function fetchPilotos() {
+    return global.fetch('/api/revisao/pilotos', {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        var doc = global.document;
+        var select = doc && doc.getElementById('piloto-select');
+        if (!select) return undefined;
+        select.textContent = '';
+        (payload.itens || []).forEach(function (item) {
+          var option = el(doc, 'option', '', (item.titulo || item.contest_id) +
+            ' · ' + item.linhas + ' linha(s)');
+          option.value = item.contest_id;
+          select.appendChild(option);
+        });
+        var restore = pilotoLerHash();
+        var contest = (restore && restore.piloto) ||
+          (payload.itens && payload.itens[0] && payload.itens[0].contest_id);
+        if (!contest) return undefined;
+        if (restore && restore.linha) pilotoState.linha = restore.linha;
+        select.value = contest;
+        return fetchPiloto(contest);
+      })
+      .catch(function (error) { pilotoStatus('Falha: ' + error.message); });
+  }
+
+  function bindPiloto() {
+    var doc = global.document;
+    var select = doc && doc.getElementById('piloto-select');
+    if (select) {
+      select.addEventListener('change', function () {
+        pilotoState.linha = null;
+        pilotoState.report = null;
+        var panel = doc.getElementById('piloto-linha');
+        if (panel) { panel.textContent = ''; panel.hidden = true; }
+        var reportPanel = doc.getElementById('piloto-panel');
+        if (reportPanel) reportPanel.textContent = '';
+        fetchPiloto(select.value);
+      });
+    }
+    var reload = doc && doc.getElementById('piloto-reload');
+    if (reload) {
+      reload.addEventListener('click', function () {
+        if (pilotoState.contest) fetchPiloto(pilotoState.contest);
+      });
+    }
+  }
+
   function bindGruposFilters() {
     var doc = global.document;
     var form = doc && doc.getElementById('grupos-filters');
@@ -3083,6 +3356,7 @@
         return response.json();
       })
       .then(function (payload) {
+        reviewState.detail = payload;
         var node = doc.getElementById('review-detail');
         clearContainer(node);
         node.hidden = false;
@@ -3210,7 +3484,8 @@
       return;
     }
     var body = {decision: decision, reviewer: reviewReviewer(), reason: reason,
-                origin: 'interface'};
+                origin: 'interface',
+                evidence_sha256: reviewState.detail && reviewState.detail.evidence_sha256};
     if (decision === 'corrigido') {
       var valueNode = doc.getElementById('review-value');
       var raw = valueNode && valueNode.value ? valueNode.value.trim() : '';
@@ -3867,6 +4142,8 @@
     fetchCoverage();
     fetchReview();
     bindGruposFilters();
+    bindPiloto();
+    fetchPilotos();
     fetchGrupos();
     fetchBlocked();
     fetchAssociations();
@@ -6276,6 +6553,11 @@
     renderConflicts: renderVersionConflicts,
     fetchOfficialCoverage: fetchOfficialCoverage,
     renderMesa: renderMesa,
+    renderPiloto: renderPiloto,
+    renderPilotoLinha: renderPilotoLinha,
+    pilotoHash: pilotoHash,
+    pilotoHashFor: pilotoHashFor,
+    pilotoLerHash: pilotoLerHash,
     fetchMesa: fetchMesa,
     renderDossier: renderDossier,
     openDossier: openDossier,

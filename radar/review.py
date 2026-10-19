@@ -678,7 +678,8 @@ def proposal_detail(db_path, proposal_id: str) -> dict:
 
 
 def _decide_on(conn, proposal_id: str, decision: str, *, reviewer: str, reason: str,
-               origin: str, value, expected_evidence_sha256, lote_id, at: str) -> dict:
+               origin: str, value, expected_evidence_sha256, lote_id, at: str,
+               expected_scope_snapshot=None) -> dict:
     """Núcleo da decisão, sobre uma conexão/transação já aberta (usado pela importação)."""
     if not is_readable_schema(conn):
         raise ValueError("migração documental pendente")
@@ -732,6 +733,21 @@ def _decide_on(conn, proposal_id: str, decision: str, *, reviewer: str, reason: 
         if current != before:
             raise ValueError(
                 "surgiu nova proposta para o mesmo campo desde a abertura da sessão; "
+                "reavalie o item")
+    if expected_scope_snapshot is not None:
+        # Mesma proteção do lote, para quem revisa por linha: se surgiu proposta nova no
+        # mesmo concurso/escopo/campo depois da abertura, a decisão precisa ser reavaliada.
+        reconciled = _reconciled_map(conn)
+        scope_name = role_scope({"contest_id": contest_id, "role_id": role_id,
+                                 "ambiguity_reason": ambiguity_reason}, reconciled)[0]
+        current = sorted(pid for pid, other_role, other_reason in conn.execute(
+            "SELECT id, role_id, ambiguity_reason FROM propostas_campo "
+            "WHERE contest_id=? AND field_name=?", (contest_id, field_name))
+            if role_scope({"contest_id": contest_id, "role_id": other_role,
+                           "ambiguity_reason": other_reason}, reconciled)[0] == scope_name)
+        if current != sorted(expected_scope_snapshot):
+            raise ValueError(
+                "surgiu nova proposta para o mesmo campo desde a abertura da linha; "
                 "reavalie o item")
     last = conn.execute(
         "SELECT decision,reason,origin,value_json FROM revisoes_campo WHERE proposal_id=? "
@@ -803,7 +819,7 @@ def _decide_on(conn, proposal_id: str, decision: str, *, reviewer: str, reason: 
 
 def decide_proposal(db_path, proposal_id: str, decision: str, *, reviewer: str, reason: str,
                     origin: str = "interface", value=None, expected_evidence_sha256=None,
-                    lote_id=None, now=None) -> dict:
+                    lote_id=None, expected_scope_snapshot=None, now=None) -> dict:
     """Registra decisão humana append-only. Idempotente para repetição idêntica."""
     if decision not in DECISIONS:
         raise ValueError("decisão inválida")
@@ -825,7 +841,8 @@ def decide_proposal(db_path, proposal_id: str, decision: str, *, reviewer: str, 
         return _decide_on(conn, proposal_id, decision, reviewer=reviewer, reason=reason,
                           origin=origin, value=value,
                           expected_evidence_sha256=expected_evidence_sha256,
-                          lote_id=lote_id, at=at)
+                          lote_id=lote_id, at=at,
+                          expected_scope_snapshot=expected_scope_snapshot)
 
 
 def select_current_value(db_path, proposal_id: str, reviewer: str, reason: str, *,
