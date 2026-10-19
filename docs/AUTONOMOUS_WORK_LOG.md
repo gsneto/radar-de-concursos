@@ -577,3 +577,14 @@ Comandos de retomada, na raiz do projeto: `git status --short --branch`; `python
 - **Superficie**: 2 estados novos na matriz e 2 na carteira, filtros de UI atualizados, versao `eligibility_v3`, contrato HTTP inalterado.
 - **Base**: sem migracao (v21); 7.648 propostas inalteradas; 0 revisoes, 0 valores, 0 reconciliacoes; `integrity ok`, FK vazia.
 - **Testes**: **1.775 testes, OK** (27 novos; 1 pulado quando ha motor de OCR).
+
+### Fase 41 - Quadros complexos de vagas, reserva unificada e cadastro de reserva (2026-10-18)
+
+- **SEDUC-PA (Anexo II, p. 63-83)**: quadro lido por coordenada das palavras (PyMuPDF) com cabecalho ancorando as oito colunas. 381 linhas, 24 regionais fechando, total geral 2.000; **PI 30, PPIQ 180, PI/PQ 138**, AC 1.169, PcD 169, PP 284, PQ 30. 1.524 propostas (381 x 4 campos). Anexo II-A (matriz de convocacao) delimitado e excluido.
+- **TJAP**: `10+CR / 1+CR / 4+CR / CR* / CR* / 15 + CR` lidos como imediato 15 + reserva sem quantidade (`indigenous_reserve_notation = "CR*"`); nenhuma vaga indigena imediata inventada (3% de 15 nao foi calculado); asterisco sem nota registrado.
+- **TJRS**: distribuicao em texto corrido ("1 (uma) vaga para indigenas") extraida com total 30 e cargo na mesma frase; soma 19+1+8+1+1 = 30.
+- **Semantica por documento** (`radar/modality_legend.py`): siglas lidas das definicoes do proprio edital; categoria com dois grupos e unificada mesmo sem a palavra; `CR`/`CR*` nunca viram zero nem imediato; `-` e zero explicito.
+- **Reutilizacao**: `radar/vacancy_columns.py` (quadro largo + notacao) e `radar/vacancy_inline.py` (texto corrido), integrados a `document_fields`, `reprocess`, `monitoring` e `pipeline`; rota `GET /api/quadro-vagas` e comando `quadro-vagas` (somente leitura).
+- **Revisao independente**: corrigidos 2 criticos (cabecalho de 5 de 6 modalidades deslocando colunas; vaga combinada contada como exclusiva), 5 altos (14 linhas perdidas por dedup, costura entre paginas, linha sem primeira coluna, definicao multi-grupo, CR no trecho) e 8 medios (encoding do reprocess, notacao na carteira, divergencias de regional, `-`, rotulo com travessao, `0+CR`, contencao do artefato, Anexo II-A).
+- **Base**: sem migracao (v21); 7.648 -> 9.211 propostas; 0 revisoes, 0 valores, 0 reconciliacoes; `integrity ok`, FK vazia.
+- **Testes**: **1.815 testes, OK** (40 novos; 1 pulado quando ha motor de OCR).

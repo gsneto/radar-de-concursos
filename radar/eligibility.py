@@ -189,6 +189,8 @@ def _scope_rows(rows, reconciled):
     for row in rows:
         if row["field_name"] not in ("si_compatibility", "indigenous_vacancies",
                                      "indigenous_reserve_vacancies",
+                                     "indigenous_reserve_notation",
+                                     "unified_ppiq_vacancies", "unified_pi_pq_vacancies",
                                      "immediate_vacancies", "reserve_vacancies",
                                      "vagas_total_publicado", "vaga_municipio"):
             continue
@@ -199,9 +201,15 @@ def _scope_rows(rows, reconciled):
         entry = data.setdefault(key, {"si": [], "indigenous": [],
                                       "indigenous_reserve": [], "reserve": [],
                                       "immediate": [], "aggregate": [],
-                                      "locality": [], "scope_label": scope_label})
+                                      "unified": [], "locality": [],
+                                      "scope_label": scope_label})
         target = {"si_compatibility": "si", "indigenous_vacancies": "indigenous",
                   "indigenous_reserve_vacancies": "indigenous_reserve",
+                  # Notação de reserva sem número (ex.: "CR*") é reserva sem quantidade,
+                  # não vaga imediata nem zero.
+                  "indigenous_reserve_notation": "indigenous_reserve",
+                  "unified_ppiq_vacancies": "unified",
+                  "unified_pi_pq_vacancies": "unified",
                   "immediate_vacancies": "immediate",
                   "reserve_vacancies": "reserve",
                   "vaga_municipio": "locality",
@@ -482,6 +490,9 @@ def _indigenous_state_for_cargo(cargo_items, cargo_reserve, contest_items,
             return "cargo_explicito_zero", [_brief(row) for row in cargo_items]
     if cargo_reserve and any(value > 0 for value in _numbers(cargo_reserve)):
         return "cargo_sem_imediata_com_reserva", [_brief(row) for row in cargo_reserve]
+    if cargo_reserve and not _numbers(cargo_reserve):
+        # Reserva publicada sem quantidade (ex.: notação "CR*"): não é lacuna nem zero.
+        return "reserva_sem_quantidade", [_brief(row) for row in cargo_reserve]
     if contest_items and any(value > 0 for value in _numbers(contest_items)):
         return "concurso_imediata_sem_distribuicao", [_brief(row) for row in contest_items]
     if contest_items and _numbers(contest_items):
@@ -494,7 +505,8 @@ def _indigenous_state_for_cargo(cargo_items, cargo_reserve, contest_items,
         evidence = [_brief(row) for row in contest_reserve]
         if any(value > 0 for value in _numbers(contest_reserve)):
             return "concurso_sem_imediata_com_reserva", evidence
-        return "reserva_sem_quantidade", evidence
+        if not _numbers(contest_reserve):
+            return "reserva_sem_quantidade", evidence
     if mention:
         context = mention_context or "outro"
         if context == "regra_de_reserva":
@@ -772,6 +784,7 @@ def matrix(db_path, *, profile=None, eligibility=None, indigenous=None,
                 "reserve": [_brief(row) for row in (entry.get("reserve") or [])],
                 "indigenous_reserve": [_brief(row) for row in
                                        (entry.get("indigenous_reserve") or [])],
+                "unified": [_brief(row) for row in (entry.get("unified") or [])],
                 "aggregate": [_brief(row) for row in (entry.get("aggregate") or [])],
             },
             "eligibility": {"estado": elig, "estado_label": ELIGIBILITY_LABELS[elig],

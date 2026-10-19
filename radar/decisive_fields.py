@@ -30,7 +30,8 @@ from radar.edital_requirements import SI_STATES
 
 DECISIVE_VERSION = "decisive_fields_v1"
 
-INDIGENOUS_FIELDS = ("indigenous_vacancies", "indigenous_reserve_vacancies")
+INDIGENOUS_FIELDS = ("indigenous_vacancies", "indigenous_reserve_vacancies",
+                     "indigenous_reserve_notation")
 SI_FIELD = "si_compatibility"
 DEADLINE_GROUPS = {
     "inscricao_inicio": ("registration_start",),
@@ -180,6 +181,8 @@ def _indigenous(data, contest_id, conflict_fields):
     immediate = [item for item in proposals if item["field_name"] == "indigenous_vacancies"]
     reserve = [item for item in proposals
                if item["field_name"] == "indigenous_reserve_vacancies"]
+    notation = [item for item in proposals
+                if item["field_name"] == "indigenous_reserve_notation"]
     aggregate = [item for item in data["proposals"]
                  if item["contest_id"] == contest_id
                  and item["field_name"] == "vagas_total_publicado"]
@@ -208,6 +211,9 @@ def _indigenous(data, contest_id, conflict_fields):
         state = "explicito_imediato"
     elif any(_num(item["value"]) > 0 for item in reserve):
         state = "apenas_reserva"
+    elif notation:
+        # Reserva publicada por notacao (ex.: "CR*"), sem quantidade numerica.
+        state = "apenas_reserva"
     elif immediate:
         state = "explicito_sem_vaga_imediata"
     elif mentioned:
@@ -225,7 +231,8 @@ def _indigenous(data, contest_id, conflict_fields):
     return {
         "estado": state, "estado_label": INDIGENOUS_LABELS[state],
         "imediata": [_brief(item) for item in immediate],
-        "reserva": [_brief(item) for item in reserve],
+        "reserva": [_brief(item) for item in reserve]
+                    + [_brief(item) for item in notation],
         "total_agregado": [_brief(item) for item in aggregate],
         "mencao": mentioned,
         "derivado_de_agregado": False,

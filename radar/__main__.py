@@ -964,6 +964,13 @@ def _cmd_elegibilidade_destaques(args: argparse.Namespace) -> None:
         ensure_ascii=False, default=str))
 
 
+def _cmd_quadro_vagas(args: argparse.Namespace) -> None:
+    from radar import vacancy_columns
+    print(json.dumps(vacancy_columns.report(
+        args.db, contest_id=args.contest_id, version_id=args.version_id),
+        ensure_ascii=False, default=str))
+
+
 def _cmd_carteira(args: argparse.Namespace) -> None:
     from radar import portfolio
     conflito = None if args.conflito is None else args.conflito == "sim"
@@ -1722,6 +1729,13 @@ def build_parser() -> argparse.ArgumentParser:
     eleg_high.add_argument('--profile')
     eleg_high.add_argument('--limit', type=int, default=12)
     eleg_high.set_defaults(func=_cmd_elegibilidade_destaques)
+
+    quadro = subparsers.add_parser('quadro-vagas',
+                                   help='quadro de vagas lido por colunas (somente leitura)')
+    quadro.add_argument('--db', required=True)
+    quadro.add_argument('--contest-id')
+    quadro.add_argument('--version-id')
+    quadro.set_defaults(func=_cmd_quadro_vagas)
 
     carteira = subparsers.add_parser('carteira', help='carteira operacional de oportunidades')
     carteira.add_argument('--db', required=True)

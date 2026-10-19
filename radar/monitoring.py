@@ -125,7 +125,8 @@ def _analyze_version(db_path, version_id: str) -> None:
                          (type(error).__name__, version_id))
         return
     blocks = extracted["blocks"]
-    proposals = extract_field_proposals(blocks, version_id, contest_id, role_id)
+    proposals = extract_field_proposals(blocks, version_id, contest_id, role_id,
+                                        pdf_bytes=content)
     note = json.dumps({"extractor_version": extracted["extractor_version"],
                        "truncated": extracted["truncated"],
                        "total_pages": extracted["total_pages"],

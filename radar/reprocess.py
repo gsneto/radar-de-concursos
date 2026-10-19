@@ -39,7 +39,25 @@ def stored_blocks(conn, version_id: str) -> list[dict]:
             "WHERE version_id=? ORDER BY page_number,start_offset,id", (version_id,))]
 
 
-EXTRACTOR_VERSION = "reprocess_v2"
+EXTRACTOR_VERSION = "reprocess_v3"
+
+
+def _artifact_path(conn, version_id: str):
+    """Caminho do PDF armazenado (None quando não existe ou está fora do diretório)."""
+    row = conn.execute("SELECT local_path FROM versoes_documento WHERE id=?",
+                       (version_id,)).fetchone()
+    if not row or not row[0]:
+        return None
+    database = conn.execute("PRAGMA database_list").fetchone()
+    if not database or not database[2]:
+        return None
+    from pathlib import Path
+    db_file = Path(database[2]).resolve()
+    root = db_file.parent / (db_file.name + ".documents")
+    artifact = (db_file.parent / row[0]).resolve()
+    if artifact.parent != root.resolve() or not artifact.is_file():
+        return None
+    return artifact
 
 
 def propose_for_version(conn, version_id: str) -> list[dict]:
@@ -48,7 +66,9 @@ def propose_for_version(conn, version_id: str) -> list[dict]:
     A versão do conjunto de extratores fica registrada no relatório: mudança de
     comportamento é rastreável sem reescrever evidência antiga.
     """
-    from radar import exam_location, inline_requirements, program_content, vacancy_aggregate
+    from radar import (exam_location, inline_requirements, modality_legend,
+                       program_content, vacancy_aggregate, vacancy_columns,
+                       vacancy_inline)
     from radar.document_fields import LABEL_PREFIX
 
     row = conn.execute(
@@ -79,6 +99,21 @@ def propose_for_version(conn, version_id: str) -> list[dict]:
         from radar import quadrix_tables
         proposals.extend(quadrix_tables.parse_quadrix_proposals(
             blocks, contest_id, label_prefix=LABEL_PREFIX))
+        # Fase 41: distribuição em texto corrido e quadro com notação de reserva.
+        proposals.extend(vacancy_inline.extract_distribution(
+            blocks, contest_id, label_prefix=LABEL_PREFIX)["proposals"])
+        proposals.extend(vacancy_columns.parse_notation_table(
+            blocks, contest_id, label_prefix=LABEL_PREFIX)["proposals"])
+        artifact = _artifact_path(conn, version_id)
+        if artifact is not None:
+            definitions = {}
+            for block in blocks:
+                for key, value in modality_legend.parse_definitions(
+                        block.get("text") or "").items():
+                    definitions.setdefault(key, value)
+            proposals.extend(vacancy_columns.parse_wide_table(
+                blocks, contest_id, label_prefix=LABEL_PREFIX, pdf_path=artifact,
+                definitions=definitions)["proposals"])
     return proposals
 
 

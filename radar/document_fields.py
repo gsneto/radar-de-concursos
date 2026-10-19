@@ -445,7 +445,8 @@ def invalid_registration_period(blocks: list[dict]) -> bool:
 
 
 def extract_field_proposals(blocks: list[dict], version_id: str, contest_id: str,
-                            role_id: str | None = None) -> list[dict]:
+                            role_id: str | None = None,
+                            pdf_bytes: bytes | None = None) -> list[dict]:
     proposals = []
     for index, block in enumerate(blocks):
         text = block['text']
@@ -468,6 +469,24 @@ def extract_field_proposals(blocks: list[dict], version_id: str, contest_id: str
         proposals.extend(_table_proposals(blocks, contest_id, role_id))
         proposals.extend(_pdf_table_proposals(blocks, contest_id, role_id))
         proposals.extend(_inline_vacancy_proposals(blocks, contest_id))
+        # Fase 41: distribuição explícita em texto corrido (sem quadro) e quadro com
+        # notação de cadastro de reserva. Nenhuma quantidade é inferida de percentual.
+        from radar import vacancy_columns, vacancy_inline
+        proposals.extend(vacancy_inline.extract_distribution(
+            blocks, contest_id, label_prefix=LABEL_PREFIX)["proposals"])
+        proposals.extend(vacancy_columns.parse_notation_table(
+            blocks, contest_id, label_prefix=LABEL_PREFIX)["proposals"])
+        if pdf_bytes is not None:
+            # Quadro largo com siglas por coluna exige a posição das palavras no PDF.
+            from radar import modality_legend
+            definitions = {}
+            for block in blocks:
+                for key, value in modality_legend.parse_definitions(
+                        block.get("text") or "").items():
+                    definitions.setdefault(key, value)
+            proposals.extend(vacancy_columns.parse_wide_table(
+                blocks, contest_id, label_prefix=LABEL_PREFIX, pdf_path=pdf_bytes,
+                definitions=definitions)["proposals"])
         # Quadro com total agregado (ex.: IBFC): publica apenas `vagas_total_publicado`,
         # sem distribuir por modalidade e sem tocar em vagas indígenas.
         from radar import vacancy_aggregate

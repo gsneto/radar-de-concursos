@@ -808,6 +808,15 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             from radar import eligibility
             self._serve_study(eligibility.highlights, limit=limit,
                               profile=query.get("profile", [None])[0])
+        elif path == "/api/quadro-vagas":
+            query = parse_qs(parts.query)
+            if set(query) - {"contest_id", "version_id"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import vacancy_columns
+            self._serve_study(vacancy_columns.report,
+                              contest_id=query.get("contest_id", [None])[0],
+                              version_id=query.get("version_id", [None])[0])
         elif path == "/api/carteira/destaques":
             query = parse_qs(parts.query)
             if set(query) - {"limit"}:

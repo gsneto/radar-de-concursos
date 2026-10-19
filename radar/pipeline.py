@@ -213,7 +213,8 @@ def preview_analysis(db_path, version_id: str) -> dict:
                 "would_write": False, "error_code": error.code,
                 "error": str(error), "would_blocks": 0, "would_proposals": 0}
     blocks = extracted["blocks"]
-    proposals = extract_field_proposals(blocks, version_id, contest_id, role_id)
+    proposals = extract_field_proposals(blocks, version_id, contest_id, role_id,
+                                        pdf_bytes=content)
     invalid = 0
     for proposal in proposals:
         evidence = proposal["evidence"]
