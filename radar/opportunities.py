@@ -190,7 +190,7 @@ def _role_scope(row, reconciled=None) -> tuple[str, str | None]:
 
 def opportunity_list(db_path, *, field=None, conflict=None, document_state=None,
                      has_page=None, search=None, min_priority=None, contest_id=None,
-                     limit=50, offset=0, now=None) -> dict:
+                     limit=50, offset=0, now=None, bulk=False) -> dict:
     """Oportunidades agrupadas por concurso + cargo, com prioridade explicada.
 
     ``field`` filtra grupos que têm propostas daquele campo; ``conflict`` (True/False)
@@ -199,7 +199,8 @@ def opportunity_list(db_path, *, field=None, conflict=None, document_state=None,
     """
     limit = int(limit)
     offset = int(offset)
-    if limit < 1 or limit > 200:
+    # `bulk` é uso interno da carteira: uma única varredura em vez de quatro páginas.
+    if limit < 1 or limit > (5000 if bulk else 200):
         raise ValueError("limite fora da faixa")
     if offset < 0:
         raise ValueError("deslocamento inválido")

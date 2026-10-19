@@ -8,6 +8,7 @@ import json
 import os
 import re
 import tempfile
+from contextlib import closing
 from datetime import date, datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
@@ -1503,28 +1504,55 @@ _DATES = {"registration_start", "registration_end", "exam_date", "exemption_star
 
 
 def record_analysis(db_path, version_id: str, blocks: list[dict], proposals: list[dict],
-                    *, note: str | None = None) -> None:
+                    *, note: str | None = None, partial: bool | None = None) -> None:
     """Persiste blocos e propostas somente se todas as citações são verificáveis.
 
     ``note`` registra a versão do extrator e limitações (ex.: extração de prefixo) no evento
     de análise, sem alterar o esquema.
     """
-    _persist_analysis(db_path, version_id, blocks, proposals, note=note, append=False)
+    _persist_analysis(db_path, version_id, blocks, proposals, note=note, append=False,
+                      partial=partial)
 
 
 def append_page_analysis(db_path, version_id: str, blocks: list[dict], proposals: list[dict],
-                         *, note: str | None = None) -> dict:
+                         *, note: str | None = None, partial: bool | None = None) -> dict:
     """Acrescenta blocos/propostas de páginas **ainda não extraídas** (Fase 32).
 
     Idempotente por página: páginas que já têm bloco são ignoradas, junto com as propostas que
     dependiam delas. Permite processar PDF longo em lotes, com retomada segura, sem duplicar
     conteúdo nem destruir evidência anterior.
     """
-    return _persist_analysis(db_path, version_id, blocks, proposals, note=note, append=True)
+    return _persist_analysis(db_path, version_id, blocks, proposals, note=note, append=True,
+                             partial=True if partial is None else partial)
+
+
+def _note_is_partial(note: str | None) -> bool:
+    """Limitacao declarada no evento de analise: prefixo, OCR derivado ou lote."""
+    if not note:
+        return False
+    try:
+        meta = json.loads(note)
+    except (TypeError, ValueError):
+        return False
+    if not isinstance(meta, dict):
+        return False
+    return bool(meta.get("truncated") or meta.get("pages") or meta.get("derived_layer"))
+
+
+def mark_extraction_complete(db_path, version_id: str) -> str:
+    """Fecha a extracao por lotes: concluida se ha blocos, falhou se nao ha texto."""
+    with closing(connect_documents(db_path)) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        has_blocks = conn.execute(
+            "SELECT 1 FROM blocos_documento WHERE version_id=? LIMIT 1", (version_id,)).fetchone()
+        state = "concluida" if has_blocks else "falhou"
+        conn.execute("UPDATE versoes_documento SET extraction_state=?, error_code=NULL "
+                     "WHERE id=?", (state, version_id))
+    return state
 
 
 def _persist_analysis(db_path, version_id: str, blocks: list[dict], proposals: list[dict],
-                      *, note: str | None, append: bool):
+                      *, note: str | None, append: bool, partial: bool | None = None):
     conn = connect_documents(db_path)
     try:
         conn.execute("BEGIN IMMEDIATE")
@@ -1673,8 +1701,11 @@ def _persist_analysis(db_path, version_id: str, blocks: list[dict], proposals: l
                 raise ValueError("datas de inscrição invertidas")
         # Sucesso limpa o código de erro de uma tentativa anterior (não deixa estado contraditório).
         # Em append, o estado continua "parcial": o documento segue incompleto por definição.
+        if partial is None:
+            partial = _note_is_partial(note)
+        state = "parcial" if partial else "concluida"
         conn.execute("UPDATE versoes_documento SET extraction_state=?, error_code=NULL WHERE id=?",
-                     ("parcial" if (blocks or append) else "falhou", version_id))
+                     (state, version_id))
         conn.execute("INSERT INTO eventos_documentais (id,document_id,version_id,event_type,occurred_at,note) VALUES (?,?,?,'analise',?,?)",
                      (str(uuid4()), document_id, version_id, _now(), note))
         conn.commit()

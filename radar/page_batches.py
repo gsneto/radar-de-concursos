@@ -23,7 +23,8 @@ from contextlib import closing
 from io import BytesIO
 from pathlib import Path
 
-from radar.document_store import append_page_analysis, connect_documents, is_readable_schema
+from radar.document_store import (append_page_analysis, connect_documents,
+                                  is_readable_schema, mark_extraction_complete)
 
 BATCH_VERSION = "page_batches_v1"
 DEFAULT_BATCH_PAGES = 40
@@ -246,6 +247,8 @@ def append_pages(db_path, version_id: str, *, start_page: int | None = None,
     first = int(start_page) if start_page else next(
         (page for page in range(1, total + 1) if page not in extracted), total + 1)
     if first > total:
+        if not dry_run:
+            mark_extraction_complete(db_path, version_id)
         return {"version": BATCH_VERSION, "version_id": version_id,
                 "dry_run": bool(dry_run), "total_pages": total, "start_page": None,
                 "end_page": None, "paginas_no_lote": [], "next_page": None,
@@ -275,6 +278,8 @@ def append_pages(db_path, version_id: str, *, start_page: int | None = None,
     if not blocks:
         report["motivo"] = "páginas do lote sem texto extraível"
         report["next_page"] = last + 1 if last < total else None
+        if last >= total:
+            mark_extraction_complete(db_path, version_id)
         if checkpoint:
             _write_checkpoint(checkpoint, version_id, report["next_page"])
         return report
@@ -288,7 +293,8 @@ def append_pages(db_path, version_id: str, *, start_page: int | None = None,
     result = append_page_analysis(db_path, version_id, blocks, proposals,
                                   note=json.dumps({"extractor_version": BATCH_VERSION,
                                                    "limitation": limitation},
-                                                  ensure_ascii=False))
+                                                  ensure_ascii=False),
+                                  partial=(last < total))
     report.update({"added_blocks": result.get("added_blocks", 0),
                    "added_proposals": result.get("added_proposals", 0),
                    "skipped_pages": result.get("skipped_pages", []),

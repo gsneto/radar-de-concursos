@@ -372,8 +372,14 @@ def finish_session(db_path, session_id: str | None = None) -> dict:
         conn.execute("BEGIN IMMEDIATE")
         row = _open_row(conn, session_id)
         if not row:
+            if session_id:
+                existing = conn.execute(
+                    "SELECT estado FROM estudo_sessoes WHERE id=?", (session_id,)).fetchone()
+                if existing and existing[0] == "concluida":
+                    conn.rollback()
+                    return _session_by_id(db_path, session_id)
             conn.rollback()
-            raise ValueError("nenhuma sessão aberta para concluir")
+            raise ValueError("nenhuma sessao aberta para concluir")
         now = _now()
         conn.execute("UPDATE estudo_sessoes SET estado='concluida', duracao_segundos=?, inicio=NULL, fim=? "
                      "WHERE id=?", (_open_elapsed(row), now, row[0]))

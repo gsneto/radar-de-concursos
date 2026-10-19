@@ -308,6 +308,28 @@ A visão operacional fica em **Catálogo de fontes** (`#sources-panel`): estado,
 
 **Integração real desta fase:** IBGE Localidades (dados abertos oficiais, sem chave) valida `exam_location`/`exam_municipio`/`exam_uf` contra a lista de 5.570 municípios. O resultado é **parecer** (`confere_ibge`, `uf_divergente`, `nao_encontrado`, `sem_snapshot`) para revisão humana — nunca confirma campo. Na base real encontrou `Taboão/SP`, que não é município (o correto é Taboão da Serra). Ver [`docs/superpowers/specs/2026-10-17-catalogo-fontes-politicas-design.md`](docs/superpowers/specs/2026-10-17-catalogo-fontes-politicas-design.md).
 
+## Fechamento do backend e prontidão (Fase 44)
+
+O backend foi auditado por domínio e fechado para o início do frontend. O contrato HTTP é
+versionado e verificável, e há um relatório único de prontidão:
+
+`powershell
+python -m radar api-contrato --verificar   # 129 entradas método+rota
+python -m radar api-contrato --markdown    # gera docs/API.md
+python -m radar prontidao --db .\data\radar.sqlite3
+`
+
+GET /api/saude/prontidao expõe o mesmo relatório pela API (com cache de 60 s). O
+relatório separa falha bloqueante (integridade, FK, schema, proveniência, contrato) de
+pendência real (documento sem versão, extração parcial, conflito, credencial externa).
+GET /api/concursos mantém o contrato v1 com 18 campos.
+
+Escritas locais exigem Origin e Host loopback na mesma porta e corpo JSON; consultas
+pesadas concorrentes recebem 429. Inventário, gate e evidências:
+[docs/BACKEND_INVENTORY.md](docs/BACKEND_INVENTORY.md),
+[docs/READINESS_GATE.md](docs/READINESS_GATE.md),
+[docs/API.md](docs/API.md).
+
 ## Testes
 
 ```powershell

@@ -24,10 +24,34 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 
 from radar import modality_legend
 
 VERSION = "quadro_colunas_v2"
+
+_REPORT_CACHE = {}
+_REPORT_LOCK = threading.Lock()
+_REPORT_MAX = 16
+
+
+def _report_key(db_path, contest_id, version_id):
+    """Chave de cache: banco + recorte + estado (muda quando versão/bloco/proposta muda)."""
+    from pathlib import Path
+    from contextlib import closing
+    from radar.document_store import connect_documents
+    path = Path(db_path)
+    try:
+        stat = path.stat()
+        with closing(connect_documents(db_path)) as conn:
+            counts = conn.execute(
+                "SELECT (SELECT COUNT(*) FROM versoes_documento),"
+                "(SELECT COUNT(*) FROM blocos_documento),"
+                "(SELECT COUNT(*) FROM propostas_campo)").fetchone()
+    except Exception:
+        return None
+    return (str(path.resolve()), contest_id, version_id, stat.st_mtime_ns,
+            tuple(counts or ()))
 
 # Campos persistidos por linha (o restante das colunas fica no relatório e na evidência).
 FIELD_BY_SIGLA = {
@@ -867,6 +891,13 @@ def report(db_path, *, contest_id=None, version_id=None) -> dict:
     from pathlib import Path
     from radar.document_store import connect_documents, is_readable_schema
 
+    cache_key = _report_key(db_path, contest_id, version_id)
+    if cache_key is not None:
+        with _REPORT_LOCK:
+            cached = _REPORT_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+
     with closing(connect_documents(db_path)) as conn:
         if not is_readable_schema(conn):
             raise ValueError("migração documental pendente")
@@ -909,7 +940,7 @@ def report(db_path, *, contest_id=None, version_id=None) -> dict:
     notation = parse_notation_table(blocks, meta[0], label_prefix=LABEL_PREFIX)
     inline = vacancy_inline.extract_distribution(blocks, meta[0],
                                                  label_prefix=LABEL_PREFIX)
-    return {"version": VERSION, "version_id": version_id, "contest_id": meta[0],
+    result = {"version": VERSION, "version_id": version_id, "contest_id": meta[0],
             "title": meta[1], "sha256": meta[3],
             "definicoes": definitions,
             "quadro_colunas": {"rows": wide["rows"], "regions": wide["regions"],
@@ -923,6 +954,12 @@ def report(db_path, *, contest_id=None, version_id=None) -> dict:
                           + len(inline["proposals"])),
             "limitacao": ("Leitura de quadro é candidata: nenhuma proposta é confirmada "
                           "aqui e nenhuma quantidade é rateada entre modalidades.")}
+    if cache_key is not None:
+        with _REPORT_LOCK:
+            if len(_REPORT_CACHE) >= _REPORT_MAX:
+                _REPORT_CACHE.clear()
+            _REPORT_CACHE[cache_key] = result
+    return result
 
 
 def audit_schooling(db_path, *, contest_id=None, version_id=None) -> dict:

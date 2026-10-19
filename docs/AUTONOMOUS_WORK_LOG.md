@@ -611,3 +611,25 @@ Comandos de retomada, na raiz do projeto: `git status --short --branch`; `python
 - **Desempenho**: groups frio 3,45 s / quente 0,33 s; pilot 3,60 s / 0,37 s. `revisao-prewarm` aquece sem gravar.
 - **Base**: sem migracao (v21); 9.211 propostas; 0 revisoes, 0 valores, 0 reconciliacoes, 0 lotes; `integrity ok`, FK vazia.
 - **Testes**: **1.867 testes, OK** (34 novos; 1 pulado quando ha motor de OCR).
+
+### Fase 44 - Fechamento integral do backend e gate para o frontend (2026-10-19)
+
+- **Estado inicial verificado**: branch 
+adar-configuracao, HEAD 2fddc2, arvore limpa; suite **1.877 testes, OK** (1 pulado); backup por API data/radar.sqlite3.bak-20261019-072446; integrity ok, FK vazia, schema v21. O ciclo agendado cresceu a base durante a fase (1.276 documentos, 1.110 versoes, 9.340 propostas); nenhum numero foi presumido.
+- **Inventario** (docs/BACKEND_INVENTORY.md): 92 modulos, 83 arquivos de teste, 45 tabelas, 129 entradas metodo+rota em 24 dominios; lacunas classificadas em P0/P1/P2.
+- **Contrato de API** (
+adar/api_contract.py): registro explicito com metodo, rota, query, corpo, escrita, idempotencia e resumo; erify() compara metodo+rota com o AST de server.py e cobre rotas declaradas por sufixo. docs/API.md gerado por python -m radar api-contrato --markdown. Contrato v1 de GET /api/concursos (18 campos) preservado.
+- **Prontidao** (
+adar/readiness.py): relatorio unico com checks bloqueantes (schema, integridade, FK, proveniencia, hash, tabelas, contrato, estudos) e pendencias reais; GET /api/saude/prontidao e CLI prontidao; cache de 60 s e geracao single-flight; HTTP redige caminho absoluto; banco vazio/schema pendente retorna loqueado sem traceback.
+- **Estados de extracao**: concluida vs parcial vs alhou com partial explicito; prefixo, OCR derivado e lote intermediario ficam parciais; ultimo lote conclui a versao; mark_extraction_complete fecha lotes sem texto; _note_is_partial tolera JSON nao-objeto.
+- **Fontes**: udget.state_report(config=...) passa a refletir a habilitacao real da configuracao (5 fontes habilitadas), inclusive config_path no servidor.
+- **Seguranca local**: escrita exige Origin loopback na mesma porta e Content-Type: application/json; Host loopback na mesma porta (anti DNS rebinding); 
+osniff e 
+o-store; 2 GETs pesados concorrentes no maximo (429); nenhum segredo exposto.
+- **Desempenho medido**: carteira 4,07 s frio / 4,20 s quente -> **1,09 s / 0,016 s**; quadro de vagas 2,83 s -> **2,88 s frio / 0,009 s quente**; prontidao 0,64 s com cache de 60 s. Correcoes: pre-agrupamento por concurso, varredura bulk de oportunidades, cache com fingerprint e invalidacao por versao/bloco/proposta/decisao.
+- **Estudos**: fluxo ponta a ponta validado (disciplina, topico, sessao, flashcard, questao, tentativa, simulado, finalizacao repetida, desempenho, exportacao/importacao); conclusao de sessao idempotente por id.
+- **Revisao independente**: 0 critico; 4 altos e 4 medios corrigidos (contrato por metodo, config na prontidao, schema pendente, cache com data local, status de checks, ciclo parcial, config_path, lote final); seguranca: 0 critico/alto, 2 medios corrigidos (Host e concorrencia).
+- **Gate** (docs/READINESS_GATE.md): todos os criterios APROVADOS, exceto credenciais externas (PENDENTE EXTERNO). **BACKEND PRONTO PARA INICIO DO FRONTEND.**
+- **Base**: sem migracao (v21); 1.276 documentos, 1.110 versoes, 9.340 propostas/evidencias; 0 revisoes, 0 valores, 0 reconciliacoes, 0 lotes; integrity ok, FK vazia.
+- **Testes**: **1.906 testes, OK** (29 novos; 1 pulado quando ha motor de OCR).
+

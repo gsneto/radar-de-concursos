@@ -247,8 +247,19 @@ def ensure_state(db_path, source_id: str, *, enabled: bool = False,
             (source_id, 1 if enabled else 0, "nao_testada", now or _now()))
 
 
-def state_report(db_path) -> dict:
-    """Estado operacional de todas as fontes do catálogo, sem segredos."""
+_CONFIG_KEY_BY_SOURCE = {
+    "guajara": "guajara", "dou-secao-3": "dou", "fgv-conhecimento": "fgv",
+    "quadrix": "quadrix", "pci": "pci", "ibfc": "ibfc",
+}
+
+
+def state_report(db_path, *, config: dict | None = None) -> dict:
+    """Estado operacional de todas as fontes do catálogo, sem segredos.
+
+    Quando ``config`` é informado, a habilitação efetiva vem da configuração
+    (``sources.<chave>.enabled``), não apenas da linha persistida em ``fontes_estado``.
+    Sem isso, a interface mostraria todas as fontes desligadas mesmo com o ciclo ativo.
+    """
     with closing(connect_documents(db_path)) as conn:
         if not is_readable_schema(conn):
             raise ValueError("migração documental pendente")
@@ -260,15 +271,23 @@ def state_report(db_path) -> dict:
             "SELECT source_id, calls, items, credits, cost_amount, status, finished_at "
             "FROM fontes_consumo c WHERE started_at = (SELECT MAX(started_at) "
             "FROM fontes_consumo WHERE source_id=c.source_id)")}
+    configured = (config or {}).get("sources") or {}
     items = []
     for source in catalog.catalog():
         state = rows.get(source["id"])
         consumo = last.get(source["id"])
+        key = _CONFIG_KEY_BY_SOURCE.get(source["id"])
+        options = configured.get(key) if key else None
+        enabled = (bool(options.get("enabled")) if isinstance(options, dict)
+                   else (bool(state[1]) if state else False))
         items.append({
             "id": source["id"], "name": source["name"], "category": source["category"],
             "nature": source["nature"], "access": source["access"],
             "status": source["status"],
-            "enabled": bool(state[1]) if state else False,
+            "enabled": enabled,
+            "configured": bool(isinstance(options, dict)),
+            "min_interval_hours": (options.get("min_interval_hours")
+                                   if isinstance(options, dict) else None),
             "runtime_status": state[2] if state else "nao_testada",
             "last_run_at": state[3] if state else None,
             "last_run_status": state[10] if state else None,

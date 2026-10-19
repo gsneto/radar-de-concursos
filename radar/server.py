@@ -18,6 +18,7 @@ import base64
 import binascii
 import json
 import sqlite3
+import threading
 from uuid import UUID
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -37,6 +38,13 @@ _CONTENT_TYPES = {
 }
 
 # Rotas de assets, aceitando também o prefixo ``/web/``.
+# GETs que varrem PDF/banco inteiro: no máximo dois em paralelo no processo local.
+_EXPENSIVE_PATHS = {
+    "/api/carteira", "/api/carteira/dossie", "/api/revisao/grupos",
+    "/api/saude/prontidao", "/api/quadro-vagas", "/api/pipeline/parciais",
+    "/api/cobertura", "/api/elegibilidade", "/api/revisao/piloto",
+}
+
 _ASSET_ROUTES = {
     "/styles.css": "styles.css",
     "/web/styles.css": "styles.css",
@@ -60,6 +68,7 @@ class _RadarHTTPServer(ThreadingHTTPServer):
         super().__init__(server_address, _RadarRequestHandler)
         self.db_path = db_path
         self.config_path = config_path
+        self.expensive = threading.BoundedSemaphore(2)
 
 
 class _RadarRequestHandler(BaseHTTPRequestHandler):
@@ -69,13 +78,28 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         return
 
+    def finish(self):
+        if getattr(self, "_expensive_acquired", False):
+            self._expensive_acquired = False
+            try:
+                self.server.expensive.release()
+            except ValueError:
+                pass
+        super().finish()
+
     # --- Helpers de resposta -------------------------------------------------
 
     def _send(self, status, content_type, body_bytes, headers=None):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body_bytes)))
-        for name, value in (headers or {}).items():
+        outgoing = {"X-Content-Type-Options": "nosniff"}
+        if content_type.startswith("application/json"):
+            # Dado operacional muda a cada ciclo: cache do navegador/proxy esconderia
+            # decisão nova ou evidência alterada.
+            outgoing["Cache-Control"] = "no-store"
+        outgoing.update(headers or {})
+        for name, value in outgoing.items():
             self.send_header(name, value)
         self.end_headers()
         self.wfile.write(body_bytes)
@@ -177,6 +201,37 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
         self._send(HTTPStatus.OK, "application/json; charset=utf-8", body)
 
+    def _serve_readiness(self):
+        from radar import readiness
+        try:
+            from radar.ops_config import load_config
+            config = load_config(self.server.config_path)
+        except Exception:
+            config = {}
+        config["db_path"] = self.server.db_path
+        try:
+            payload = readiness.report(self.server.db_path, config=config)
+        except Exception as error:
+            body = json.dumps({"error": "falha ao montar prontidão",
+                               "tipo": type(error).__name__}).encode("utf-8")
+            self._send(HTTPStatus.SERVICE_UNAVAILABLE, "application/json; charset=utf-8", body)
+            return
+        payload = self._public_readiness(payload)
+        body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+        self._send(HTTPStatus.OK, "application/json; charset=utf-8", body)
+
+    @staticmethod
+    def _public_readiness(payload):
+        """Não expõe caminho absoluto do banco na resposta HTTP (só nome do arquivo)."""
+        from pathlib import PurePath
+        if isinstance(payload.get("database"), dict) and payload["database"].get("path"):
+            payload["database"]["path"] = PurePath(payload["database"]["path"]).name
+        for check in payload.get("checks") or []:
+            evidence = check.get("evidence")
+            if isinstance(evidence, dict) and evidence.get("path"):
+                evidence["path"] = PurePath(evidence["path"]).name
+        return payload
+
     def _serve_priorities(self, limit):
         from radar import preferences, priority
         from radar.ops_config import load_config
@@ -236,6 +291,74 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
     def _bad_request(self, message="requisição inválida"):
         body = json.dumps({"error": message}, ensure_ascii=False).encode("utf-8")
         self._send(HTTPStatus.BAD_REQUEST, "application/json; charset=utf-8", body)
+
+    _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+    def _host_allowed(self) -> bool:
+        """Aceita apenas Host loopback na porta deste servidor (anti DNS rebinding).
+
+        Sem esta checagem, uma página em domínio externo que resolve para 127.0.0.1
+        leria respostas locais como se fossem same-origin.
+        """
+        host = self.headers.get("Host")
+        if not host:
+            return True  # HTTP/1.0 sem Host: cliente local explícito
+        if host.startswith("["):
+            hostname, _, rest = host[1:].partition("]")
+            port = rest[1:] if rest.startswith(":") else None
+        else:
+            hostname, _, port = host.partition(":")
+        hostname = hostname.lower()
+        if hostname not in self._LOOPBACK_HOSTS:
+            return False
+        if not port:
+            return self.server.server_address[1] == 80
+        try:
+            return int(port) == self.server.server_address[1]
+        except ValueError:
+            return False
+
+    def _origin_allowed(self) -> bool:
+        """Aceita escrita sem Origin (CLI/teste) ou de origem loopback.
+
+        Um navegador em outro site consegue disparar POST simples contra 127.0.0.1; sem
+        esta checagem, uma página qualquer alteraria dados locais. Origin ausente não é
+        bloqueado porque clientes locais legítimos (urllib, testes, CLI) não o enviam.
+        """
+        origin = self.headers.get("Origin")
+        if not origin:
+            return True
+        try:
+            parsed = urlsplit(origin)
+            port = parsed.port
+        except ValueError:
+            return False
+        if parsed.scheme not in ("http", "https"):
+            return False
+        if (parsed.hostname or "").lower() not in self._LOOPBACK_HOSTS:
+            return False
+        return port is None or port == self.server.server_address[1]
+
+    def _guard_write(self, *, body_expected: bool = True) -> bool:
+        """Recusa origem estranha e corpo que não se declara JSON (CSRF local)."""
+        if not self._origin_allowed():
+            self._send(HTTPStatus.FORBIDDEN, "application/json; charset=utf-8",
+                       b'{"error":"origem nao autorizada"}')
+            return False
+        if body_expected:
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except (TypeError, ValueError):
+                length = 0
+            if length > 0:
+                declared = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+                if declared != "application/json":
+                    self._drain(length)
+                    self._send(HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                               "application/json; charset=utf-8",
+                               b'{"error":"Content-Type deve ser application/json"}')
+                    return False
+        return True
 
     def _drain(self, length, *, limit=64 * 1024 * 1024):
         """Consome o corpo rejeitado (até um teto) para o cliente receber a resposta HTTP."""
@@ -453,6 +576,18 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
     # --- Roteamento ----------------------------------------------------------
 
     def do_GET(self):
+        if not self._host_allowed():
+            self._send(HTTPStatus.FORBIDDEN, "application/json; charset=utf-8",
+                       b'{"error":"host nao autorizado"}')
+            return
+        self._expensive_acquired = False
+        if urlsplit(self.path).path in _EXPENSIVE_PATHS:
+            if not self.server.expensive.acquire(blocking=False):
+                self._send(HTTPStatus.TOO_MANY_REQUESTS,
+                           "application/json; charset=utf-8",
+                           b'{"error":"consulta pesada em andamento; tente novamente"}')
+                return
+            self._expensive_acquired = True
         from radar import study_store, knowledge_store, study_backup, practice_store, packages
         from radar import data_quality
         parts = urlsplit(self.path)
@@ -496,6 +631,11 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
             else:
                 self._serve_alerts(unseen, limit)
+        elif path == "/api/saude/prontidao":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_readiness()
         elif path == "/api/saude":
             if parts.query:
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
@@ -1103,7 +1243,12 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._bad_request("parâmetros inválidos")
                 return
             from radar import budget
-            self._serve_study(budget.state_report)
+            try:
+                from radar.ops_config import load_config
+                config = load_config(self.server.config_path)
+            except Exception:
+                config = {}
+            self._serve_study(budget.state_report, config=config)
         elif path.startswith("/api/fontes/"):
             remainder = path[len("/api/fontes/"):]
             if not remainder or "/" in remainder or parts.query:
@@ -1455,6 +1600,12 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         self._send_no_content(HTTPStatus.METHOD_NOT_ALLOWED, {"Allow": allow})
 
     def do_POST(self):
+        if not self._host_allowed():
+            self._send(HTTPStatus.FORBIDDEN, "application/json; charset=utf-8",
+                       b'{"error":"host nao autorizado"}')
+            return
+        if not self._guard_write():
+            return
         from radar import study_store, knowledge_store, study_backup, practice_store, packages, media
         parts = urlsplit(self.path)
         path = parts.path
@@ -1988,6 +2139,12 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         self._verb_not_allowed()
 
     def do_DELETE(self):
+        if not self._host_allowed():
+            self._send(HTTPStatus.FORBIDDEN, "application/json; charset=utf-8",
+                       b'{"error":"host nao autorizado"}')
+            return
+        if not self._guard_write(body_expected=False):
+            return
         from radar import knowledge_store, practice_store
         parts = urlsplit(self.path)
         if parts.path.startswith("/api/estudos/flashcards/") and not parts.query:

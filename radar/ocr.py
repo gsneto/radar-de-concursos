@@ -473,7 +473,7 @@ def ocr_version(db_path, version_id: str, *, engine: str | None = None,
             "source_sha256": opened["sha256"],
         }, ensure_ascii=False)
         from radar.document_store import record_analysis
-        record_analysis(db_path, version_id, blocks, proposals, note=note)
+        record_analysis(db_path, version_id, blocks, proposals, note=note, partial=True)
 
     return {"version": OCR_VERSION, "version_id": version_id, "title": opened["title"],
             "sha256": opened["sha256"], "total_pages": total, "pages": selected,

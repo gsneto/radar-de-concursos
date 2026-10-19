@@ -728,6 +728,18 @@ def health(config, *, check_server: bool = True, now=None) -> dict:
                                   WHERE cycle_id=? ORDER BY source_url""", (last[0],))]
         out["stuck_runs"] = conn.execute(
             "SELECT count(*) FROM ciclos_monitoramento WHERE state='em_andamento'").fetchone()[0]
+        if out["last_cycle"]:
+            # Próximo ciclo previsto = início do último + intervalo configurado. Não consulta
+            # o Agendador do Windows (o relatório precisa funcionar em qualquer máquina).
+            try:
+                from datetime import datetime as _dt, timedelta as _td
+                started = _dt.fromisoformat(out["last_cycle"]["started_at"])
+                if not started.tzinfo:
+                    started = started.replace(tzinfo=timezone.utc)
+                hours = int(config.get("monitor_interval_hours", 6))
+                out["next_run_at"] = (started + _td(hours=hours)).isoformat()
+            except (TypeError, ValueError):
+                out["next_run_at"] = None
         try:
             from radar import notifications
             out["notifications"] = notifications.notification_state(db_path)

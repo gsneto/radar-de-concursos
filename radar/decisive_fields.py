@@ -155,8 +155,11 @@ def _rows(db_path):
             "published_at": row[11], "discovered_at": row[12], "version_id": row[13],
             "page_number": row[14], "quote": row[15], "decision": row[16],
         })
-    return {"contests": contests, "proposals": items, "pages": pages,
-            "analyzed": analyzed, "contest_pages": contest_pages}
+    by_contest = {}
+    for item in items:
+        by_contest.setdefault(item["contest_id"], []).append(item)
+    return {"contests": contests, "proposals": items, "by_contest": by_contest,
+            "pages": pages, "analyzed": analyzed, "contest_pages": contest_pages}
 
 
 def _authoritative(item) -> bool:
@@ -174,18 +177,16 @@ def _mention(data, item) -> dict | None:
 
 
 def _indigenous(data, contest_id, conflict_fields):
-    proposals = [item for item in data["proposals"]
-                 if item["contest_id"] == contest_id
-                 and item["field_name"] in INDIGENOUS_FIELDS
+    proposals = [item for item in data["by_contest"].get(contest_id, [])
+                 if item["field_name"] in INDIGENOUS_FIELDS
                  and item["decision"] != "rejeitado"]
     immediate = [item for item in proposals if item["field_name"] == "indigenous_vacancies"]
     reserve = [item for item in proposals
                if item["field_name"] == "indigenous_reserve_vacancies"]
     notation = [item for item in proposals
                 if item["field_name"] == "indigenous_reserve_notation"]
-    aggregate = [item for item in data["proposals"]
-                 if item["contest_id"] == contest_id
-                 and item["field_name"] == "vagas_total_publicado"]
+    aggregate = [item for item in data["by_contest"].get(contest_id, [])
+                 if item["field_name"] == "vagas_total_publicado"]
     analyzed = contest_id in data["analyzed"]
     # A melhor janela (não a primeira página) define contexto e evidência: uma página de
     # conteúdo antes da regra de reserva não pode esconder a reserva.
@@ -285,8 +286,8 @@ def _cargo_key(item):
 
 
 def _si(data, contest_id):
-    proposals = [item for item in data["proposals"]
-                 if item["contest_id"] == contest_id and item["field_name"] == SI_FIELD
+    proposals = [item for item in data["by_contest"].get(contest_id, [])
+                 if item["field_name"] == SI_FIELD
                  and item["decision"] != "rejeitado"]
     analyzed = contest_id in data["analyzed"]
     by_role = {}
@@ -328,8 +329,8 @@ def _si(data, contest_id):
 def _deadlines(data, contest_id):
     out = {}
     for key, fields in DEADLINE_GROUPS.items():
-        items = [item for item in data["proposals"]
-                 if item["contest_id"] == contest_id and item["field_name"] in fields
+        items = [item for item in data["by_contest"].get(contest_id, [])
+                 if item["field_name"] in fields
                  and item["decision"] != "rejeitado" and _authoritative(item)]
         if not items:
             state = "nao_localizado" if contest_id in data["analyzed"] else "nao_pesquisado"
@@ -382,9 +383,7 @@ def _day(value):
 def _location_items(data, contest_id):
     """Propostas de local normalizadas para o parser (UF recuperada do trecho literal)."""
     items = []
-    for item in data["proposals"]:
-        if item["contest_id"] != contest_id:
-            continue
+    for item in data["by_contest"].get(contest_id, []):
         if item["field_name"] not in ("exam_location", "exam_municipio", "exam_uf",
                                       "work_location", "work_municipio", "work_uf"):
             continue

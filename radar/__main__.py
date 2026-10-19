@@ -76,8 +76,10 @@ def _cmd_analyze(args: argparse.Namespace) -> None:
     if hashlib.sha256(content).hexdigest() != digest:
         raise ValueError('hash de artefato divergente')
     from radar.monitoring import PREFIX_PAGES
+    from radar.document_extract import extract_document
     try:
-        blocks = extract_blocks(content, content_type, max_pages=PREFIX_PAGES)
+        extracted = extract_document(content, content_type, prefix_pages=PREFIX_PAGES)
+        blocks = extracted["blocks"]
     except ValueError as error:
         code = getattr(error, "code", type(error).__name__)
         with closing(connect_documents(args.db)) as conn, conn:
@@ -89,7 +91,13 @@ def _cmd_analyze(args: argparse.Namespace) -> None:
                 (str(uuid4()), datetime.now(timezone.utc).isoformat(), type(error).__name__, args.version_id))
         raise
     proposals = extract_field_proposals(blocks, args.version_id, contest_id, role_id)
-    record_analysis(args.db, args.version_id, blocks, proposals)
+    note = json.dumps({"extractor_version": extracted["extractor_version"],
+                       "truncated": extracted["truncated"],
+                       "total_pages": extracted["total_pages"],
+                       "limitation": extracted["limitation"],
+                       "blocks": len(blocks)}, ensure_ascii=False)
+    record_analysis(args.db, args.version_id, blocks, proposals, note=note,
+                    partial=bool(extracted["truncated"]))
     if invalid_registration_period(blocks):
         with closing(connect_documents(args.db)) as conn, conn:
             conn.execute("UPDATE versoes_documento SET error_code='invalid_registration_period' WHERE id=?", (args.version_id,))
@@ -150,6 +158,32 @@ def _cmd_ops_saude(args: argparse.Namespace) -> None:
     from radar.ops_config import load_config
     print(json.dumps(ops.health(load_config(args.config), check_server=not args.no_server_check),
                      ensure_ascii=False, default=str))
+
+
+def _cmd_prontidao(args: argparse.Namespace) -> None:
+    from radar import readiness
+    from radar.ops_config import load_config
+    try:
+        config = load_config(args.config)
+    except Exception:
+        config = {}
+    config["db_path"] = args.db
+    print(json.dumps(readiness.report(args.db, config=config),
+                     ensure_ascii=False, default=str))
+
+
+def _cmd_api_contrato(args: argparse.Namespace) -> None:
+    from radar import api_contract
+    if args.markdown:
+        print(api_contract.markdown())
+        return
+    if args.verificar:
+        result = api_contract.verify(str(Path(__file__).resolve().parent / "server.py"))
+        print(json.dumps(result, ensure_ascii=False))
+        if not result["ok"]:
+            raise SystemExit(1)
+        return
+    print(json.dumps(api_contract.document(), ensure_ascii=False, default=str))
 
 
 def _cmd_ops_alertas(args: argparse.Namespace) -> None:
@@ -1322,6 +1356,18 @@ def build_parser() -> argparse.ArgumentParser:
     ops_saude.add_argument('--config', default=None)
     ops_saude.add_argument('--no-server-check', action='store_true')
     ops_saude.set_defaults(func=_cmd_ops_saude)
+
+    prontidao = subparsers.add_parser('prontidao',
+        help='relatorio unico de prontidao do backend (integridade, pipeline, API, fontes)')
+    prontidao.add_argument('--db', required=True)
+    prontidao.add_argument('--config', default=None)
+    prontidao.set_defaults(func=_cmd_prontidao)
+
+    api_contrato = subparsers.add_parser('api-contrato',
+        help='documenta (JSON/Markdown) e verifica a cobertura do contrato HTTP')
+    api_contrato.add_argument('--markdown', action='store_true')
+    api_contrato.add_argument('--verificar', action='store_true')
+    api_contrato.set_defaults(func=_cmd_api_contrato)
 
     ops_alertas = subparsers.add_parser('ops-alertas', help='lista os alertas persistentes')
     ops_alertas.add_argument('--config', default=None)

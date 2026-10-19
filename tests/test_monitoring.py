@@ -303,7 +303,7 @@ class CycleTest(unittest.TestCase):
             states = [row[0] for row in conn.execute("SELECT extraction_state FROM versoes_documento")]
             proposals = conn.execute("SELECT count(*) FROM propostas_campo").fetchone()[0]
             validations = conn.execute("SELECT count(*) FROM revisoes_campo").fetchone()[0]
-        self.assertEqual(states, ["parcial"])
+        self.assertEqual(states, ["concluida"])
         self.assertGreater(proposals, 0)
         self.assertEqual(validations, 0)
 

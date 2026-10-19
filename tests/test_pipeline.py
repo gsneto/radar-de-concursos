@@ -244,7 +244,7 @@ class ExtractionTest(PipelineBase):
         with closing(connect_documents(self.db)) as conn:
             row = conn.execute("SELECT extraction_state, error_code FROM versoes_documento "
                                "WHERE id=?", (version,)).fetchone()
-        self.assertEqual(row, ("parcial", None))
+        self.assertEqual(row, ("concluida", None))
 
     def test_dry_run_isola_versao_invalida(self):
         report = pipeline.analyze_versions(self.db, ["nao-existe"], dry_run=True)

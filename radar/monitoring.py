@@ -132,7 +132,8 @@ def _analyze_version(db_path, version_id: str) -> None:
                        "total_pages": extracted["total_pages"],
                        "limitation": extracted["limitation"],
                        "blocks": len(blocks)}, ensure_ascii=False)
-    record_analysis(db_path, version_id, blocks, proposals, note=note)
+    record_analysis(db_path, version_id, blocks, proposals, note=note,
+                    partial=bool(extracted["truncated"]))
     if invalid_registration_period(blocks):
         with closing(connect_documents(db_path)) as conn, conn:
             conn.execute("UPDATE versoes_documento SET error_code='invalid_registration_period' WHERE id=?", (version_id,))

@@ -275,7 +275,7 @@ class EnsureObservationTest(unittest.TestCase):
         proposals = extract_field_proposals(blocks, version_id, _contest_id(self.db), None)
         record_analysis(self.db, version_id, blocks, proposals)
         detail = get_competition_details(self.db, _contest_id(self.db))
-        self.assertEqual(detail["documents"][0]["versions"][0]["extraction_state"], "parcial")
+        self.assertEqual(detail["documents"][0]["versions"][0]["extraction_state"], "concluida")
         self.assertTrue(any(p["field_name"] == "indigenous_vacancies" for p in detail["proposals"]))
         # Nada é validado automaticamente.
         self.assertEqual(detail["current_values"], [])

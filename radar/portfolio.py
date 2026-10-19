@@ -19,7 +19,9 @@ Regras de honestidade:
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timezone
+from pathlib import Path
 
 from radar import (coverage_states, deadline_calendar, decisive_fields,
                    opportunities, preferences, role_identity)
@@ -28,6 +30,52 @@ from contextlib import closing
 from radar.document_store import connect_documents, normalize_role
 
 PORTFOLIO_VERSION = "portfolio_v1"
+
+_CACHE = {}
+_CACHE_LOCK = threading.Lock()
+_CACHE_MAX = 8
+_COMPUTE_LOCK = threading.Lock()
+
+
+def _fingerprint(db_path):
+    """Impressão barata do estado: muda quando documento, versão, proposta ou decisão muda."""
+    path = Path(db_path)
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    try:
+        with closing(connect_documents(db_path)) as conn:
+            counts = conn.execute(
+                "SELECT (SELECT COUNT(*) FROM documentos),"
+                "(SELECT COUNT(*) FROM versoes_documento),"
+                "(SELECT COUNT(*) FROM propostas_campo),"
+                "(SELECT COUNT(*) FROM revisoes_campo),"
+                "(SELECT COUNT(*) FROM valores_atuais)").fetchone()
+            latest = conn.execute(
+                "SELECT (SELECT MAX(discovered_at) FROM documentos),"
+                "(SELECT MAX(extracted_at) FROM propostas_campo),"
+                "(SELECT MAX(reviewed_at) FROM revisoes_campo),"
+                "(SELECT MAX(checked_at) FROM revalidacoes_prazo)").fetchone()
+    except Exception:
+        return (stat.st_mtime_ns, stat.st_size)
+    return (stat.st_mtime_ns, stat.st_size, tuple(counts or ()), tuple(latest or ()))
+
+
+def _slice(entry, limit, offset, now_dt):
+    base, items, total, by_readiness, by_urgency = entry
+    out = dict(base)
+    out.update({"limit": limit, "offset": offset,
+                "has_more": offset + limit < total, "total": total,
+                "por_prontidao": by_readiness, "por_urgencia": by_urgency,
+                "itens": items[offset:offset + limit],
+                "generated_at": now_dt.isoformat(),
+                "referencia": {
+                    "agora_utc": now_dt.astimezone(timezone.utc).isoformat(),
+                    "hoje_local": deadline_calendar._local_today(now_dt).isoformat(),
+                    "fuso": "America/Recife"}})
+    return out
+
 
 # Estados de prontidão, exclusivos, com a precedência declarada em ``_readiness``.
 READINESS = (
@@ -115,12 +163,13 @@ def _contest_pages(db_path) -> dict:
 
 
 def _all_opportunities(db_path, now_dt) -> list[dict]:
+    # Varredura em blocos grandes: uma chamada normal, sem perder itens acima de 5000.
     items, offset = [], 0
     while True:
-        page = opportunities.opportunity_list(db_path, limit=200, offset=offset,
-                                             now=now_dt)
+        page = opportunities.opportunity_list(db_path, limit=5000, offset=offset,
+                                             now=now_dt, bulk=True)
         items.extend(page["itens"])
-        if not page["has_more"] or offset > 5000:
+        if not page["has_more"]:
             return items
         offset += page["limit"]
 
@@ -444,7 +493,22 @@ def portfolio(db_path, *, prontidao=None, prazo=None, si=None, indigena=None,
     interest = (interest_states
                 if interest_states is not None
                 else preferences.DEFAULTS["interest_states"])
-    dec = decisive_fields.decisive_report(db_path, limit=100000)
+    cache_key = (str(Path(db_path).resolve()), _fingerprint(db_path),
+                 prontidao, prazo, si, indigena, documental, uf, conflito,
+                 (search or "").strip().lower(), contest_id, role_id,
+                 tuple(interest or ()),
+                 now_dt.strftime("%Y-%m-%dT%H"))
+    with _CACHE_LOCK:
+        cached = _CACHE.get(cache_key)
+    if cached is not None:
+        return _slice(cached, limit, offset, now_dt)
+    # Single-flight: filtros arbitrários não disparam várias varreduras caras em paralelo.
+    with _COMPUTE_LOCK:
+        with _CACHE_LOCK:
+            cached = _CACHE.get(cache_key)
+        if cached is not None:
+            return _slice(cached, limit, offset, now_dt)
+        dec = decisive_fields.decisive_report(db_path, limit=100000)
     dec_by = {entry["contest_id"]: entry for entry in dec["itens"]}
     calendar_items = _all_calendar(db_path, now_dt)
     pages = _contest_pages(db_path)
@@ -494,18 +558,21 @@ def portfolio(db_path, *, prontidao=None, prazo=None, si=None, indigena=None,
         by_readiness[state] = by_readiness.get(state, 0) + 1
         for urgency in {entry["urgencia"] for entry in view["prazos"]}:
             by_urgency[urgency] = by_urgency.get(urgency, 0) + 1
-    return {
+    base = {
         "version": PORTFOLIO_VERSION, "generated_at": now_dt.isoformat(),
         "referencia": {"agora_utc": now_dt.astimezone(timezone.utc).isoformat(),
                        "hoje_local": deadline_calendar._local_today(now_dt).isoformat(),
                        "fuso": "America/Recife"},
-        "total": total, "por_prontidao": by_readiness, "por_urgencia": by_urgency,
-        "limit": limit, "offset": offset, "has_more": offset + limit < total,
-        "itens": items[offset:offset + limit],
         "limitacao": ("Prontidão é determinística e explicada; não é probabilidade. "
                       "Candidato futuro não é inscrição aberta. Ausência de informação "
                       "reduz a certeza e vira lacuna, nunca resposta negativa."),
     }
+    entry = (base, items, total, by_readiness, by_urgency)
+    with _CACHE_LOCK:
+        if len(_CACHE) >= _CACHE_MAX:
+            _CACHE.clear()
+        _CACHE[cache_key] = entry
+    return _slice(entry, limit, offset, now_dt)
 
 
 HIGHLIGHT_SI = ("explicito", "categoria_inclui_curso",
