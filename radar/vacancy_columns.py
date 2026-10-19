@@ -27,7 +27,7 @@ import re
 
 from radar import modality_legend
 
-VERSION = "quadro_colunas_v1"
+VERSION = "quadro_colunas_v2"
 
 # Campos persistidos por linha (o restante das colunas fica no relatório e na evidência).
 FIELD_BY_SIGLA = {
@@ -129,8 +129,12 @@ def _label_band(x, bands):
     return None
 
 
-def _line_blocks(items, gap=6):
-    """Blocos de linhas contíguas da mesma coluna (célula multilinha)."""
+def _line_blocks(items, gap=14):
+    """Blocos de linhas contíguas da mesma coluna (célula multilinha).
+
+    As linhas de uma célula ficam a ~11 pt; linhas de cargos distintos, a ~32 pt. O limiar
+    de 14 pt agrupa a célula e mantém cargos separados.
+    """
     blocks = []
     for item in sorted(items, key=lambda value: (value[0], value[1])):
         if blocks and item[0] - blocks[-1][-1][0] <= gap:
@@ -182,6 +186,11 @@ def assemble_rows(words, *, bands=DEFAULT_LABEL_BANDS) -> dict | None:
         return {"header": list(WIDE_HEADER), "rows": [], "leading": {}}
     totals = {anchor for anchor in anchors if _is_total_row(words, anchor)}
     data_anchors = [anchor for anchor in anchors if anchor not in totals]
+    pitch = _row_pitch(anchors)
+    gap = max(4.0, min(14.0, pitch * 0.45))
+    # Tolerância vertical da célula: nunca maior que o espaçamento entre linhas, senão a
+    # linha seguinte entra na célula da anterior (tabelas apertadas).
+    tolerance = max(4.0, min(16.0, pitch * 0.45))
     rows = []
     for anchor in anchors:
         cells = {name: [] for name in WIDE_HEADER}
@@ -207,14 +216,14 @@ def assemble_rows(words, *, bands=DEFAULT_LABEL_BANDS) -> dict | None:
                 band = _label_band(word["x0"], bands)
                 if band:
                     label[band].append((word["y0"], word["x0"], word["text"]))
-            elif abs(center - anchor) <= 16:
+            elif abs(center - anchor) <= tolerance:
                 cells[column].append((word["y0"], word["x0"], word["text"]))
         # Célula multilinha: o bloco (linhas contíguas da mesma coluna) pertence à linha
         # cujo número está no centro do bloco. Evita cortar "Assistente de Gestão …".
         assigned = {name: list(label[name]) for name, _, _ in bands}
         for name in ("CARGO", "FORM", "ESC"):
             assigned[name] = []
-            for block in _line_blocks(label[name]):
+            for block in _line_blocks(label[name], gap=gap):
                 center = (block[0][0] + block[-1][0]) / 2
                 if not data_anchors:
                     continue
@@ -238,18 +247,56 @@ def assemble_rows(words, *, bands=DEFAULT_LABEL_BANDS) -> dict | None:
             "municipios": text_of(label["MUN"]),
         })
     return {"header": list(WIDE_HEADER), "rows": rows,
-            "leading": _leading_label(words, header, anchors[0], bands)}
+            "leading": _leading_label(words, header, anchors[0], bands, gap=gap)}
 
 
-def _leading_label(words, header, first_anchor, bands):
-    """Palavras de célula acima da primeira linha: continuação da linha da página anterior."""
+def _row_pitch(anchors) -> float:
+    """Espaçamento vertical mediano entre linhas do quadro (32 pt quando há uma só)."""
+    diffs = sorted(b - a for a, b in zip(anchors, anchors[1:]) if b > a)
+    return diffs[len(diffs) // 2] if diffs else 32.0
+
+
+def _block_gap(anchors) -> float:
+    """Gap entre linhas de uma célula, derivado do espaçamento das linhas da página.
+
+    Tabelas apertadas (linhas a ~14 pt) não podem usar o mesmo gap de tabelas espaçadas
+    (~32 pt), senão dois cargos distintos viram um bloco só.
+    """
+    diffs = sorted(b - a for a, b in zip(anchors, anchors[1:]) if b > a)
+    if not diffs:
+        return 8.0
+    pitch = diffs[len(diffs) // 2]
+    return max(4.0, min(14.0, pitch * 0.45))
+
+
+def _interval_distance(block, anchor) -> float:
+    top, bottom = block[0][0], block[-1][0]
+    if top <= anchor <= bottom:
+        return 0.0
+    return min(abs(anchor - top), abs(anchor - bottom))
+
+
+def _leading_label(words, header, first_anchor, bands, gap=6):
+    """Palavras de célula acima da primeira linha: continuação da linha da página anterior.
+
+    A primeira linha da página também tem rótulo multilinha acima dos números; esse bloco
+    pertence à própria linha. Só os blocos separados dele (gap > 6) continuam a página
+    anterior — sem isso, o rótulo da primeira linha contaminaria a linha anterior.
+    """
     leading = {name: [] for name in ("CARGO", "FORM", "ESC")}
-    for word in words:
-        if word["y0"] <= header["top"] or word["text"] in _HEADER_LABELS:
+    for band in leading:
+        items = [(word["y0"], word["x0"], word["text"]) for word in words
+                 if word["y0"] > header["top"] and word["text"] not in _HEADER_LABELS
+                 and _label_band(word["x0"], bands) == band]
+        blocks = _line_blocks(items, gap=gap)
+        if not blocks:
             continue
-        band = _label_band(word["x0"], bands)
-        if band in leading and word["y1"] <= first_anchor - 8:
-            leading[band].append((word["y0"], word["x0"], word["text"]))
+        # Continuação é o que está **acima** da margem da primeira linha. O rótulo da
+        # própria linha começa no máximo uma linha acima dos números; margem de 20 pt
+        # (ou 60% do espaçamento) separa sem confundir.
+        margin = max(20.0, gap * 1.5)
+        leading[band] = [item for block in blocks if block[-1][0] < first_anchor - margin
+                         for item in block]
     return leading
 
 
@@ -296,6 +343,29 @@ def label_incomplete(cargo: str, formacao: str, escolaridade: str) -> bool:
 def schooling_incomplete(escolaridade: str) -> bool:
     """Escolaridade que não é um nível publicado (célula cortada na quebra de página)."""
     return _LEVELS.match(" ".join((escolaridade or "").split())) is None
+
+
+_LEVEL_TEXTS = ("Nível Superior", "Nível Médio", "Nível Fundamental", "Nível Técnico")
+
+
+def schooling_truncated(escolaridade: str) -> bool:
+    """Escolaridade que é **prefixo** de um nível publicado ("Nível", "Nível Super").
+
+    Só isso indica célula cortada. Uma redação diferente e completa ("Ensino Superior")
+    não é truncamento: a linha continua válida, com a pendência de vocabulário.
+    """
+    text = " ".join((escolaridade or "").split())
+    if not text or text in _LEVEL_TEXTS:
+        return False
+    return any(level.startswith(text) for level in _LEVEL_TEXTS)
+
+
+def _needs_continuation(row) -> bool:
+    """A célula da linha parece continuar na página seguinte?"""
+    if schooling_truncated(row.get("escolaridade")):
+        return True
+    return label_incomplete(row.get("cargo"), row.get("formacao"),
+                            row.get("escolaridade"))
 
 
 def compose_label(cargo: str, formacao: str, dre: str) -> str:
@@ -397,7 +467,7 @@ def _region_name(row) -> str:
 
 
 def parse_wide_table(blocks, contest_id: str, *, label_prefix: str, pdf_path=None,
-                     definitions=None) -> dict:
+                     definitions=None, stitch: bool = True) -> dict:
     """Lê o quadro largo e devolve propostas candidatas + relatório auditável.
 
     ``definitions`` são as definições de sigla do próprio documento
@@ -486,42 +556,71 @@ def parse_wide_table(blocks, contest_id: str, *, label_prefix: str, pdf_path=Non
             pendencias.append({"causa": "celula_nao_numerica", "page": page,
                                "cargo": row["cargo"], "valores": row["values"]})
             return
-        note = ""
-        if label_incomplete(row["cargo"], row["formacao"], row["escolaridade"]):
-            if not item.get("last"):
-                # Não é a última linha da página: a célula não continua na seguinte.
-                pendencias.append({"causa": "rotulo_incompleto", "page": page,
-                                   "cargo": row["cargo"], "valores": row["values"]})
-                return
-            # A célula continua no topo da página seguinte: costura o rótulo, mantendo a
-            # evidência na página em que os números foram publicados.
-            following = leading_by_page.get(page + 1) or {}
-            for name, source in (("cargo", "CARGO"), ("formacao", "FORM"),
-                                 ("escolaridade", "ESC")):
-                extra = " ".join(text_ for _, _, text_ in sorted(following.get(source, [])))
-                if extra:
-                    row[name] = " ".join(part for part in (row[name], extra) if part)
-            if label_incomplete(row["cargo"], row["formacao"], row["escolaridade"]):
-                pendencias.append({"causa": "rotulo_incompleto", "page": page,
-                                   "cargo": row["cargo"], "valores": row["values"]})
-                return
-            note = " [rotulo completado na pagina seguinte]"
+        # A evidência é o texto **publicado na página**: a célula cortada não existe
+        # completa ali, então o trecho é localizado pelo rótulo bruto (antes da costura).
+        raw_cargo = row["cargo"]
+        raw_form = row["formacao"]
+        raw_esc = row["escolaridade"]
+        raw_prefix = " ".join(part for part in (raw_cargo, raw_form,
+                                                row["escolaridade"]) if part)
         tail = " ".join(row["values"])
-        prefix = " ".join(part for part in (row["cargo"], row["formacao"],
-                                            row["escolaridade"]) if part)
         used = used_starts.setdefault(page, set())
-        located = locate_quote(text, prefix, tail, skip=used)
+        located = locate_quote(text, raw_prefix, tail, skip=used)
         if located is None:
             pendencias.append({"causa": "trecho_nao_localizado", "page": page,
                                "cargo": row["cargo"], "valores": row["values"]})
             return
         start, end, matched = located
-        if matched != prefix:
+        if matched != raw_prefix:
             # Palavra avulsa da linha anterior: o rótulo publicado começa depois dela.
-            dropped = len(prefix.split()) - len(matched.split())
-            words = row["cargo"].split()
+            dropped = len(raw_prefix.split()) - len(matched.split())
+            words = raw_cargo.split()
             if 0 < dropped <= len(words):
-                row["cargo"] = " ".join(words[dropped:]) or row["cargo"]
+                raw_cargo = " ".join(words[dropped:]) or raw_cargo
+
+        note = ""
+        pages = [page]
+        stitched_fields = set()
+        needs = _needs_continuation({"cargo": raw_cargo, "formacao": row["formacao"],
+                                     "escolaridade": row["escolaridade"]})
+        if stitch and needs:
+            if not item.get("last"):
+                # Não é a última linha da página: a célula não continua na seguinte.
+                if label_incomplete(raw_cargo, row["formacao"], row["escolaridade"]):
+                    # Cargo truncado sem continuação: não se inventa o escopo.
+                    pendencias.append({"causa": "rotulo_incompleto", "page": page,
+                                       "cargo": row["cargo"], "valores": row["values"]})
+                    return
+                # Só a escolaridade está truncada: a linha continua válida, com pendência.
+                pendencias.append({"causa": "escolaridade_incompleta", "page": page,
+                                   "cargo": row["cargo"]})
+                row["cargo"] = raw_cargo
+            else:
+                # A célula continua no topo da página seguinte: costura o rótulo, mantendo
+                # a evidência na página em que os números foram publicados.
+                following = leading_by_page.get(page + 1) or {}
+                stitched = False
+                for name, source, raw in (("cargo", "CARGO", raw_cargo),
+                                          ("formacao", "FORM", row["formacao"]),
+                                          ("escolaridade", "ESC", row["escolaridade"])):
+                    extra = " ".join(text_ for _, _, text_ in
+                                     sorted(following.get(source, [])))
+                    if extra:
+                        row[name] = " ".join(part for part in (raw, extra) if part)
+                        stitched = True
+                        stitched_fields.add(name)
+                if stitched:
+                    pages.append(page + 1)
+                    note = (f" — rotulo completado na pagina seguinte (p. {page + 1}); "
+                            f"evidencia do trecho na p. {page}")
+                if label_incomplete(row["cargo"], row["formacao"],
+                                    row["escolaridade"]):
+                    # Mesmo com a costura o cargo segue truncado: não se inventa escopo.
+                    pendencias.append({"causa": "rotulo_incompleto", "page": page,
+                                       "cargo": row["cargo"], "valores": row["values"]})
+                    return
+        else:
+            row["cargo"] = raw_cargo
         label = compose_label(row["cargo"], row["formacao"], region_name)
         quote = text[start:end]
         key = (page, quote)
@@ -571,9 +670,15 @@ def parse_wide_table(blocks, contest_id: str, *, label_prefix: str, pdf_path=Non
                 header=header_text, label=label, reason=reason))
         rows_report.append({"page": page, "cargo": row["cargo"],
                             "formacao": row["formacao"], "dre": region_name,
-                            "escolaridade": row["escolaridade"],
+                            "escolaridade": row["escolaridade"], "pages": pages,
+                            "cargo_bruto": raw_cargo,
+                            "formacao_bruta": raw_form,
+                            "escolaridade_bruta": raw_esc,
                             "valores": values, "soma": sums,
-                            "consistente": consistent, "quote": quote})
+                            "consistente": consistent, "quote": quote,
+                            "rotulo_completado": bool(note),
+                            "escolaridade_completada":
+                                "escolaridade" in stitched_fields})
         key = (page, quote)
         if key in emitted_quotes:
             # Mesmo trecho e mesma regional: o armazenamento deduplica por evidência.
@@ -818,3 +923,83 @@ def report(db_path, *, contest_id=None, version_id=None) -> dict:
                           + len(inline["proposals"])),
             "limitacao": ("Leitura de quadro é candidata: nenhuma proposta é confirmada "
                           "aqui e nenhuma quantidade é rateada entre modalidades.")}
+
+
+def audit_schooling(db_path, *, contest_id=None, version_id=None) -> dict:
+    """Audita as linhas cuja célula atravessa a página (antes/depois da costura).
+
+    Roda o parser duas vezes sobre a **mesma versão armazenada**: sem costura (o que se lê
+    na página) e com costura (o que se completa com o topo da página seguinte). Compara as
+    duas leituras e devolve, por linha, o que mudou, as páginas envolvidas e a evidência.
+    Nada é gravado e nenhuma proposta é criada.
+    """
+    from contextlib import closing
+    from pathlib import Path
+    from radar import modality_legend, reprocess
+    from radar.document_store import connect_documents, is_readable_schema
+
+    with closing(connect_documents(db_path)) as conn:
+        if not is_readable_schema(conn):
+            raise ValueError("migração documental pendente")
+        if version_id is None:
+            row = conn.execute(
+                "SELECT v.id FROM versoes_documento v JOIN documentos d ON d.id=v.document_id "
+                "WHERE (? IS NULL OR d.contest_id=?) AND d.tipo_documental IN "
+                "('edital_abertura','edital_retificado') "
+                "ORDER BY CASE d.tipo_documental WHEN 'edital_retificado' THEN 0 ELSE 1 END, "
+                "d.published_at DESC, v.fetched_at DESC LIMIT 1",
+                (contest_id, contest_id)).fetchone()
+            if row is None:
+                raise ValueError("versão não encontrada")
+            version_id = row[0]
+        meta = conn.execute(
+            "SELECT d.contest_id, d.title, v.local_path, v.sha256 FROM versoes_documento v "
+            "JOIN documentos d ON d.id=v.document_id WHERE v.id=?", (version_id,)).fetchone()
+        if meta is None:
+            raise ValueError("versão inexistente")
+        blocks = reprocess.stored_blocks(conn, version_id)
+        artifact = reprocess._artifact_path(conn, version_id)
+        database = conn.execute("PRAGMA database_list").fetchone()
+    definitions = {}
+    for block in blocks:
+        for key, value in modality_legend.parse_definitions(
+                block.get("text") or "").items():
+            definitions.setdefault(key, value)
+    from radar.document_fields import LABEL_PREFIX
+    full = parse_wide_table(blocks, meta[0], label_prefix=LABEL_PREFIX,
+                            pdf_path=artifact, definitions=definitions, stitch=True)
+    raw = parse_wide_table(blocks, meta[0], label_prefix=LABEL_PREFIX,
+                           pdf_path=artifact, definitions=definitions, stitch=False)
+    raw_by_page = {}
+    for item in raw["rows"]:
+        raw_by_page.setdefault(item["page"], []).append(item)
+    itens = []
+    for item in full["rows"]:
+        if not item.get("rotulo_completado"):
+            continue
+        before = None
+        for candidate in raw_by_page.get(item["page"], []):
+            if (candidate["valores"] == item["valores"]
+                    and candidate.get("cargo_bruto") == item.get("cargo_bruto")
+                    and candidate.get("formacao_bruta") == item.get("formacao_bruta")):
+                before = candidate
+                break
+        itens.append({
+            "page": item["page"],
+            "pages": item.get("pages") or [item["page"]],
+            "cargo": item["cargo"], "formacao": item["formacao"],
+            "escolaridade": item["escolaridade"], "regional": item["dre"],
+            "antes": None if before is None else {
+                "cargo": before["cargo"], "formacao": before["formacao"],
+                "escolaridade": before["escolaridade"]},
+            "depois": {"cargo": item["cargo"], "formacao": item["formacao"],
+                       "escolaridade": item["escolaridade"]},
+            "valores": item["valores"],
+            "quote": item["quote"],
+            "continuacao_comprovada": bool(before is not None),
+        })
+    return {"version": VERSION, "version_id": version_id, "contest_id": meta[0],
+            "title": meta[1], "sha256": meta[3], "linhas": len(itens), "itens": itens,
+            "limitacao": ("A costura usa apenas palavras da mesma coluna, no topo da página "
+                          "seguinte, quando a linha é a última da página. Nenhuma proposta "
+                          "é criada por esta auditoria.")}

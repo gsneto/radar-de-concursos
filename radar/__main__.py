@@ -971,6 +971,22 @@ def _cmd_quadro_vagas(args: argparse.Namespace) -> None:
         ensure_ascii=False, default=str))
 
 
+def _cmd_quadro_auditoria(args: argparse.Namespace) -> None:
+    from radar import vacancy_columns
+    print(json.dumps(vacancy_columns.audit_schooling(
+        args.db, contest_id=args.contest_id, version_id=args.version_id),
+        ensure_ascii=False, default=str))
+
+
+def _cmd_revisao_grupos(args: argparse.Namespace) -> None:
+    from radar import review_groups
+    print(json.dumps(review_groups.groups(
+        args.db, contest_id=args.contest_id, document_id=args.document_id,
+        version_id=args.version_id, state=args.state, field_name=args.field,
+        contexto=(None if args.contexto is None else args.contexto == 'sim'),
+        limit=args.limit, offset=args.offset), ensure_ascii=False, default=str))
+
+
 def _cmd_carteira(args: argparse.Namespace) -> None:
     from radar import portfolio
     conflito = None if args.conflito is None else args.conflito == "sim"
@@ -1736,6 +1752,28 @@ def build_parser() -> argparse.ArgumentParser:
     quadro.add_argument('--contest-id')
     quadro.add_argument('--version-id')
     quadro.set_defaults(func=_cmd_quadro_vagas)
+
+    quadro_aud = subparsers.add_parser(
+        'quadro-auditoria',
+        help='auditoria das linhas que atravessam pagina (somente leitura)')
+    quadro_aud.add_argument('--db', required=True)
+    quadro_aud.add_argument('--contest-id')
+    quadro_aud.add_argument('--version-id')
+    quadro_aud.set_defaults(func=_cmd_quadro_auditoria)
+
+    grupos = subparsers.add_parser('revisao-grupos',
+                                   help='revisao agrupada por linha documental')
+    grupos.add_argument('--db', required=True)
+    grupos.add_argument('--contest-id')
+    grupos.add_argument('--document-id')
+    grupos.add_argument('--version-id')
+    grupos.add_argument('--state', default='aberto',
+                        choices=('aberto', 'pendente', 'decidido', 'todos'))
+    grupos.add_argument('--field')
+    grupos.add_argument('--contexto', choices=('sim', 'nao'))
+    grupos.add_argument('--limit', type=int, default=25)
+    grupos.add_argument('--offset', type=int, default=0)
+    grupos.set_defaults(func=_cmd_revisao_grupos)
 
     carteira = subparsers.add_parser('carteira', help='carteira operacional de oportunidades')
     carteira.add_argument('--db', required=True)

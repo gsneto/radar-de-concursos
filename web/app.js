@@ -2770,6 +2770,286 @@
     return wrap;
   }
 
+  var gruposState = {offset: 0, limit: 20, data: null, aberto: null};
+
+  function gruposStatus(message) {
+    var doc = global.document;
+    var node = doc && doc.getElementById('grupos-status');
+    if (node) node.textContent = message || '';
+  }
+
+  function gruposValue(id) {
+    var doc = global.document;
+    var node = doc && doc.getElementById(id);
+    return node && node.value ? node.value.trim() : '';
+  }
+
+  function gruposQuery() {
+    var parts = ['limit=' + gruposState.limit, 'offset=' + gruposState.offset,
+                 'state=' + encodeURIComponent(gruposValue('grupos-state') || 'aberto')];
+    if (gruposValue('grupos-contest')) {
+      parts.push('contest_id=' + encodeURIComponent(gruposValue('grupos-contest')));
+    }
+    if (gruposValue('grupos-contexto')) {
+      parts.push('contexto=' + encodeURIComponent(gruposValue('grupos-contexto')));
+    }
+    return '/api/revisao/grupos?' + parts.join('&');
+  }
+
+  function gruposColumnText(contexto) {
+    if (!contexto || !contexto.colunas || !contexto.colunas.length) return 'sem quadro';
+    return contexto.colunas.map(function (coluna) {
+      return coluna.sigla + ' ' + formatText(coluna.valor);
+    }).join(' · ');
+  }
+
+  function gruposValidacaoTexto(validacao) {
+    if (!validacao) return 'sem validação';
+    if (validacao.estado === 'consistente') return 'soma confere';
+    if (validacao.estado === 'divergente') {
+      return 'divergente: publicado ' + formatText(validacao.publicado) +
+        ' ≠ soma ' + formatText(validacao.soma);
+    }
+    return formatText(validacao.estado);
+  }
+
+  function gruposBadge(document, texto, variante) {
+    return el(document, 'span', 'mesa__badge mesa__badge--' + variante, texto);
+  }
+
+  function decidirCampo(proposalId, decision, reason, evidenceSha) {
+    if (!reason) {
+      gruposStatus('Justificativa obrigatória para registrar a decisão.');
+      return Promise.resolve();
+    }
+    return studyPost('/api/revisao/proposta/' + encodeURIComponent(proposalId),
+                     {decision: decision, reviewer: reviewReviewer(), reason: reason,
+                      origin: 'interface',
+                      evidence_sha256: evidenceSha || undefined})
+      .then(function (result) {
+        gruposStatus(result.duplicada ? 'Decisão já registrada (idempotente).'
+                                      : 'Decisão registrada.');
+        return fetchGrupos();
+      })
+      .catch(function (error) { gruposStatus('Falha: ' + error.message); });
+  }
+
+  function gruposDetalhe(document, item) {
+    var wrap = el(document, 'div', 'grupos__detalhe');
+    var contexto = item.contexto;
+    if (contexto) {
+      var cabecalho = el(document, 'p', 'mesa__meta',
+        'Cabeçalho: ' + (contexto.cabecalho || 'não publicado'));
+      wrap.appendChild(cabecalho);
+      wrap.appendChild(el(document, 'p', 'mesa__meta',
+        'Páginas: ' + (contexto.paginas || [item.page_number]).join(', ') +
+        (contexto.regional ? ' · regional ' + contexto.regional : '') +
+        (contexto.rotulo_completado ? ' · rótulo completado na página seguinte' : '')));
+      if (contexto.trecho) {
+        var quote = el(document, 'blockquote', 'grupos__quote', contexto.trecho);
+        wrap.appendChild(quote);
+      }
+      if (contexto.notas && contexto.notas.length) {
+        var notas = el(document, 'ul', 'grupos__notas');
+        contexto.notas.forEach(function (nota) {
+          notas.appendChild(el(document, 'li', '',
+            nota.sigla + ': ' + nota.rotulo));
+        });
+        wrap.appendChild(notas);
+      }
+    }
+    if (item.rotulo_divergente) {
+      wrap.appendChild(el(document, 'p', 'mesa__meta',
+        'Rótulo armazenado difere do parser: "' + item.rotulo_divergente.armazenado +
+        '" → "' + item.rotulo_divergente.parser + '". Não é corrigido automaticamente.'));
+    }
+    var validacao = item.validacao;
+    if (validacao) {
+      wrap.appendChild(el(document, 'p', 'mesa__meta',
+        'Validação: ' + gruposValidacaoTexto(validacao) + ' — ' + validacao.regra));
+    }
+    var reasonLabel = el(document, 'label', 'prefs__field',
+      'Justificativa (obrigatória para decidir)');
+    var reason = el(document, 'input', '');
+    reason.type = 'text';
+    reason.id = 'grupos-reason-' + item.linha_id;
+    reason.placeholder = 'por que este campo está correto ou incorreto';
+    reasonLabel.appendChild(reason);
+    wrap.appendChild(reasonLabel);
+
+    var table = el(document, 'table', 'mesa__table');
+    var head = el(document, 'tr');
+    ['Campo', 'Valor', 'Estado', 'Evidência', 'Ações'].forEach(function (label) {
+      head.appendChild(el(document, 'th', '', label));
+    });
+    var thead = el(document, 'thead');
+    thead.appendChild(head);
+    table.appendChild(thead);
+    var tbody = el(document, 'tbody');
+    item.propostas.forEach(function (proposta) {
+      var row = el(document, 'tr');
+      row.appendChild(el(document, 'td', '', proposta.field_label));
+      row.appendChild(el(document, 'td', '', formatText(proposta.value)));
+      var estado = el(document, 'td');
+      estado.appendChild(gruposBadge(document, proposta.state,
+        proposta.state === 'validado' ? 'presente'
+          : proposta.state === 'rejeitado' ? 'ausente' : 'ausente'));
+      row.appendChild(estado);
+      var evidencia = el(document, 'td', 'mesa__meta',
+        'p. ' + formatText(proposta.evidence.page_number) + ' · ' +
+        shortId(proposta.evidence.version_id));
+      var trecho = el(document, 'div', 'grupos__quote',
+        proposta.evidence.quote || 'sem trecho literal');
+      evidencia.appendChild(trecho);
+      row.appendChild(evidencia);
+      var acoes = el(document, 'td');
+      [['validado', 'Confirmar'], ['rejeitado', 'Rejeitar'],
+       ['ambiguo', 'Ambíguo'], ['adiado', 'Adiar']].forEach(function (par) {
+        var botao = el(document, 'button', 'button button--ghost', par[1]);
+        botao.type = 'button';
+        botao.setAttribute('aria-label', par[1] + ': ' + proposta.field_label);
+        botao.addEventListener('click', function () {
+          var node = document.getElementById(reason.id);
+          decidirCampo(proposta.proposal_id, par[0],
+                       node && node.value ? node.value.trim() : '',
+                       proposta.evidence_sha256);
+        });
+        acoes.appendChild(botao);
+      });
+      row.appendChild(acoes);
+      tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    wrap.appendChild(el(document, 'p', 'muted',
+      'Cada botão decide apenas o campo da linha. Nada é aprovado em conjunto.'));
+    return wrap;
+  }
+
+  function renderGrupos(document, payload) {
+    var wrap = el(document, 'div', 'coverage__inner');
+    var resumo = payload.resumo || {};
+    var page = Math.floor(payload.offset / payload.limit) + 1;
+    wrap.appendChild(el(document, 'p', 'prep__basis',
+      resumo.linhas + ' linha(s) · ' + resumo.propostas + ' proposta(s) · ' +
+      (resumo.linhas_com_contexto || 0) + ' com quadro · ' +
+      (resumo.linhas_divergentes || 0) + ' divergente(s) · página ' + page +
+      ' · referência ' + (payload.generated_at || '').slice(0, 19).replace('T', ' ')));
+    if (!payload.itens.length) {
+      wrap.appendChild(el(document, 'p', 'muted', 'Nenhuma linha para os filtros.'));
+      return wrap;
+    }
+    var table = el(document, 'table', 'mesa__table');
+    table.appendChild(el(document, 'caption', '',
+      'Linha = trecho documental. Estado por campo; o grupo não decide nada.'));
+    var head = el(document, 'tr');
+    ['Página', 'Cargo / formação', 'Regional', 'Colunas', 'Validação', 'Pend.',
+     'Identidade', 'Próxima ação'].forEach(function (label) {
+      head.appendChild(el(document, 'th', '', label));
+    });
+    var thead = el(document, 'thead');
+    thead.appendChild(head);
+    table.appendChild(thead);
+    var tbody = el(document, 'tbody');
+    payload.itens.forEach(function (item) {
+      var row = el(document, 'tr');
+      var contexto = item.contexto || {};
+      row.appendChild(el(document, 'td', '',
+        (contexto.paginas || [item.page_number]).join('+')));
+
+      var cargoCell = el(document, 'td');
+      var toggle = el(document, 'button', 'mesa__row-button',
+        item.scope ? item.scope.replace(/^label:/, '') : 'sem cargo');
+      toggle.type = 'button';
+      toggle.setAttribute('aria-expanded', gruposState.aberto === item.linha_id
+        ? 'true' : 'false');
+      cargoCell.appendChild(toggle);
+      cargoCell.appendChild(el(document, 'div', 'mesa__meta',
+        (item.document_title || '') + ' · ' + shortId(item.version_id)));
+      row.appendChild(cargoCell);
+      row.appendChild(el(document, 'td', '', contexto.regional || '—'));
+      row.appendChild(el(document, 'td', 'mesa__meta', gruposColumnText(contexto)));
+      var valid = el(document, 'td', 'mesa__meta',
+        gruposValidacaoTexto(item.validacao));
+      row.appendChild(valid);
+      row.appendChild(el(document, 'td', 'num', String(item.pendentes)));
+      row.appendChild(el(document, 'td', '', item.identidade));
+      row.appendChild(el(document, 'td', '', item.proxima_acao));
+      tbody.appendChild(row);
+
+      toggle.addEventListener('click', function () {
+        gruposState.aberto = gruposState.aberto === item.linha_id ? null : item.linha_id;
+        renderGruposInto(payload);
+      });
+      if (gruposState.aberto === item.linha_id) {
+        var detailRow = el(document, 'tr');
+        var cell = el(document, 'td');
+        cell.colSpan = 8;
+        cell.appendChild(gruposDetalhe(document, item));
+        detailRow.appendChild(cell);
+        tbody.appendChild(detailRow);
+      }
+    });
+    table.appendChild(tbody);
+    var scroll = el(document, 'div', 'mesa__scroll');
+    scroll.appendChild(table);
+    wrap.appendChild(scroll);
+    var nav = el(document, 'div', 'prefs');
+    var previous = el(document, 'button', 'button button--ghost', 'Anterior');
+    previous.type = 'button';
+    previous.disabled = payload.offset <= 0;
+    previous.addEventListener('click', function () {
+      gruposState.offset = Math.max(0, gruposState.offset - gruposState.limit);
+      fetchGrupos();
+    });
+    var next = el(document, 'button', 'button button--ghost', 'Próxima');
+    next.type = 'button';
+    next.disabled = !payload.has_more;
+    next.addEventListener('click', function () {
+      gruposState.offset += gruposState.limit;
+      fetchGrupos();
+    });
+    nav.appendChild(previous);
+    nav.appendChild(next);
+    wrap.appendChild(nav);
+    wrap.appendChild(el(document, 'p', 'muted', payload.limitacao || ''));
+    return wrap;
+  }
+
+  function renderGruposInto(payload) {
+    var doc = global.document;
+    var panel = doc && doc.getElementById('grupos-panel');
+    if (!panel) return;
+    panel.textContent = '';
+    panel.appendChild(renderGrupos(doc, payload));
+  }
+
+  function bindGruposFilters() {
+    var doc = global.document;
+    var form = doc && doc.getElementById('grupos-filters');
+    if (!form) return;
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      gruposState.offset = 0;
+      fetchGrupos();
+    });
+  }
+
+  function fetchGrupos() {
+    gruposStatus('Carregando linhas…');
+    return global.fetch(gruposQuery(), {headers: {Accept: 'application/json'}})
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (payload) {
+        gruposState.data = payload;
+        renderGruposInto(payload);
+        gruposStatus('');
+      })
+      .catch(function (error) { gruposStatus('Falha: ' + error.message); });
+  }
+
   function fetchReview() {
     var doc = global.document;
     if (!doc || !doc.getElementById('review-panel')) return Promise.resolve();
@@ -3586,6 +3866,8 @@
     fetchPackages();
     fetchCoverage();
     fetchReview();
+    bindGruposFilters();
+    fetchGrupos();
     fetchBlocked();
     fetchAssociations();
     fetchSources();

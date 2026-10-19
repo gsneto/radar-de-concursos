@@ -588,3 +588,15 @@ Comandos de retomada, na raiz do projeto: `git status --short --branch`; `python
 - **Revisao independente**: corrigidos 2 criticos (cabecalho de 5 de 6 modalidades deslocando colunas; vaga combinada contada como exclusiva), 5 altos (14 linhas perdidas por dedup, costura entre paginas, linha sem primeira coluna, definicao multi-grupo, CR no trecho) e 8 medios (encoding do reprocess, notacao na carteira, divergencias de regional, `-`, rotulo com travessao, `0+CR`, contencao do artefato, Anexo II-A).
 - **Base**: sem migracao (v21); 7.648 -> 9.211 propostas; 0 revisoes, 0 valores, 0 reconciliacoes; `integrity ok`, FK vazia.
 - **Testes**: **1.815 testes, OK** (40 novos; 1 pulado quando ha motor de OCR).
+
+### Fase 42 - Revisao agrupada por linha, auditoria do quadro e reparo de rotulo (2026-10-18)
+
+- **Revisao por linha** (`radar/review_groups.py`): grupo = identidade da evidencia (versao, bloco, pagina, offsets), nunca valor igual. SEDUC-PA 629 grupos (381 com quadro), TJAP 359 (1 com notacao), TJRS 275 (1 com texto). Cada campo mantem estado e decisao proprios; o grupo nao aprova nada.
+- **Contexto**: colunas com natureza (exclusiva/unificada/total), cabecalho, paginas (inclusive continuacao), regional, notas de legenda e trecho literal, recalculados do parser em leitura. Divergencia de rotulo e exposta, nao corrigida.
+- **Validacao aritmetica**: publicado, soma, diferenca, estado e regra do edital. SEDUC 381 linhas, 24 regionais, total 2.000, PI 30 / PPIQ 180 / PI/PQ 138, zero divergencias. Consistencia nao confirma semantica.
+- **Quatro linhas de escolaridade incompleta**: 68+69, 71+72, 73+74, 76+77 completadas por continuacao comprovada na mesma coluna; antes/depois auditados (`quadro-auditoria`). Uma quinta linha (70+71) tambem foi completada.
+- **Defeito F41 corrigido**: a costura usava todas as palavras acima da primeira linha e contaminava o rotulo anterior ("... Assistente de") e truncava "Lingua". Agora usa blocos (gap 14) e exclui o bloco da primeira linha; a nota vai depois de " - ", fora do escopo; a evidencia e localizada pelo rotulo bruto.
+- **Reparo de rotulo** (`radar/label_repair.py`): 8 propostas (2 linhas) reparadas com evento `analise` antes/depois; idempotente; guarda contra decisao/valor/lote. 381 escopos distintos na SEDUC, sem escopo fantasma e sem proposta nova.
+- **Superficie**: `GET /api/revisao/grupos`, CLI `revisao-grupos` e `quadro-auditoria`, secao "Revisao por linha documental" na Revisao humana com acoes por campo.
+- **Base**: sem migracao (v21); 9.211 propostas inalteradas; 0 revisoes, 0 valores, 0 reconciliacoes; +8 eventos documentais; `integrity ok`, FK vazia.
+- **Testes**: **1.833 testes, OK** (18 novos; 1 pulado quando ha motor de OCR).

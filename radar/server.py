@@ -1138,6 +1138,28 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                               source_id=query.get("source_id", [None])[0], limit=limit)
         elif path == "/api/revisao/fila":
             self._review_queue(parts)
+        elif path == "/api/revisao/grupos":
+            query = parse_qs(parts.query)
+            allowed = {"limit", "offset", "state", "field", "contest_id", "document_id",
+                       "version_id", "contexto"}
+            if set(query) - allowed:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["25"])[0])
+                offset = int(query.get("offset", ["0"])[0])
+            except ValueError:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import review_groups
+            self._serve_study(review_groups.groups, limit=limit, offset=offset,
+                              state=query.get("state", ["aberto"])[0],
+                              field_name=query.get("field", [None])[0],
+                              contest_id=query.get("contest_id", [None])[0],
+                              document_id=query.get("document_id", [None])[0],
+                              version_id=query.get("version_id", [None])[0],
+                              contexto={"1": True, "0": False}.get(
+                                  query.get("contexto", [None])[0]))
         elif path.startswith("/api/revisao/proposta/"):
             proposal_id = path[len("/api/revisao/proposta/"):]
             if not proposal_id or "/" in proposal_id or parts.query:

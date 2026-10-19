@@ -33,9 +33,14 @@ LABEL_PREFIX = 'cargo do documento não reconciliado: '
 PDF_SCOPE_REASON = 'edição com múltiplos atos: conferir se o trecho pertence ao edital do concurso'
 
 
+_LABEL_NOTE = re.compile(r"\s+—\s+rotulo completado na pagina seguinte.*$", re.I)
+
+
 def label_from_ambiguity(reason: str | None) -> str | None:
     if reason and reason.startswith(LABEL_PREFIX):
-        return reason[len(LABEL_PREFIX):]
+        # Remove apenas a anotação conhecida de costura entre páginas; um travessão que
+        # faça parte do nome do cargo ("Cargo — Especialidade") é preservado.
+        return _LABEL_NOTE.sub("", reason[len(LABEL_PREFIX):]).strip()
     return None
 
 

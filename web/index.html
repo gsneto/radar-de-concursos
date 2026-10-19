@@ -213,6 +213,38 @@
       </div>
       <div id="review-detail" class="coverage__panel" role="region" aria-live="polite" hidden></div>
       <div id="review-batch" class="coverage__panel" role="region" aria-live="polite" hidden></div>
+      <h3 class="study__subtitle">Revisão por linha documental</h3>
+      <p class="prep__basis">
+        Agrupa as propostas pelo trecho que as sustenta (versão, bloco, página e offsets) —
+        nunca por valor igual. O grupo mostra o contexto da linha publicada; cada campo
+        continua com decisão própria. Soma correta não confirma a interpretação.
+      </p>
+      <form id="grupos-filters" class="prefs">
+        <label class="prefs__field">Concurso (ID)
+          <input id="grupos-contest" type="search" placeholder="opcional">
+        </label>
+        <label class="prefs__field">Estado
+          <select id="grupos-state">
+            <option value="aberto" selected>Com pendência</option>
+            <option value="pendente">Tudo pendente</option>
+            <option value="decidido">Decidido</option>
+            <option value="todos">Todos</option>
+          </select>
+        </label>
+        <label class="prefs__field">Linha de quadro
+          <select id="grupos-contexto">
+            <option value="" selected>Todas</option>
+            <option value="1">Somente com quadro</option>
+            <option value="0">Sem quadro</option>
+          </select>
+        </label>
+        <button type="submit" class="button">Aplicar</button>
+        <span id="grupos-status" class="prefs__status" role="status" aria-live="polite"></span>
+      </form>
+      <div id="grupos-panel" class="coverage__panel" role="region"
+           aria-label="Revisão por linha documental">
+        <p class="muted">Carregando linhas.</p>
+      </div>
       <h3 class="study__subtitle">Duplicidades textuais</h3>
       <p class="prep__basis">
         Mesmo trecho e mesmo valor em mais de uma proposta. Não é conflito: o valor é igual.
