@@ -4,42 +4,150 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>Radar de Concursos</title>
-  <meta name="description" content="Central de inteligência documental: dados extraídos de fontes oficiais, com evidência, histórico de versões e conflitos para revisão humana.">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23123b26'/%3E%3Ccircle cx='16' cy='16' r='9.5' fill='none' stroke='%23cfe0d2' stroke-width='2.2'/%3E%3Ccircle cx='16' cy='16' r='4.5' fill='none' stroke='%23cfe0d2' stroke-width='1.6' opacity='0.7'/%3E%3Cpath d='M16 16 L24.5 7.5' stroke='%23e4b04a' stroke-width='2.4' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='16' r='2' fill='%23cfe0d2'/%3E%3C/svg%3E">
+  <title>Visão geral · Radar de Concursos</title>
+  <meta name="description" content="Radar de Concursos: oportunidades monitoradas, prazos, cobertura documental e estudos, com evidência e sem confirmação automática.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230e1830'/%3E%3Ccircle cx='16' cy='16' r='10.5' fill='none' stroke='%238f9bff' stroke-width='1.6' opacity='0.55'/%3E%3Ccircle cx='16' cy='16' r='6' fill='none' stroke='%23c7ccff' stroke-width='1.4' opacity='0.7'/%3E%3Cpath d='M16 16 L26 6.5' stroke='%232dd4bf' stroke-width='2.2' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='16' r='2.2' fill='%23eef1ff'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="product.css">
 </head>
 <body data-refresh-seconds="60">
   <a class="skip-link" href="#main-content">Pular para o conteúdo</a>
 
-  <header class="masthead">
-    <div class="masthead__inner">
-      <div class="masthead__brand">
-        <span class="masthead__mark" aria-hidden="true">
-          <svg viewBox="0 0 32 32" width="34" height="34" focusable="false">
-            <rect width="32" height="32" rx="7" fill="#123b26"/>
-            <circle cx="16" cy="16" r="9.5" fill="none" stroke="#cfe0d2" stroke-width="2.2"/>
-            <circle cx="16" cy="16" r="4.5" fill="none" stroke="#cfe0d2" stroke-width="1.6" opacity="0.7"/>
-            <path d="M16 16 L24.5 7.5" stroke="#e4b04a" stroke-width="2.4" stroke-linecap="round"/>
-            <circle cx="16" cy="16" r="2" fill="#cfe0d2"/>
-          </svg>
-        </span>
-        <div class="masthead__text">
-          <p class="masthead__kicker">Inteligência documental de concursos</p>
-          <h1 class="masthead__title">Radar de Concursos</h1>
+  <div class="app" id="app">
+    <aside class="sidebar" id="sidebar" aria-label="Navegação principal">
+      <div class="sidebar__head">
+        <a class="brand" href="#/visao-geral" aria-label="Radar de Concursos — início">
+          <span class="brand__mark" data-brand-mark aria-hidden="true"></span>
+          <span class="brand__text">
+            <h1 class="brand__name">Radar</h1>
+            <span class="brand__sub">de Concursos</span>
+          </span>
+        </a>
+        <button class="sidebar__collapse" id="sidebar-collapse" type="button"
+                aria-label="Recolher menu" aria-expanded="true" aria-controls="sidebar"
+                title="Recolher menu" data-icon="chevronLeft"></button>
+        <button class="icon-btn drawer-close" id="drawer-close" type="button"
+                aria-label="Fechar menu" data-icon="close"></button>
+      </div>
+
+      <nav class="nav" aria-label="Seções do produto">
+        <div class="nav__group">
+          <p class="nav__label">Principal</p>
+          <a class="nav__item" id="nav-overview" data-route href="#/visao-geral">
+            <span data-icon="overview" aria-hidden="true"></span><span>Visão geral</span>
+          </a>
+          <a class="nav__item" id="nav-opportunities" data-route href="#/oportunidades">
+            <span data-icon="opportunities" aria-hidden="true"></span><span>Oportunidades</span>
+          </a>
+          <a class="nav__item" id="nav-deadlines" data-route href="#/prazos">
+            <span data-icon="calendar" aria-hidden="true"></span><span>Prazos</span>
+          </a>
+        </div>
+
+        <div class="nav__group">
+          <p class="nav__label">Estudos</p>
+          <a class="nav__item" id="nav-studies" data-route href="#/estudos">
+            <span data-icon="studies" aria-hidden="true"></span><span>Visão geral</span>
+          </a>
+          <a class="nav__item nav__sub" data-tab="sessoes" href="#/estudos?tab=sessoes">
+            <span data-icon="sessions" aria-hidden="true"></span><span>Sessões e tópicos</span>
+          </a>
+          <a class="nav__item nav__sub" data-tab="questoes" href="#/estudos?tab=questoes">
+            <span data-icon="questions" aria-hidden="true"></span><span>Questões</span>
+          </a>
+          <a class="nav__item nav__sub" data-tab="flashcards" href="#/estudos?tab=flashcards">
+            <span data-icon="flashcards" aria-hidden="true"></span><span>Flashcards</span>
+          </a>
+          <a class="nav__item nav__sub" data-tab="simulados" href="#/estudos?tab=simulados">
+            <span data-icon="exams" aria-hidden="true"></span><span>Simulados</span>
+          </a>
+        </div>
+
+        <div class="nav__group">
+          <p class="nav__label">Sistema</p>
+          <a class="nav__item" id="nav-history" data-route href="#/historico">
+            <span data-icon="history" aria-hidden="true"></span><span>Histórico</span>
+          </a>
+          <a class="nav__item" id="nav-settings" data-route href="#/configuracoes">
+            <span data-icon="settings" aria-hidden="true"></span><span>Configurações</span>
+          </a>
+          <a class="nav__item" id="nav-operation" data-route href="#/operacao">
+            <span data-icon="operation" aria-hidden="true"></span><span>Operação</span>
+          </a>
+        </div>
+      </nav>
+
+      <div class="sidebar__foot">
+        <div class="sidebar__status" aria-label="Ambiente local">
+          <span class="dot dot--ok" aria-hidden="true"></span>
+          <span>Dados locais · sem conta</span>
         </div>
       </div>
-      <p class="masthead__lede">
-        Documentos oficiais monitorados, fatos extraídos com evidência e conflitos
-        sinalizados para revisão humana — sem confirmação automática.
-      </p>
-    </div>
-  </header>
+    </aside>
 
-  <main id="main-content" class="layout" tabindex="-1">
-    <div id="live" class="visually-hidden" role="status" aria-live="polite"></div>
+    <div class="app__main">
+      <header class="topbar">
+        <button class="icon-btn topbar__menu" id="drawer-open" type="button"
+                aria-label="Abrir menu" aria-expanded="false" aria-controls="sidebar"
+                data-icon="menu"></button>
+        <div class="topbar__context">
+          <nav class="breadcrumb" id="breadcrumb" aria-label="Trilha de navegação">
+            <a href="#/visao-geral">Radar</a>
+            <span class="breadcrumb__sep" aria-hidden="true">/</span>
+            <span id="breadcrumb-current">Visão geral</span>
+          </nav>
+          <p class="topbar__title" id="topbar-title">Visão geral</p>
+        </div>
+        <div class="topbar__actions">
+          <div class="searchbar topbar__search">
+            <span data-icon="search" aria-hidden="true"></span>
+            <input id="global-search" type="search"
+                   placeholder="Buscar oportunidades" aria-label="Busca rápida de oportunidades">
+          </div>
+          <span class="topbar__meta">Ambiente local</span>
+          <a class="icon-btn" href="#/configuracoes" aria-label="Abrir configurações">
+            <span data-icon="settings" aria-hidden="true"></span>
+          </a>
+        </div>
+      </header>
 
-    <section class="notice" aria-label="Aviso sobre a atualidade dos dados">
+      <main id="main-content" class="main" tabindex="-1">
+        <div id="live" class="visually-hidden" role="status" aria-live="polite"></div>
+        <div id="view-root"></div>
+
+        <section id="view-operation" class="view" aria-labelledby="operation-title" hidden>
+          <header class="page-head">
+            <div class="page-head__text">
+              <p class="eyebrow">Sistema</p>
+              <h2 id="operation-title">Operação</h2>
+              <p class="page-head__sub">
+                Painéis técnicos preservados: fontes, coleta, pipeline, documentos, monitoramento,
+                diagnósticos, conflitos e ferramentas de revisão. Nada aqui confirma campos automaticamente.
+              </p>
+            </div>
+          </header>
+          <nav class="operation-nav" aria-label="Atalhos para painéis técnicos">
+            <a href="#monitoring-title">Monitoramento</a>
+            <a href="#alerts-title">Alertas</a>
+            <a href="#triage-title">Triagem</a>
+            <a href="#priorities-title">Prioridades</a>
+            <a href="#coverage-title">Cobertura</a>
+            <a href="#pipeline-title">Pipeline</a>
+            <a href="#official-title">Campos decisivos</a>
+            <a href="#sources-title">Fontes</a>
+            <a href="#review-title">Revisão humana</a>
+            <a href="#mesa-title">Mesa</a>
+            <a href="#carteira-title">Carteira</a>
+            <a href="#triagem-title">Identidades e prazos</a>
+            <a href="#nominais-title">Nominais</a>
+            <a href="#timeline-title">Linha do tempo</a>
+            <a href="#assoc-title">Associações</a>
+            <a href="#blocked-title">Bloqueados</a>
+            <a href="#study-title">Estudos (técnico)</a>
+            <a href="#prep-title">Preparação</a>
+          </nav>
+          <div class="legacy" id="legacy-root">
+<section class="notice" aria-label="Aviso sobre a atualidade dos dados">
       <p>
         A data exibida indica apenas quando o <strong>artigo foi consultado</strong>.
         O histórico documental pode estar incompleto; propostas extraídas exigem revisão humana.
@@ -1004,17 +1112,38 @@
         <ul id="competition-list" class="competition-list"></ul>
       </div>
     </section>
-  </main>
+          </div>
+        </section>
+      </main>
 
-  <footer class="footer">
-    <div class="footer__inner">
-      <p>
-        Radar de Concursos — dados de fonte pública, sem garantia de atualidade.
-        Informação extraída por meios automatizados não é confirmação oficial.
-      </p>
+      <footer class="footer">
+        <div class="footer__inner">
+          <p>
+            Radar de Concursos — dados de fonte pública, sem garantia de atualidade.
+            Informação extraída por meios automatizados não é confirmação oficial.
+          </p>
+        </div>
+      </footer>
     </div>
-  </footer>
+  </div>
 
+  <div class="drawer-backdrop" id="drawer-backdrop" hidden></div>
+
+  <script>window.RADAR_DEFER_INIT = true;</script>
+  <script src="core/dom.js"></script>
+  <script src="core/format.js"></script>
+  <script src="core/api.js"></script>
+  <script src="core/store.js"></script>
+  <script src="components/ui.js"></script>
+  <script src="components/charts.js"></script>
+  <script src="views/overview.js"></script>
+  <script src="views/opportunities.js"></script>
+  <script src="views/dossier.js"></script>
+  <script src="views/studies.js"></script>
+  <script src="views/deadlines.js"></script>
+  <script src="views/history.js"></script>
+  <script src="views/settings.js"></script>
   <script src="app.js"></script>
+  <script src="shell.js"></script>
 </body>
 </html>

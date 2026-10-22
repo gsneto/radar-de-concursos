@@ -40,17 +40,25 @@ _CONTENT_TYPES = {
 # Rotas de assets, aceitando também o prefixo ``/web/``.
 # GETs que varrem PDF/banco inteiro: no máximo dois em paralelo no processo local.
 _EXPENSIVE_PATHS = {
-    "/api/carteira", "/api/carteira/dossie", "/api/revisao/grupos",
-    "/api/saude/prontidao", "/api/quadro-vagas", "/api/pipeline/parciais",
-    "/api/cobertura", "/api/elegibilidade", "/api/revisao/piloto",
+    "/api/carteira/dossie", "/api/revisao/grupos", "/api/saude/prontidao",
+    "/api/quadro-vagas", "/api/pipeline/parciais", "/api/revisao/piloto",
 }
 
 _ASSET_ROUTES = {
     "/styles.css": "styles.css",
     "/web/styles.css": "styles.css",
+    "/product.css": "product.css",
+    "/web/product.css": "product.css",
     "/app.js": "app.js",
     "/web/app.js": "app.js",
+    "/shell.js": "shell.js",
+    "/web/shell.js": "shell.js",
 }
+
+# Módulos do frontend de produto (JS/CSS locais, sem build). O caminho é resolvido
+# contra ``web/`` e o ``_serve_file`` bloqueia qualquer escape do diretório.
+_ASSET_DIRS = ("core/", "components/", "views/")
+_WEB_PREFIX = "/web/"
 
 
 class _RadarHTTPServer(ThreadingHTTPServer):
@@ -122,8 +130,17 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         if not candidate.is_file():
             self._send_no_content(HTTPStatus.NOT_FOUND)
             return
-        content_type = _CONTENT_TYPES.get(filename, "application/octet-stream")
-        self._send(HTTPStatus.OK, content_type, candidate.read_bytes())
+        # Sem build/hash de arquivo: o navegador sempre revalida o asset local.
+        content_type = _CONTENT_TYPES.get(filename)
+        if content_type is None:
+            if filename.endswith(".js"):
+                content_type = "application/javascript; charset=utf-8"
+            elif filename.endswith(".css"):
+                content_type = "text/css; charset=utf-8"
+            else:
+                content_type = "application/octet-stream"
+        self._send(HTTPStatus.OK, content_type, candidate.read_bytes(),
+                   {"Cache-Control": "no-cache"})
 
     def _serve_api(self):
         try:
@@ -582,7 +599,9 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             return
         self._expensive_acquired = False
         if urlsplit(self.path).path in _EXPENSIVE_PATHS:
-            if not self.server.expensive.acquire(blocking=False):
+            # Espera uma vaga curta antes de recusar: navegar entre telas não deve
+            # produzir 429 para o próprio usuário.
+            if not self.server.expensive.acquire(timeout=5):
                 self._send(HTTPStatus.TOO_MANY_REQUESTS,
                            "application/json; charset=utf-8",
                            b'{"error":"consulta pesada em andamento; tente novamente"}')
@@ -1594,7 +1613,13 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         elif path in _ASSET_ROUTES:
             self._serve_file(_ASSET_ROUTES[path])
         else:
-            self._send_no_content(HTTPStatus.NOT_FOUND)
+            relative = (path[len(_WEB_PREFIX):]
+                        if path.startswith(_WEB_PREFIX) else path[1:])
+            if (relative.startswith(_ASSET_DIRS) and ".." not in relative
+                    and relative.endswith((".js", ".css"))):
+                self._serve_file(relative)
+            else:
+                self._send_no_content(HTTPStatus.NOT_FOUND)
 
     def _method_not_allowed(self, allow="GET"):
         self._send_no_content(HTTPStatus.METHOD_NOT_ALLOWED, {"Allow": allow})

@@ -6606,7 +6606,7 @@
   }
 
   // Bootstrap no navegador (em Node, outro ambiente sem document, nada acontece).
-  if (typeof global.document !== 'undefined') {
+  if (typeof global.document !== 'undefined' && !global.RADAR_DEFER_INIT) {
     if (global.document.readyState === 'loading') {
       global.document.addEventListener('DOMContentLoaded', init);
     } else {

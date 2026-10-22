@@ -330,6 +330,23 @@ pesadas concorrentes recebem 429. Inventário, gate e evidências:
 [docs/READINESS_GATE.md](docs/READINESS_GATE.md),
 [docs/API.md](docs/API.md).
 
+## Interface de produto (Fase 45)
+
+A interface passou a ser uma aplicação de produto com shell próprio: sidebar recolhível,
+topbar com busca, dashboards, oportunidades com filtros e paginação, dossiê em abas,
+estudos e operação. HTML, CSS e JavaScript sem framework e sem build; os painéis técnicos
+continuam acessíveis em **Operação**.
+
+```powershell
+python -m radar serve --db .\data\radar.sqlite3
+```
+
+Abra `http://127.0.0.1:8000/`. Rotas: `#/visao-geral`, `#/oportunidades`, `#/prazos`,
+`#/estudos`, `#/historico`, `#/configuracoes`, `#/operacao` e `#/dossie/<uuid>`.
+Design, arquitetura e evidências de validação:
+[`docs/superpowers/specs/2026-10-19-frontend-produto-design.md`](docs/superpowers/specs/2026-10-19-frontend-produto-design.md)
+e [`docs/superpowers/plans/2026-10-19-frontend-produto-prova-real.md`](docs/superpowers/plans/2026-10-19-frontend-produto-prova-real.md).
+
 ## Testes
 
 ```powershell

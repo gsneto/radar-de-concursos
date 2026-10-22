@@ -633,3 +633,17 @@ o-store; 2 GETs pesados concorrentes no maximo (429); nenhum segredo exposto.
 - **Base**: sem migracao (v21); 1.276 documentos, 1.110 versoes, 9.340 propostas/evidencias; 0 revisoes, 0 valores, 0 reconciliacoes, 0 lotes; integrity ok, FK vazia.
 - **Testes**: **1.906 testes, OK** (29 novos; 1 pulado quando ha motor de OCR).
 
+### Fase 45 - Frontend premium: design system, sidebar, dashboards e experiencia completa (2026-10-19)
+
+- **Design system** (`web/product.css`): tokens em tres camadas (primitivo, semantico, uso) para superficies, texto, bordas, marca, estados, graficos, espacamento base 4, tipografia 11-34 px, raios, sombras, icones, topbar 64 px, sidebar 248/76 px, conteudo 1360 px e breakpoints 1200/1024/900/760/520.
+- **Shell** (`web/index.html`, `web/shell.js`): sidebar grafite-azulada com marca SVG propria, tres grupos de menu, recolhimento persistido em `localStorage`, drawer no celular com foco controlado e `Esc`, topbar com breadcrumb e busca global, rotas por hash com voltar/avancar e filtros preservados.
+- **Modulos**: `core/dom.js` (nos seguros + icones), `core/format.js` (pt-BR), `core/api.js` (timeout, erros tipados, sequenciador anti-corrida), `core/store.js` (preferencias locais), `components/ui.js` e `components/charts.js` (SVG acessivel).
+- **Telas**: visao geral (KPIs, atividade por ciclo, cobertura, prioridades, prazos, prontidao, estudos), oportunidades (busca, 8 filtros, chips, ordenacao, paginacao real), dossie em 7 abas, estudos em 5 abas (cronometro, sessoes, questoes, flashcards, simulados), prazos, historico e configuracoes.
+- **Operacao preservada**: 21 paineis tecnicos intactos, agora em blocos recolhiveis; atalhos do topo abrem o bloco correspondente sem trocar de rota. `app.js` mantem o init adiado (`RADAR_DEFER_INIT`).
+- **Integridade**: nenhum dado ficticio; `null` vira "Nao informado" e zero permanece zero; percentual so com denominador; reserva indigena, cadastro de reserva e total agregado em cartoes separados; prazos com estado do documento.
+- **Refinamentos medidos**: corrigidos `.card__body` ausente, `[hidden]` vencido por `display:flex`, `edital is not defined` no dossie, 429 na navegacao, contraste 4,4:1, overflow no mobile, prazos duplicados, Operacao com 48 mil px, atalhos que mudavam a rota e alvos de clique pequenos.
+- **Servidor**: assets do produto (`product.css`, `shell.js`, `core/`, `components/`, `views/`) servidos com allowlist de extensao, `no-cache` e traversal bloqueado; contrato HTTP segue com 129 entradas.
+- **Validacao**: Chromium em 1440x900, 1280x800, 768x1024 e 390x844; zero rolagem horizontal, zero sobreposicao, zero texto abaixo de 4,5:1 e zero erro de API nas telas auditadas.
+- **Base**: sem migracao (v21); 1.276 documentos, 1.110 versoes, 9.340 propostas; 0 revisoes, 0 valores, 0 reconciliacoes; `integrity ok`, FK vazia.
+- **Testes**: **1.925 testes, OK** (19 novos em `test_frontend_f45.py`; 1 pulado quando ha motor de OCR).
+
