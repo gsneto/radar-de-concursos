@@ -176,6 +176,13 @@ class MethodAndPathTest(ServerTestCase):
         status, _, _ = self.request("GET", "/nao-existe.js")
         self.assertEqual(status, 404)
 
+    def test_unknown_api_path_is_404_not_spa(self):
+        # O fallback de SPA não pode mascarar rotas de API inexistentes.
+        for path in ("/api/nao-existe", "/api/estudos/inexistente", "/api"):
+            status, _, body = self.request("GET", path)
+            self.assertEqual(status, 404, path)
+            self.assertNotIn(b"<div id=\"root\">", body, path)
+
     def test_path_traversal_is_blocked(self):
         for path in ("/../radar/collector.py", "/web/../radar/storage.py", "/..%2fsecret"):
             status, _, body = self.request("GET", path)

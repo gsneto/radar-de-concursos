@@ -33,6 +33,12 @@ WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 # Build do frontend React (Fase 46). Commitado; servido em ``/``.
 DIST_DIR = Path(__file__).resolve().parent.parent / "web-react" / "dist"
 LEGACY_PREFIX = "/legacy"
+_API_PREFIX = "/api"
+
+
+def _is_api_path(path: str) -> bool:
+    """Caminho no namespace da API (nunca recebe o fallback de SPA)."""
+    return path == _API_PREFIX or path.startswith(_API_PREFIX + "/")
 
 _CONTENT_TYPES = {
     "index.html": "text/html; charset=utf-8",
@@ -1652,8 +1658,9 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             self._serve_file(_ASSET_ROUTES[path])
         elif DIST_DIR.is_dir() and (DIST_DIR / path[1:]).is_file() and ".." not in path:
             self._serve_dist_file(path[1:])
-        elif "." not in path.rsplit("/", 1)[-1]:
-            # Rota de navegação do app (sem extensão): fallback SPA.
+        elif not _is_api_path(path) and "." not in path.rsplit("/", 1)[-1]:
+            # Rota de navegação do app (sem extensão): fallback SPA. Rotas de API
+            # desconhecidas continuam 404 (contrato), nunca o index do app.
             self._serve_spa()
         else:
             relative = (path[len(_WEB_PREFIX):]
