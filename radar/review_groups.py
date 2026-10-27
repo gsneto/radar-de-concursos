@@ -276,6 +276,19 @@ def _context_for(version_context, group_rows, label):
     return None
 
 
+def _is_ready(item, open_rows) -> bool:
+    """Linha pronta para conferência rápida: pendente, sem conflito e soma coerente.
+
+    É triagem, não aprovação: a soma publicada fechar não prova a interpretação do
+    valor, e cada campo continua exigindo decisão humana.
+    """
+    if not open_rows:
+        return False
+    if item["conflito"]:
+        return False
+    return (item["validacao"] or {}).get("estado") == "consistente"
+
+
 def _next_action(group):
     if group["conflito"]:
         return "resolver o conflito entre as propostas antes de confirmar"
@@ -292,7 +305,7 @@ def groups(db_path, *, contest_id=None, document_id=None, version_id=None,
            state="aberto", field_name=None, contexto=None, linha=None, limit=25,
            offset=0, now=None) -> dict:
     """Grupos de revisão por linha documental, com contexto e validação."""
-    if state not in ("aberto", "pendente", "decidido", "todos"):
+    if state not in ("aberto", "pendente", "decidido", "todos", "prontos"):
         raise ValueError("estado de grupo inválido")
     limit, offset = int(limit), int(offset)
     if limit < 1 or limit > 500:
@@ -470,6 +483,8 @@ def groups(db_path, *, contest_id=None, document_id=None, version_id=None,
             "propostas": proposals,
         }
         item["proxima_acao"] = _next_action(item)
+        if state == "prontos" and not _is_ready(item, open_rows):
+            continue
         if contexto is True and item["contexto"] is None:
             continue
         if contexto is False and item["contexto"] is not None:
@@ -491,6 +506,8 @@ def groups(db_path, *, contest_id=None, document_id=None, version_id=None,
         "linhas_divergentes": sum(1 for item in items
                                   if item["validacao"]
                                   and item["validacao"].get("estado") == "divergente"),
+        "linhas_prontas": sum(1 for item in items
+                              if item["estado"] != "decidido" and _is_ready(item, [1])),
         "linhas_rotulo_divergente": sum(1 for item in items
                                         if item["rotulo_divergente"]),
         "linhas_rotulo_completado": sum(

@@ -1861,7 +1861,7 @@ def build_parser() -> argparse.ArgumentParser:
     grupos.add_argument('--document-id')
     grupos.add_argument('--version-id')
     grupos.add_argument('--state', default='aberto',
-                        choices=('aberto', 'pendente', 'decidido', 'todos'))
+                        choices=('aberto', 'pendente', 'decidido', 'todos', 'prontos'))
     grupos.add_argument('--field')
     grupos.add_argument('--contexto', choices=('sim', 'nao'))
     grupos.add_argument('--limit', type=int, default=25)

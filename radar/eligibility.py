@@ -183,6 +183,13 @@ def _cargolike_labels(rows, reconciled):
     return labels
 
 
+def _empty_scope(scope_label=None) -> dict:
+    """Estrutura de um escopo. Todo escopo nasce completo, mesmo sem linhas."""
+    return {"si": [], "indigenous": [], "indigenous_reserve": [], "reserve": [],
+            "immediate": [], "aggregate": [], "unified": [], "locality": [],
+            "scope_label": scope_label}
+
+
 def _scope_rows(rows, reconciled):
     """Agrupa propostas por (concurso, escopo) nas dimensões que a matriz usa."""
     data = {}
@@ -198,11 +205,7 @@ def _scope_rows(rows, reconciled):
             {"role_id": row["role_id"], "contest_id": row["contest_id"],
              "ambiguity_reason": row["ambiguity_reason"]}, reconciled)
         key = (row["contest_id"], _norm_scope(scope_ref))
-        entry = data.setdefault(key, {"si": [], "indigenous": [],
-                                      "indigenous_reserve": [], "reserve": [],
-                                      "immediate": [], "aggregate": [],
-                                      "unified": [], "locality": [],
-                                      "scope_label": scope_label})
+        entry = data.setdefault(key, _empty_scope(scope_label))
         target = {"si_compatibility": "si", "indigenous_vacancies": "indigenous",
                   "indigenous_reserve_vacancies": "indigenous_reserve",
                   # Notação de reserva sem número (ex.: "CR*") é reserva sem quantidade,
@@ -222,7 +225,7 @@ def _scope_rows(rows, reconciled):
                 and role_identity.classify_label(label) == "nao_e_cargo"):
             # Leitura de formação declarada sem cargo ("escolaridade declarada (…)"):
             # pertence ao concurso, não ao rótulo onde o extrator a pendurou.
-            contest = data.setdefault((row["contest_id"], ""), {})
+            contest = data.setdefault((row["contest_id"], ""), _empty_scope())
             contest.setdefault("si_unscoped", []).append(row)
     return data
 

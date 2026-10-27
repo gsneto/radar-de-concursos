@@ -245,6 +245,81 @@ class ValidationTest(unittest.TestCase):
         self.assertEqual(validacao["estado"], "consistente")
 
 
+class ReadyStateTest(unittest.TestCase):
+    """Fila 'prontos': só linha pendente, sem conflito e com soma publicada coerente.
+
+    É triagem, não aprovação: a decisão continua humana e por campo.
+    """
+
+    def setUp(self):
+        self.tmp, self.db = make_db()
+        self.addCleanup(self.tmp.cleanup)
+
+    def _build(self):
+        pdf = _wide_pdf([
+            {"cargo": "Professor", "formacao": "Física", "escolaridade": "Superior",
+             "values": ["2", "0", "0", "0", "0", "1", "0", "3"]},   # 2+1 = 3: confere
+            {"cargo": "Professor", "formacao": "Química", "escolaridade": "Superior",
+             "values": ["2", "0", "0", "0", "0", "0", "0", "5"]},   # 2 != 5: divergente
+        ], pitch=30)
+        _store_version(self.db, pdf)
+        ids = {}
+        for label, quote, values in (
+                (LABEL + "Professor Física", "Professor Fisica", ("0", "1", "0", "3")),
+                (LABEL + "Professor Química", "Professor Quimica", ("0", "0", "0", "5"))):
+            for field, value in (("indigenous_vacancies", int(values[0])),
+                                 ("unified_ppiq_vacancies", int(values[1])),
+                                 ("unified_pi_pq_vacancies", int(values[2])),
+                                 ("immediate_vacancies", int(values[3]))):
+                proposal = _insert_proposal(
+                    self.db, contest="c1", version="v1", field=field, value=value,
+                    quote=quote, label=label, page=1)
+                ids[(label, field)] = proposal
+        return ids
+
+    def test_prontos_traz_so_linha_consistente(self):
+        self._build()
+        report = review_groups.groups(self.db, state="prontos", now=NOON)
+        self.assertEqual(report["total"], 1)
+        item = report["itens"][0]
+        self.assertEqual(item["validacao"]["estado"], "consistente")
+        self.assertFalse(item["conflito"])
+        self.assertEqual(item["estado"], "pendente")
+        self.assertIn("Física", item["scope"])
+
+    def test_prontos_exclui_linha_decidida(self):
+        ids = self._build()
+        # Linha parcialmente decidida continua pronta: ainda há campo pendente.
+        review.decide_proposal(self.db,
+                               ids[(LABEL + "Professor Física", "immediate_vacancies")],
+                               "validado", reviewer="teste", reason="conferido",
+                               origin="cli")
+        self.assertEqual(review_groups.groups(self.db, state="prontos",
+                                              now=NOON)["total"], 1)
+        # Decididos todos os campos da linha, ela sai da fila de prontos.
+        for field in ("indigenous_vacancies", "unified_ppiq_vacancies",
+                      "unified_pi_pq_vacancies"):
+            review.decide_proposal(self.db,
+                                   ids[(LABEL + "Professor Física", field)],
+                                   "validado", reviewer="teste", reason="conferido",
+                                   origin="cli")
+        self.assertEqual(review_groups.groups(self.db, state="prontos",
+                                              now=NOON)["total"], 0)
+        self.assertEqual(review_groups.groups(self.db, state="todos",
+                                              now=NOON)["total"], 2)
+
+    def test_estado_aberto_nao_muda(self):
+        self._build()
+        self.assertEqual(review_groups.groups(self.db, now=NOON)["total"], 2)
+
+    def test_resumo_conta_linhas_prontas(self):
+        self._build()
+        resumo = review_groups.groups(self.db, state="todos", now=NOON)["resumo"]
+        self.assertEqual(resumo["linhas"], 2)
+        self.assertEqual(resumo["linhas_prontas"], 1)
+        self.assertEqual(resumo["linhas_divergentes"], 1)
+
+
 class CrossPageAuditTest(unittest.TestCase):
     def setUp(self):
         self.tmp, self.db = make_db()
@@ -494,6 +569,13 @@ class ApiTest(unittest.TestCase):
 
     def test_parametro_desconhecido(self):
         status, _ = self.get("/api/revisao/grupos?x=1")
+        self.assertEqual(status, 400)
+
+    def test_estado_prontos_e_aceito_e_invalido_recusado(self):
+        status, body = self.get("/api/revisao/grupos?state=prontos")
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["filtros"]["state"], "prontos")
+        status, _ = self.get("/api/revisao/grupos?state=qualquer")
         self.assertEqual(status, 400)
 
 

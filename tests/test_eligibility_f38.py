@@ -47,6 +47,25 @@ class Base(unittest.TestCase):
                 "(SELECT COUNT(*) FROM revalidacoes_prazo)").fetchone()
 
 
+class UnscopedContestTest(unittest.TestCase):
+    """Leitura de formação sem cargo não derruba o escopo vazio do concurso."""
+
+    def test_si_sem_cargo_nao_quebra_escopo_vazio(self):
+        rows = [
+            {"field_name": "si_compatibility", "role_id": None, "contest_id": "c1",
+             "ambiguity_reason": LABEL + "escolaridade declarada (superior)",
+             "last_decision": None, "value_json": '"nao_informado"',
+             "proposal_id": "p1"},
+            {"field_name": "immediate_vacancies", "role_id": None, "contest_id": "c1",
+             "ambiguity_reason": None, "last_decision": None, "value_json": "1",
+             "proposal_id": "p2"},
+        ]
+        data = eligibility._scope_rows(rows, {})
+        entry = data[("c1", "")]
+        self.assertEqual(len(entry["immediate"]), 1)
+        self.assertEqual(len(entry["si_unscoped"]), 1)
+
+
 class EligibilityStateTest(Base):
     def test_aceitacao_expressa_e_compativel(self):
         _, version = self.doc(text="Requisito do cargo.")

@@ -288,6 +288,13 @@ A seção **Revisão humana** (`#review-panel`) transforma as propostas extraíd
 
 As ações humanas são **append-only**: validar, rejeitar, adiar, marcar como ambíguo, pedir nova extração, reabrir e corrigir. Cada decisão grava estado anterior, estado novo, instante, autor, justificativa, canal (`interface`, `cli` ou `importacao`) e a impressão (`sha256`) da evidência revisada. Corrigir mantém a evidência original e cria uma proposta derivada identificada como correção humana. Reenviar a mesma decisão ou selecionar o mesmo valor é **idempotente**. Aprovar um documento ou um valor **não** confirma os demais campos.
 
+**Fila de conferência rápida.** A revisão agrupada por linha (`GET /api/revisao/grupos`,
+CLI `revisao-grupos`) aceita `state=prontos` e mostra só as linhas **pendentes, sem
+conflito e com a soma publicada fechando** (AC+PcD+PP+PI+PQ+PPIQ+PI/PQ = Total). É
+triagem, não aprovação: a soma coerente não prova a interpretação do valor, então cada
+campo continua exigindo decisão humana - o ganho é não abrir edital por edital. Na base
+real são **386 linhas em 5 concursos**, contra 13.224 linhas no total.
+
 **Lotes** (`#review-batch`) são ferramentas de navegação: abrem de 10 a 25 itens, permitem próximo/anterior/pausar/retomar e sobrevivem a recarregar a página. O lote **não** aprova em massa — não existe ação de aprovação coletiva. A exportação leva `proposal_id` estável e `evidence_sha256`; a importação rejeita item cuja evidência mudou ou que já foi decidido, e grava tudo em uma transação.
 
 A seção **Associações pendentes** (`#assoc-panel`) mostra documento, órgão, data e a evidência do vínculo, com confirmar (exige o id do certame e justificativa), rejeitar e manter pendente. Confirmar a associação **não** valida os campos extraídos. Não há associação por semelhança de título, órgão ou data.
