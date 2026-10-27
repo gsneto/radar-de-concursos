@@ -13,3 +13,4 @@ data/
 *.sqlite3
 logs/
 radar_ops.json
+*.tsbuildinfo

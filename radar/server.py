@@ -1,4 +1,4 @@
-"""Servidor HTTP loopback do Radar de Concursos (somente stdlib).
+"""Servidor HTTP loopback do GSN Concursos (somente stdlib).
 
 Expõe:
 - ``GET /api/concursos`` → array JSON do contrato v1 lido de ``list_records``;
@@ -30,11 +30,21 @@ from radar.storage import list_records
 
 # Diretório web: irmão do pacote ``radar`` (raiz do projeto).
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+# Build do frontend React (Fase 46). Commitado; servido em ``/``.
+DIST_DIR = Path(__file__).resolve().parent.parent / "web-react" / "dist"
+LEGACY_PREFIX = "/legacy"
 
 _CONTENT_TYPES = {
     "index.html": "text/html; charset=utf-8",
     "styles.css": "text/css; charset=utf-8",
     "app.js": "application/javascript; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".woff2": "font/woff2",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".ico": "image/x-icon",
+    ".map": "application/json; charset=utf-8",
 }
 
 # Rotas de assets, aceitando também o prefixo ``/web/``.
@@ -80,7 +90,7 @@ class _RadarHTTPServer(ThreadingHTTPServer):
 
 
 class _RadarRequestHandler(BaseHTTPRequestHandler):
-    server_version = "RadarConcursos/0.1"
+    server_version = "GSNConcursos/1.0"
 
     # Silencia o log por requisição (útil em testes e em uso local discreto).
     def log_message(self, format, *args):
@@ -119,27 +129,45 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
-    def _serve_file(self, filename: str):
-        # filename vem de rotas fixas; resolve contra o diretório web e exige
-        # que o resultado permaneça dentro dele (bloqueia path traversal).
-        web_root = WEB_DIR.resolve()
-        candidate = (web_root / filename).resolve()
-        if web_root != candidate and web_root not in candidate.parents:
+    def _serve_file(self, filename: str, *, root=None, cache=None):
+        """Serve um arquivo dentro de ``root`` (padrão: ``web/``), bloqueando escape.
+
+        ``filename`` nunca vem cru do cliente nas rotas fixas; quando vem, é
+        normalizado antes e reconferido aqui contra o diretório raiz.
+        """
+        base = (root or WEB_DIR).resolve()
+        candidate = (base / filename).resolve()
+        if base != candidate and base not in candidate.parents:
             self._send_no_content(HTTPStatus.NOT_FOUND)
             return
         if not candidate.is_file():
             self._send_no_content(HTTPStatus.NOT_FOUND)
             return
-        # Sem build/hash de arquivo: o navegador sempre revalida o asset local.
-        content_type = _CONTENT_TYPES.get(filename)
+        content_type = _CONTENT_TYPES.get(candidate.suffix.lower()) or _CONTENT_TYPES.get(filename)
         if content_type is None:
-            if filename.endswith(".js"):
-                content_type = "application/javascript; charset=utf-8"
-            elif filename.endswith(".css"):
-                content_type = "text/css; charset=utf-8"
-            else:
-                content_type = "application/octet-stream"
+            content_type = "application/octet-stream"
+        if cache is None:
+            # Assets sem hash (UI legada): o navegador sempre revalida.
+            cache = "no-cache"
         self._send(HTTPStatus.OK, content_type, candidate.read_bytes(),
+                   {"Cache-Control": cache})
+
+    def _serve_dist_file(self, relative: str):
+        """Serve um arquivo do build React; assets com hash ganham cache longo."""
+        hashed = relative.startswith("assets/")
+        self._serve_file(
+            relative,
+            root=DIST_DIR,
+            cache="public, max-age=31536000, immutable" if hashed else "no-cache",
+        )
+
+    def _serve_spa(self):
+        """Fallback SPA: qualquer rota de navegação devolve o index do build."""
+        index = DIST_DIR / "index.html"
+        if not index.is_file():
+            self._send_no_content(HTTPStatus.NOT_FOUND)
+            return
+        self._send(HTTPStatus.OK, "text/html; charset=utf-8", index.read_bytes(),
                    {"Cache-Control": "no-cache"})
 
     def _serve_api(self):
@@ -1608,10 +1636,25 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
             else:
                 self._serve_study(practice_store.list_exams, limit=limit)
+        elif path == LEGACY_PREFIX or path.startswith(LEGACY_PREFIX + "/"):
+            # UI anterior (Operação) preservada em /legacy/.
+            relative = path[len(LEGACY_PREFIX):].lstrip("/") or "index.html"
+            if relative.startswith(_ASSET_DIRS) or relative.endswith(
+                    (".js", ".css", ".html")):
+                self._serve_file(relative)
+            else:
+                self._send_no_content(HTTPStatus.NOT_FOUND)
         elif path in ("/", "/index.html"):
-            self._serve_file("index.html")
+            self._serve_spa()
+        elif path.startswith("/assets/"):
+            self._serve_dist_file(path[1:])
         elif path in _ASSET_ROUTES:
             self._serve_file(_ASSET_ROUTES[path])
+        elif DIST_DIR.is_dir() and (DIST_DIR / path[1:]).is_file() and ".." not in path:
+            self._serve_dist_file(path[1:])
+        elif "." not in path.rsplit("/", 1)[-1]:
+            # Rota de navegação do app (sem extensão): fallback SPA.
+            self._serve_spa()
         else:
             relative = (path[len(_WEB_PREFIX):]
                         if path.startswith(_WEB_PREFIX) else path[1:])

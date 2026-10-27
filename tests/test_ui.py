@@ -1,4 +1,4 @@
-"""Testes de interface do Radar de Concursos (Task 3 — frontend).
+"""Testes de interface do GSN Concursos (Task 3 — frontend).
 
 Cobre, sem instalar dependências:
 - estrutura semântica/acessível do HTML (landmarks, heading, aria-live, botão de
@@ -61,7 +61,7 @@ class TestHtmlStructure(unittest.TestCase):
     def test_index_exists(self):
         self.assertTrue(os.path.exists(INDEX_PATH), "web/index.html deve existir")
         html = read(INDEX_PATH)
-        self.assertIn("Radar de Concursos", html)
+        self.assertIn("GSN Concursos", html)
 
     def test_main_landmark_and_header_footer(self):
         html = read(INDEX_PATH)

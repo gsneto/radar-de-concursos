@@ -292,6 +292,10 @@ _ENTRIES = [
      "Anexa imagem validada por assinatura binária e hash."),
     ("DELETE", "/api/estudos/flashcards/{flashcard_id}/imagem", "flashcards", "", "", True,
      "sim", "Remove a imagem do flashcard."),
+    # --- Estáticos (não são API; documentados para o verificador de rotas) ------
+    ("GET", "/assets/", "estaticos", "", "", False, "n/a",
+     "Assets do build React com hash de conteúdo (cache imutável)."),
+
     ("GET", "/api/estudos/midia", "flashcards", "", "", False, "n/a",
      "Rota base de mídia: exige id; sem id devolve 400."),
     ("GET", "/api/estudos/midia/{media_id}", "flashcards", "", "", False, "n/a",
@@ -417,6 +421,7 @@ DOMAIN_LABELS = {
     "questoes": "Questões e desempenho",
     "simulados": "Simulados",
     "pacotes": "Pacotes de conteúdo",
+    "estaticos": "Estáticos (build e UI legada)",
 }
 
 

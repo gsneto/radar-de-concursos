@@ -1,1 +1,1 @@
-"""Testes do fluxo vertical do Radar de Concursos."""
+"""Testes do fluxo vertical do GSN Concursos."""

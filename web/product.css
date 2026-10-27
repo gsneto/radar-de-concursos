@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Radar de Concursos — frontend de produto (Fase 45)
+   GSN Concursos — frontend de produto (Fase 45)
    Design system próprio, sem dependências externas e sem build.
    Carregado depois de styles.css: os tokens antigos são remapeados para a nova
    linguagem, e os painéis técnicos preservados herdam a mesma paleta.

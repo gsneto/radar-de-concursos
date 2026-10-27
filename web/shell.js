@@ -87,7 +87,7 @@
     }
     if (title) title.textContent = label;
     if (crumb) crumb.textContent = label;
-    doc.title = label + ' · Radar de Concursos';
+    doc.title = label + ' · GSN Concursos';
   }
 
   function replaceQuery(params) {

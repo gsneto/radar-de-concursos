@@ -1,4 +1,4 @@
-/* Radar de Concursos — central de inteligência documental (sem dependências).
+/* GSN Concursos — central de inteligência documental (sem dependências).
  * Consome apenas as rotas GET locais (/api/concursos, /api/concursos/identidades
  * e /api/concursos/{uuid}/detalhes) e renderiza com APIs textuais seguras
  * (textContent / createElement), sem injetar HTML a partir de dados da API.

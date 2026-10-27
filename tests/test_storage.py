@@ -1,4 +1,4 @@
-"""Testes da persistência SQLite do Radar de Concursos (Task 2 — storage).
+"""Testes da persistência SQLite do GSN Concursos (Task 2 — storage).
 
 Cobrem, com sqlite3 stdlib e banco temporário:
 - criação do banco/tabela e persistência dos registros do contrato v1;

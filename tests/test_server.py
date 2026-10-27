@@ -1,4 +1,4 @@
-"""Testes do servidor HTTP loopback do Radar de Concursos (Task 2 — server).
+"""Testes do servidor HTTP loopback do GSN Concursos (Task 2 — server).
 
 Cobrem, com ``http.client`` e servidor real em porta efêmera (port=0):
 - ``GET /api/concursos`` com banco vazio (200, JSON, array vazio);
@@ -135,7 +135,7 @@ class StaticServingTest(ServerTestCase):
         status, headers, body = self.request("GET", "/")
         self.assertEqual(status, 200)
         self.assertIn("text/html", headers.get("content-type", ""))
-        self.assertIn("Radar de Concursos", body.decode("utf-8"))
+        self.assertIn("GSN Concursos", body.decode("utf-8"))
 
     def test_styles_css_is_served(self):
         status, headers, body = self.request("GET", "/styles.css")
@@ -166,8 +166,14 @@ class MethodAndPathTest(ServerTestCase):
         status, _, _ = self.request("PUT", "/api/concursos")
         self.assertEqual(status, 405)
 
-    def test_unknown_path_returns_404(self):
-        status, _, _ = self.request("GET", "/nao-existe")
+    def test_unknown_path_serves_spa_and_missing_asset_404(self):
+        # O app React é uma SPA: rota de navegação sem extensão devolve o index;
+        # arquivo inexistente com extensão continua 404 (não engole erro).
+        status, headers, body = self.request("GET", "/nao-existe")
+        self.assertEqual(status, 200)
+        self.assertIn("text/html", headers.get("content-type", ""))
+        self.assertIn(b"<div id=\"root\">", body)
+        status, _, _ = self.request("GET", "/nao-existe.js")
         self.assertEqual(status, 404)
 
     def test_path_traversal_is_blocked(self):

@@ -385,7 +385,7 @@ class ApiAndStaticPathsEndToEndTest(ServerTestCase):
     def test_static_paths_are_served(self):
         self.persist_official_fixture()
         for path, marker in [
-            ("/", "Radar de Concursos"),
+            ("/", "GSN Concursos"),
             ("/app.js", "/api/concursos"),
             ("/styles.css", None),
             ("/web/app.js", None),
@@ -396,10 +396,14 @@ class ApiAndStaticPathsEndToEndTest(ServerTestCase):
             if marker is not None:
                 self.assertIn(marker, body.decode("utf-8"))
 
-    def test_unknown_path_returns_404(self):
+    def test_unknown_path_serves_spa_and_missing_asset_404(self):
+        # SPA: rota sem extensão devolve o index; asset inexistente continua 404.
         status, _, body = self.request("GET", "/rota-inexistente")
+        self.assertEqual(status, 200)
+        self.assertIn(b'<div id="root">', body)
+        status, _, _ = self.request("GET", "/rota-inexistente.js")
         self.assertEqual(status, 404)
-        self.assertNotIn(b"concursos", body)
+
 
     def test_path_traversal_returns_404(self):
         for path in (
