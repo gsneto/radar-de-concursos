@@ -101,7 +101,9 @@ class StoreTest(unittest.TestCase):
 
     def test_media_dir_fora_do_webroot(self):
         directory = media.media_dir(self.db)
-        self.assertEqual(directory.parent, Path(self.db).parent)
+        # resolve() nos dois lados: no Windows o TEMP pode vir no formato curto 8.3
+        # (RUNNER~1), que media_dir expande.
+        self.assertEqual(directory.parent, Path(self.db).resolve().parent)
         self.assertEqual(directory.name, "estudo-midia")
 
     def test_hash_invalido_nao_escapa(self):

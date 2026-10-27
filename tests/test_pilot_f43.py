@@ -18,6 +18,10 @@ from tests.test_portfolio_f36 import make_db
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REAL_DB = os.path.join(ROOT, "data", "radar.sqlite3")
+# data/ fica fora do Git: em clone limpo (CI) os testes sobre a base real são pulados,
+# não reprovados. Os testes puros deste arquivo rodam sempre.
+requires_real_db = unittest.skipUnless(
+    os.path.exists(REAL_DB), "base real ausente (data/ fica fora do Git)")
 SEDUC = "f4235e23-a5b4-45c2-a949-e758c277eca4"
 LABEL_PREFIX = "cargo do documento não reconciliado: "
 
@@ -74,7 +78,7 @@ def _count(db, table):
         return conn.execute("SELECT COUNT(*) FROM " + table).fetchone()[0]
 
 
-@unittest.skipUnless(os.path.exists(REAL_DB), "base real ausente; teste de piloto ignorado")
+@requires_real_db
 class PilotSelectionTest(unittest.TestCase):
     """Seleção determinística e diversa sobre a base real (somente leitura)."""
 
@@ -132,8 +136,7 @@ class PilotSelectionTest(unittest.TestCase):
         self.assertGreaterEqual(available["itens"][0]["linhas"], 10)
 
 
-@unittest.skipUnless(os.path.exists(REAL_DB), "base real ausente; teste de identidade ignorado")
-@unittest.skipUnless(os.path.exists(REAL_DB), "base real ausente; teste de piloto ignorado")
+@requires_real_db
 class PilotContextTypesTest(unittest.TestCase):
     """Notação e texto não publicam coluna PI nem zero explícito."""
 
@@ -160,6 +163,7 @@ class PilotContextTypesTest(unittest.TestCase):
                                     item["contest_id"])
 
 
+@requires_real_db
 class IdentitySuggestionTest(unittest.TestCase):
     """Granularidade: cargo+formação é identidade; regional é dimensão da oportunidade."""
 
@@ -187,6 +191,10 @@ class IdentitySuggestionTest(unittest.TestCase):
                           ("criar_identidade", "reconciliar_com_identidade_existente"))
             self.assertEqual(item["linhas_confirmadas"], 0)
         self.assertIn("não reconciliação", self.report["limitacao"])
+
+
+class IdentityNormalizationTest(unittest.TestCase):
+    """Normalização de rótulo: funções puras, sem base real."""
 
     def test_recomposicao_so_com_prova_no_documento(self):
         # "Especialista em" + "Educação" não vira "Especialistaem Educação".
@@ -218,6 +226,7 @@ class IdentitySuggestionTest(unittest.TestCase):
                       [aviso["codigo"] for aviso in result["avisos"]])
 
 
+@requires_real_db
 class IndependentDecisionTest(unittest.TestCase):
     """Cada decisão afeta somente o campo escolhido, numa cópia isolada da base."""
 
@@ -333,6 +342,7 @@ class IndependentDecisionTest(unittest.TestCase):
             self.assertIsNone(_state(self.db, proposal))
 
 
+@requires_real_db
 class StaleEvidenceTest(unittest.TestCase):
     """Evidência obsoleta não é aceita silenciosamente."""
 
@@ -422,6 +432,7 @@ class StaleEvidenceTest(unittest.TestCase):
         self.assertFalse(reopened["progresso"]["alterados"])
 
 
+@requires_real_db
 class ScopeSnapshotTest(unittest.TestCase):
     """Nova proposta no mesmo campo/escopo bloqueia decisão por linha."""
 
@@ -463,6 +474,7 @@ class ScopeSnapshotTest(unittest.TestCase):
         self.assertEqual(result["decision"], "validado")
 
 
+@requires_real_db
 class CorrectionDedupeTest(unittest.TestCase):
     """Correção não duplica o campo na ficha do piloto."""
 
@@ -494,7 +506,7 @@ class CorrectionDedupeTest(unittest.TestCase):
 class CacheConcurrencyTest(unittest.TestCase):
     """Cache em processo não quebra com requisições simultâneas."""
 
-    @unittest.skipUnless(os.path.exists(REAL_DB), "base real ausente")
+    @requires_real_db
     def test_grupos_simultaneos(self):
         import threading
         results, errors = [], []
@@ -517,6 +529,7 @@ class CacheConcurrencyTest(unittest.TestCase):
         self.assertEqual(len(set(results)), 1)
 
 
+@requires_real_db
 class ProgressTest(unittest.TestCase):
     """Progresso conta propostas reais decididas, inclusive valor vigente."""
 
@@ -552,6 +565,7 @@ class ProgressTest(unittest.TestCase):
         self.assertEqual(depois["linhas_decididas"], antes["linhas_decididas"] + 1)
 
 
+@requires_real_db
 class ApiTest(unittest.TestCase):
     """Rotas aditivas e somente leitura do piloto."""
 
@@ -613,6 +627,7 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(_count(self.db, "valores_atuais"), 0)
 
 
+@requires_real_db
 class PrewarmTest(unittest.TestCase):
     def setUp(self):
         self.tmp, self.db = _copy_db()

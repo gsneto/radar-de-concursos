@@ -280,6 +280,18 @@ class ConnectorTest(unittest.TestCase):
         with self.assertRaises(connectors.ConnectorError):
             multi.discover()
 
+    def test_parametro_ausente_falha_antes_da_rede(self):
+        # Chamada malformada não pode gerar tráfego para a fonte.
+        def fetch_proibido():
+            raise AssertionError("discover acessou a rede antes de validar parametros")
+
+        for source_id in ("guajara", "pci"):
+            connector = connectors.get_connector(source_id)
+            connector._descriptor = dict(connector._descriptor, fetch=fetch_proibido)
+            with self.assertRaises(connectors.ConnectorError) as ctx:
+                connector.discover()
+            self.assertEqual(ctx.exception.code, "configuracao_necessaria", source_id)
+
     def test_conector_inexistente(self):
         with self.assertRaises(connectors.ConnectorError):
             connectors.get_connector("nao-existe")

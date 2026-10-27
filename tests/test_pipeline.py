@@ -420,8 +420,9 @@ class OCRTest(PipelineBase):
         version = self.version(doc, blank_pdf(1))
         if ocr.availability()["motor_disponivel"]:  # pragma: no cover - máquina com OCR
             self.skipTest("motor de OCR instalado nesta máquina")
-        with self.assertRaisesRegex(ValueError, "ocr_indisponivel"):
+        with self.assertRaises(ocr.OcrError) as ctx:
             ocr.ocr_version(self.db, version, apply=True)
+        self.assertEqual(ctx.exception.code, "ocr_indisponivel")
 
 
 class PipelineApiTest(PipelineBase):

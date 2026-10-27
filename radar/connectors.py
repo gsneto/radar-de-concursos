@@ -150,18 +150,19 @@ class _ExistingSourceConnector(Connector):
         descriptor = self._descriptor
         if "discover" not in descriptor or "fetch" not in descriptor:
             raise ConnectorError("nao_suportado", f"{self.id} sem descoberta")
-        payload = descriptor["fetch"]()
+        # Valida os parâmetros antes de qualquer acesso de rede: chamada malformada
+        # não deve gerar tráfego para a fonte.
         if descriptor.get("multi_contest"):
             db_path = kwargs.get("db_path")
             if not db_path:
                 raise ConnectorError("configuracao_necessaria",
                                      f"{self.id} exige db_path para descoberta")
-            return descriptor["discover"](db_path, payload)
+            return descriptor["discover"](db_path, descriptor["fetch"]())
         observation_id = kwargs.get("observation_id")
         if not observation_id:
             raise ConnectorError("configuracao_necessaria",
                                  f"{self.id} exige observation_id para descoberta")
-        return descriptor["discover"](payload, observation_id)
+        return descriptor["discover"](descriptor["fetch"](), observation_id)
 
 
 def connectors() -> list[Connector]:
