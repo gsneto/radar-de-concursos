@@ -7,15 +7,23 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Kpi, NumberTicker } from '@/components/ui/kpi';
 import { EmptyState, ErrorState, SkeletonRows } from '@/components/ui/states';
+import { OPERATIONAL_GROUPS } from '@/lib/deadlines';
 import { deadlineGroups, urgencyLabels } from '@/lib/domain';
 import { date, integer, relativeDays } from '@/lib/format';
 
 export function DeadlinesPage() {
   const [params, setParams] = useSearchParams();
-  const group = params.get('group') ?? '';
+  // Sem escolha explícita, a página abre no recorte que exige ação (inscrição,
+  // isenção e prova). "Todos os eventos" continua a um clique, com os resultados.
+  const group = params.get('group') ?? 'operacionais';
   const urgency = params.get('urgency') ?? '';
   const [advanced, setAdvanced] = useState(false);
-  const query = useDeadlines({ group: group || undefined, urgency: urgency || undefined });
+  const groups = group === 'operacionais' ? OPERATIONAL_GROUPS : undefined;
+  const query = useDeadlines({
+    group: group && group !== 'operacionais' ? group : undefined,
+    groups,
+    urgency: urgency || undefined,
+  });
   const data = query.data;
 
   const update = (key: string, value: string) => {
@@ -42,7 +50,7 @@ export function DeadlinesPage() {
           ) : null
         }
         actions={
-          (group || urgency) && (
+          (params.get('group') || params.get('urgency')) && (
             <Button variant="ghost" size="sm" onClick={() => setParams(new URLSearchParams(), { replace: true })}>
               Limpar filtros
             </Button>
@@ -92,6 +100,7 @@ export function DeadlinesPage() {
                   onChange={(event) => update('group', event.target.value)}
                   className="h-8 min-w-[170px] rounded-sm border border-line-strong bg-surface-2 px-2.5 text-xs text-fg outline-none focus:border-accent/60"
                 >
+                  <option value="operacionais">Inscrição, isenção e prova</option>
                   <option value="">Todos os eventos</option>
                   {Object.entries(deadlineGroups).map(([value, text]) => (
                     <option key={value} value={value}>{text}</option>

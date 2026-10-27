@@ -192,8 +192,18 @@ export interface Exam {
   questao_atual: number;
 }
 
-export function useDeadlines(filters: { group?: string; urgency?: string; limit?: number }) {
-  const query = qs({ group: filters.group, urgency: filters.urgency, limit: filters.limit ?? 200 });
+export function useDeadlines(filters: {
+  group?: string;
+  groups?: readonly string[];
+  urgency?: string;
+  limit?: number;
+}) {
+  const query = qs({
+    group: filters.group,
+    groups: filters.groups?.length ? filters.groups.join(',') : undefined,
+    urgency: filters.urgency,
+    limit: filters.limit ?? 200,
+  });
   return useQuery({
     queryKey: keys.deadlines(filters),
     queryFn: () => api.get<DeadlineCalendar>(`/api/prazos/calendario${query}`),

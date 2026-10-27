@@ -24,23 +24,35 @@ export function percent(value: unknown, digits = 1): string {
   );
 }
 
+/** `YYYY-MM-DD` é dia de calendário: não pode recuar um dia pelo fuso. */
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+function parseDate(value: unknown): Date {
+  const text = String(value);
+  if (DATE_ONLY.test(text)) {
+    const [year, month, day] = text.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  }
+  return new Date(text);
+}
+
 export function date(value: unknown): string {
   if (isMissing(value)) return UNKNOWN;
-  const d = new Date(String(value));
+  const d = parseDate(value);
   if (Number.isNaN(d.getTime())) return String(value);
   return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 export function shortDate(value: unknown): string {
   if (isMissing(value)) return '—';
-  const d = new Date(String(value));
+  const d = parseDate(value);
   if (Number.isNaN(d.getTime())) return String(value);
   return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 }
 
 export function dayMonth(value: unknown): { day: string; month: string } {
   if (isMissing(value)) return { day: '—', month: '' };
-  const d = new Date(String(value));
+  const d = parseDate(value);
   if (Number.isNaN(d.getTime())) return { day: '—', month: '' };
   return {
     day: String(d.getDate()).padStart(2, '0'),

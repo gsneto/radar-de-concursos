@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   UNKNOWN,
   clock,
+  date,
+  dayMonth,
   duration,
   humanize,
   integer,
@@ -9,6 +11,7 @@ import {
   percentOf,
   relativeDays,
   safeUrl,
+  shortDate,
   truncate,
 } from './format';
 
@@ -71,6 +74,24 @@ describe('duration / clock', () => {
   it('cronômetro nunca fica negativo', () => {
     expect(clock(3_661)).toBe('01:01:01');
     expect(clock(-5)).toBe('00:00:00');
+  });
+});
+
+// Data de calendário (sem hora) não pode voltar um dia por causa do fuso:
+// "2026-11-18" é 18/11 no Brasil, não 17/11.
+describe('datas sem hora', () => {
+  it('date mantém o dia do calendário', () => {
+    expect(date('2026-11-18')).toMatch(/^18 de nov/);
+  });
+
+  it('shortDate e dayMonth mantêm o dia', () => {
+    expect(shortDate('2026-11-18')).toBe('18/11');
+    expect(dayMonth('2026-11-18')).toEqual({ day: '18', month: 'nov' });
+  });
+
+  it('data com hora continua convertida para o fuso local', () => {
+    const iso = new Date(2026, 10, 18, 12, 0, 0).toISOString();
+    expect(shortDate(iso)).toBe('18/11');
   });
 });
 

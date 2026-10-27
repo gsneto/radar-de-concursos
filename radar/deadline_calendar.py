@@ -244,9 +244,13 @@ def _all_items(db_path, *, now_dt, contest_id=None, group=None) -> list[dict]:
         offset += report["limit"]
 
 
-def calendar(db_path, *, contest_id=None, group=None, state=None, urgency=None,
-             limit=100, offset=0, now=None) -> dict:
-    """Calendário operacional: estado por prazo, candidatos e próxima ação."""
+def calendar(db_path, *, contest_id=None, group=None, groups=None, state=None,
+             urgency=None, limit=100, offset=0, now=None) -> dict:
+    """Calendário operacional: estado por prazo, candidatos e próxima ação.
+
+    ``groups`` restringe a vários grupos de uma vez (recorte da interface); ``group``
+    continua sendo o filtro único. Sem nenhum dos dois, o universo é completo.
+    """
     limit = int(limit)
     offset = int(offset)
     if limit < 1 or limit > 500:
@@ -255,6 +259,12 @@ def calendar(db_path, *, contest_id=None, group=None, state=None, urgency=None,
         raise ValueError("deslocamento inválido")
     if group and group not in deadline_review.DEADLINE_GROUPS:
         raise ValueError("grupo de prazo inválido")
+    groups = list(groups or [])
+    invalidos = [item for item in groups if item not in deadline_review.DEADLINE_GROUPS]
+    if invalidos:
+        raise ValueError("grupo de prazo inválido")
+    # `group` manda: quando presente, é o recorte exato.
+    selecionados = {group} if group else set(groups)
     if state and state not in OPERATIONAL_STATES:
         raise ValueError("estado operacional inválido")
     if urgency and urgency not in URGENCIES:
@@ -272,6 +282,8 @@ def calendar(db_path, *, contest_id=None, group=None, state=None, urgency=None,
         source = _source_info(raw.get("official_url"), raw.get("issuer"), pairs)
         key = (raw["contest_id"], raw["grupo"], raw.get("escopo"), raw.get("versao"))
         items.append(_item_view(raw, today, revalidations.get(key), source))
+    if selecionados:
+        items = [item for item in items if item["grupo"] in selecionados]
     if state:
         items = [item for item in items if item["estado_operacional"] == state]
     if urgency:
@@ -313,7 +325,8 @@ def calendar(db_path, *, contest_id=None, group=None, state=None, urgency=None,
             "unidade": "prazo (concurso × grupo × escopo de cargo)",
             "universo": ("todo grupo de prazo com ao menos uma proposta no concurso; "
                          "inclui passados e sem data"),
-            "filtros": {"contest_id": contest_id, "group": group, "state": state,
+            "filtros": {"contest_id": contest_id, "group": group,
+                        "groups": sorted(selecionados), "state": state,
                         "urgency": urgency},
             "referencia": {"hoje_local": today.isoformat(), "fuso": "America/Recife"},
             "rejeitados": ("proposta rejeitada não sustenta valor; o grupo continua "

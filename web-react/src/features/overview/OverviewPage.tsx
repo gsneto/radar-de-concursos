@@ -23,6 +23,7 @@ import {
   siShort,
   siTones,
 } from '@/lib/domain';
+import { OPERATIONAL_GROUPS, UPCOMING_DAYS, isOperationalGroup, isUpcoming } from '@/lib/deadlines';
 import { duration, integer, longToday, percent, percentOf, relativeDays, shortDate, truncate } from '@/lib/format';
 import type { Deadline, Opportunity } from '@/lib/types';
 
@@ -61,7 +62,8 @@ export function OverviewPage() {
   const coverage = useCoverage();
   const timeline = useTimeline();
   const study = useStudyPanel();
-  const deadlines = useDeadlines({ urgency: 'ate_7_dias', limit: 6 });
+  // Próximos prazos = o que exige ação (inscrição, isenção, prova) em até 30 dias.
+  const deadlines = useDeadlines({ groups: OPERATIONAL_GROUPS, limit: 60 });
 
   const items = portfolio.data?.itens ?? [];
   const total = portfolio.data?.total ?? 0;
@@ -97,15 +99,19 @@ export function OverviewPage() {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3);
 
-  const upcoming = (deadlines.data?.itens ?? []).filter(
-    (deadline, index, all) =>
-      all.findIndex(
-        (other) =>
-          other.grupo === deadline.grupo &&
-          other.valor === deadline.valor &&
-          other.contest_id === deadline.contest_id,
-      ) === index,
-  );
+  // Duas defesas: o servidor já recorta, mas dado antigo em cache não pode reintroduzir
+  // resultado de isenção nem prazo fora da janela no card.
+  const upcoming = (deadlines.data?.itens ?? [])
+    .filter((deadline) => isOperationalGroup(deadline.grupo) && isUpcoming(deadline.urgencia))
+    .filter(
+      (deadline, index, all) =>
+        all.findIndex(
+          (other) =>
+            other.grupo === deadline.grupo &&
+            other.valor === deadline.valor &&
+            other.contest_id === deadline.contest_id,
+        ) === index,
+    );
 
   return (
     <>
@@ -340,7 +346,7 @@ export function OverviewPage() {
 
         <Card
           title="Prazos próximos"
-          subtitle="Somente datas futuras com documento e estado de verificação."
+          subtitle={`Inscrição, isenção e prova em até ${UPCOMING_DAYS} dias, com documento e estado de verificação.`}
           action={
             <Link to="/prazos" className="text-2xs font-medium text-accent hover:underline">
               Calendário
@@ -353,7 +359,7 @@ export function OverviewPage() {
             <ErrorState message={deadlines.error.message} onRetry={() => deadlines.refetch()} />
           ) : !upcoming.length ? (
             <EmptyState
-              title="Nenhum prazo em até 7 dias"
+              title={`Nenhum prazo de inscrição, isenção ou prova em até ${UPCOMING_DAYS} dias`}
               description="Datas passadas continuam no histórico; datas candidatas não viram prazo confirmado."
             />
           ) : (

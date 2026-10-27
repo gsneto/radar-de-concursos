@@ -306,6 +306,60 @@ class DimensionTest(Base):
         self.assertNotIn("confirmado", report["por_situacao"])
 
 
+class GroupsFilterTest(Base):
+    """Recorte por vários grupos: o resumo conta só o que foi pedido."""
+
+    def four_groups(self):
+        _, version = add_document(self.db, "c1", text=THREE_EVENTS)
+        for field, value, quote in (
+                ("registration_end", "2026-11-26", REG_QUOTE),
+                ("exemption_end", "2026-10-21", EXEMPTION_QUOTE),
+                ("exam_date", "2027-04-18", EXAM_QUOTE),
+                ("exemption_result_final", "2026-10-30",
+                 "Resultado final da isenção em 30 de outubro de 2026")):
+            add_proposal(self.db, "c1", version_id=version, field=field,
+                         value=value, quote=quote)
+
+    def test_groups_traz_apenas_os_grupos_pedidos(self):
+        self.four_groups()
+        report = deadline_calendar.calendar(
+            self.db, groups=["inscricao_fim", "isencao_fim", "data_prova"], now=NOON)
+        self.assertEqual(set(report["por_grupo"]),
+                         {"inscricao_fim", "isencao_fim", "data_prova"})
+        self.assertEqual(report["total"], 3)
+        self.assertEqual(sum(report["por_urgencia"].values()), report["total"])
+        self.assertEqual(report["denominador"]["filtros"]["groups"],
+                         ["data_prova", "inscricao_fim", "isencao_fim"])
+
+    def test_resultado_de_isencao_fica_fora_do_recorte(self):
+        self.four_groups()
+        operacionais = deadline_calendar.calendar(
+            self.db, groups=["inscricao_fim", "isencao_fim", "data_prova"], now=NOON)
+        self.assertNotIn("resultado_isencao_final", operacionais["por_grupo"])
+        completo = deadline_calendar.calendar(self.db, now=NOON)
+        self.assertIn("resultado_isencao_final", completo["por_grupo"])
+        self.assertGreater(completo["total"], operacionais["total"])
+
+    def test_groups_vazio_ou_ausente_nao_filtra(self):
+        self.four_groups()
+        sem_filtro = deadline_calendar.calendar(self.db, now=NOON)
+        vazio = deadline_calendar.calendar(self.db, groups=[], now=NOON)
+        self.assertEqual(sem_filtro["total"], vazio["total"])
+        self.assertEqual(sem_filtro["por_grupo"], vazio["por_grupo"])
+
+    def test_group_especifico_manda_sobre_groups(self):
+        self.four_groups()
+        report = deadline_calendar.calendar(
+            self.db, group="inscricao_fim", groups=["inscricao_fim", "data_prova"],
+            now=NOON)
+        self.assertEqual(set(report["por_grupo"]), {"inscricao_fim"})
+
+    def test_grupo_invalido_em_groups_falha(self):
+        with self.assertRaises(ValueError):
+            deadline_calendar.calendar(self.db, groups=["inscricao_fim", "xyz"],
+                                       now=NOON)
+
+
 class VerifyVersionTest(Base):
     def prepare(self):
         document_id, version = add_document(self.db, "c1", text="Inscrições até 01/12/2026.")
@@ -439,6 +493,18 @@ class ApiTest(Base):
         self.assertEqual(status, 200)
         self.assertTrue(json.loads(body)["dry_run"])
         self.assertEqual(self.counts()[3], 0)
+
+    def test_calendario_com_groups(self):
+        # O fixture só tem `inscricao_fim`; `data_prova` é pedido válido e fica vazio.
+        status, body = self.request(
+            "/api/prazos/calendario?groups=inscricao_fim,data_prova")
+        self.assertEqual(status, 200)
+        payload = json.loads(body)
+        self.assertEqual(set(payload["por_grupo"]), {"inscricao_fim"})
+        self.assertEqual(payload["denominador"]["filtros"]["groups"],
+                         ["data_prova", "inscricao_fim"])
+        status, _ = self.request("/api/prazos/calendario?groups=inscricao_fim,xyz")
+        self.assertEqual(status, 400)
 
     def test_verificar_documento_sem_versao(self):
         status, _ = self.request("/api/prazos/verificar-documento", "POST", {})

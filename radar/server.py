@@ -1042,7 +1042,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                               scope=query.get("scope", [None])[0])
         elif path == "/api/prazos/calendario":
             query = parse_qs(parts.query)
-            allowed = {"limit", "offset", "contest_id", "group", "state", "urgency"}
+            allowed = {"limit", "offset", "contest_id", "group", "groups", "state",
+                       "urgency"}
             if set(query) - allowed:
                 self._bad_request("parâmetros inválidos")
                 return
@@ -1053,9 +1054,12 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._bad_request("parâmetros inválidos")
                 return
             from radar import deadline_calendar
+            groups = [item.strip() for item in query.get("groups", [""])[0].split(",")
+                      if item.strip()]
             self._serve_study(deadline_calendar.calendar, limit=limit, offset=offset,
                               contest_id=query.get("contest_id", [None])[0],
                               group=query.get("group", [None])[0],
+                              groups=groups,
                               state=query.get("state", [None])[0],
                               urgency=query.get("urgency", [None])[0])
         elif path == "/api/prazos/auditoria":

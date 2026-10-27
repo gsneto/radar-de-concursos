@@ -354,6 +354,18 @@ Desde a Fase 46 esta interface fica em `http://127.0.0.1:8000/legacy/` (rotas `#
 [`docs/superpowers/specs/2026-10-19-frontend-produto-design.md`](docs/superpowers/specs/2026-10-19-frontend-produto-design.md)
 e [`docs/superpowers/plans/2026-10-19-frontend-produto-prova-real.md`](docs/superpowers/plans/2026-10-19-frontend-produto-prova-real.md).
 
+## Recorte de "Prazos próximos"
+
+O card de próximos prazos e a página **Prazos** abrem no recorte que exige ação:
+**inscrição (início/fim), isenção (início/fim) e data da prova**, em até **30 dias**.
+Resultado preliminar/final da isenção e recurso da isenção não aparecem por padrão -
+são acompanhamento, não prazo a cumprir. Eles continuam acessíveis escolhendo
+"Todos os eventos" na página Prazos, e o dossiê do concurso sempre mostra tudo.
+
+O recorte é feito no servidor (`GET /api/prazos/calendario?groups=...`), então as
+contagens do resumo correspondem à lista exibida. Datas de calendário (`YYYY-MM-DD`)
+são formatadas sem deslocamento de fuso.
+
 ## Interface React "Observatório" (Fase 46)
 
 A raiz `http://127.0.0.1:8000/` serve o app React (`web-react/`): visão geral, oportunidades,
