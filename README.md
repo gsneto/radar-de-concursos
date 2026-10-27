@@ -341,17 +341,50 @@ continuam acessíveis em **Operação**.
 python -m radar serve --db .\data\radar.sqlite3
 ```
 
-Abra `http://127.0.0.1:8000/`. Rotas: `#/visao-geral`, `#/oportunidades`, `#/prazos`,
-`#/estudos`, `#/historico`, `#/configuracoes`, `#/operacao` e `#/dossie/<uuid>`.
-Design, arquitetura e evidências de validação:
+Desde a Fase 46 esta interface fica em `http://127.0.0.1:8000/legacy/` (rotas `#/visao-geral`,
+`#/oportunidades`, `#/prazos`, `#/estudos`, `#/historico`, `#/configuracoes`, `#/operacao`,
+`#/dossie/<uuid>`). Design e evidências:
 [`docs/superpowers/specs/2026-10-19-frontend-produto-design.md`](docs/superpowers/specs/2026-10-19-frontend-produto-design.md)
 e [`docs/superpowers/plans/2026-10-19-frontend-produto-prova-real.md`](docs/superpowers/plans/2026-10-19-frontend-produto-prova-real.md).
 
-## Testes
+## Interface React "Observatório" (Fase 46)
+
+A raiz `http://127.0.0.1:8000/` serve o app React (`web-react/`): visão geral, oportunidades,
+dossiê, prazos, estudos, histórico, configurações e operação, com URLs reais
+(`/oportunidades`, `/dossie/<uuid>`, `/estudos/simulados`...). O build `web-react/dist/` é
+**versionado**, então `python -m radar serve` funciona **sem Node**. Rotas `/api/*`
+desconhecidas continuam respondendo 404, nunca o app.
+
+Para desenvolver o frontend (Node 24):
 
 ```powershell
-python -m unittest discover -s tests -q
+cd web-react
+npm ci
+npm run dev        # http://127.0.0.1:5173, com /api redirecionado para o servidor em :8000
+npm test           # vitest
+npm run build      # gera dist/; commite dist/ junto com a mudança de frontend
 ```
+
+O CI recusa mudança de frontend sem `dist/` atualizado. Spec:
+[`docs/superpowers/specs/2026-10-22-frontend-react-observatorio-design.md`](docs/superpowers/specs/2026-10-22-frontend-react-observatorio-design.md).
+
+## Instalação e testes
+
+Python 3.11 em um ambiente virtual próprio do projeto:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m unittest discover -s tests -t .
+```
+
+Sem `pypdf`/`pymupdf` instalados, os testes de PDF e OCR falham por dependência, não por
+defeito. Testes que dependem da base real (`data/`, fora do Git) são pulados quando ela não
+existe. O GitHub Actions (`.github/workflows/ci.yml`) roda a suíte Python no Windows e
+`tsc`, `vitest` e build do React no Linux.
+
+Execução local: `python -m radar serve --db .\data\radar.sqlite3` (servidor só em loopback,
+sem autenticação, por desenho; não exponha a porta na rede).
 
 ## Limitações
 

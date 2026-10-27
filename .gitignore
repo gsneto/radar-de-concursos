@@ -6,6 +6,8 @@ __pycache__/
 .venv/
 node_modules/
 dist/
+# Build do app React é versionado: `python -m radar serve` funciona sem Node (spec F46 §12).
+!web-react/dist/
 build/
 *.log
 .superpowers/

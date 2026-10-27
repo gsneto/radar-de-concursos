@@ -116,6 +116,8 @@ export function safeUrl(value: unknown): string | null {
 }
 
 export function percentOf(part: unknown, total: unknown): number | null {
+  // Number(null) === 0: sem esta guarda, parte desconhecida viraria "0%".
+  if (isMissing(part) || isMissing(total)) return null;
   const p = Number(part);
   const t = Number(total);
   if (!Number.isFinite(p) || !Number.isFinite(t) || t <= 0) return null;
