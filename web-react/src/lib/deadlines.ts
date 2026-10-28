@@ -27,6 +27,35 @@ export function groupsParam(groups: readonly string[] | null | undefined): strin
   return groups.join(',');
 }
 
+interface DeadlineLike {
+  grupo: string;
+  estado_temporal?: string | null;
+  dias_restantes?: number | null;
+  valor?: string | null;
+}
+
+/**
+ * Próximo prazo que exige ação, não o próximo evento qualquer.
+ *
+ * Sem o recorte, uma oportunidade aparecia com "Recurso da isenção · amanhã" como
+ * prazo principal, escondendo a inscrição que de fato importa.
+ */
+export function nextOperationalDeadline<T extends DeadlineLike>(
+  prazos: readonly T[] | null | undefined,
+): T | null {
+  if (!prazos || !prazos.length) return null;
+  const future = prazos
+    .filter(
+      (item) =>
+        isOperationalGroup(item.grupo) &&
+        item.estado_temporal === 'futuro' &&
+        item.dias_restantes !== null &&
+        item.dias_restantes !== undefined,
+    )
+    .sort((a, b) => (a.dias_restantes ?? 0) - (b.dias_restantes ?? 0));
+  return future[0] ?? null;
+}
+
 /** Janela do card de próximos prazos, em dias. */
 export const UPCOMING_DAYS = 30;
 

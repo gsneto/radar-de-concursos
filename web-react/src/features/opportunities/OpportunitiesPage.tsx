@@ -19,6 +19,7 @@ import {
   siTones,
   urgencyLabels,
 } from '@/lib/domain';
+import { nextOperationalDeadline } from '@/lib/deadlines';
 import { integer, relativeDays, shortDate } from '@/lib/format';
 import type { Deadline, Opportunity } from '@/lib/types';
 
@@ -37,12 +38,9 @@ const sortLabels: Record<SortKey, string> = {
   concurso: 'Concurso (página)',
 };
 
-function nextDeadline(item: Opportunity): Deadline | null {
-  const future = item.prazos
-    .filter((d) => d.estado_temporal === 'futuro' && d.dias_restantes !== null)
-    .sort((a, b) => (a.dias_restantes ?? 9999) - (b.dias_restantes ?? 9999));
-  return future[0] ?? null;
-}
+// Só prazo que exige ação: recurso/resultado de isenção não é o prazo da oportunidade.
+const nextDeadline = (item: Opportunity): Deadline | null =>
+  nextOperationalDeadline(item.prazos);
 
 function dossierLink(item: Opportunity): string {
   const params = new URLSearchParams();
@@ -166,6 +164,9 @@ export function OpportunitiesPage() {
             <Search size={15} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-fg-3" />
             <input
               type="search"
+              name="busca"
+              autoComplete="off"
+              spellCheck={false}
               value={searchDraft}
               onChange={(event) => setSearchDraft(event.target.value)}
               placeholder="Buscar por concurso, órgão, cargo ou especialidade"
@@ -290,7 +291,68 @@ export function OpportunitiesPage() {
       ) : (
         <>
           <Card flush>
-            <div className="overflow-x-auto">
+            {/* Abaixo de 768px a tabela vira lista de cartões (spec §9): sem rolagem lateral. */}
+            <ul className="divide-y divide-line/70 md:hidden">
+              {items.map((item) => {
+                const deadline = nextDeadline(item);
+                return (
+                  <li key={`${item.contest_id}-${item.scope}`} className="p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <Link
+                          to={dossierLink(item)}
+                          className="block truncate text-[13px] font-medium text-fg hover:text-accent"
+                        >
+                          {item.contest_label ?? item.competition_id ?? 'Concurso'}
+                        </Link>
+                        <span className="mt-0.5 block truncate text-2xs text-fg-3">
+                          {item.role_name ?? 'Cargo não reconciliado'}
+                        </span>
+                      </div>
+                      <LinkButton to={dossierLink(item)} variant="ghost" size="sm">
+                        Abrir
+                      </LinkButton>
+                    </div>
+
+                    <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-2xs">
+                      <div className="col-span-2">
+                        <dt className="text-fg-3">Local</dt>
+                        <dd className="text-fg-2">{locationText(item)}</dd>
+                      </div>
+                      <div className="col-span-2">
+                        <dt className="text-fg-3">Prazo</dt>
+                        <dd className="text-fg">
+                          {deadline ? (
+                            <>
+                              {deadline.grupo_label}{' '}
+                              <span className="text-fg-3">
+                                {shortDate(deadline.valor)} · {relativeDays(deadline.dias_restantes)}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-fg-3">Sem prazo futuro</span>
+                          )}
+                        </dd>
+                      </div>
+                    </dl>
+
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      <Badge tone={siTones[item.si.estado] ?? 'neutral'}>
+                        {siShort[item.si.estado] ?? item.si.estado}
+                      </Badge>
+                      <Badge tone={indigenousTones[item.indigenas.estado] ?? 'neutral'}>
+                        {indigenousShort[item.indigenas.estado] ?? item.indigenas.estado}
+                      </Badge>
+                      <Badge tone={readinessTones[item.prontidao.estado] ?? 'unknown'}>
+                        {item.prontidao.estado_label}
+                      </Badge>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full min-w-[760px] border-collapse text-xs">
                 <caption className="sr-only">Lista de oportunidades</caption>
                 <thead>
@@ -439,6 +501,8 @@ function Filter({
     <label className="flex min-w-0 flex-col gap-1">
       <span className="text-[9px] font-semibold tracking-[0.08em] text-fg-3 uppercase">{label}</span>
       <select
+        name={label.toLowerCase().replace(/\s+/g, '-')}
+        autoComplete="off"
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="h-8 min-w-[124px] appearance-none rounded-sm border border-line-strong bg-surface-2 bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2210%22%20height%3D%2210%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2366738a%22%20stroke-width%3D%222%22%3E%3Cpath%20d%3D%22M6%209l6%206%206-6%22/%3E%3C/svg%3E')] bg-[position:right_8px_center] bg-no-repeat pr-7 pl-2.5 text-xs text-fg outline-none transition-colors focus:border-accent/60"

@@ -92,7 +92,11 @@ export function Shell() {
           onOpenMobile={() => setMobileOpen(true)}
           onOpenPalette={() => setPaletteOpen(true)}
         />
-        <main id="conteudo" tabIndex={-1} className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-5 outline-none lg:px-6 lg:py-6">
+        <main
+          id="conteudo"
+          tabIndex={-1}
+          className="mx-auto w-full max-w-[1400px] flex-1 overflow-x-clip px-4 py-5 outline-none lg:px-6 lg:py-6"
+        >
           <Outlet />
         </main>
         <footer className="border-t border-line px-4 py-4 text-[10px] text-fg-3 lg:px-6">

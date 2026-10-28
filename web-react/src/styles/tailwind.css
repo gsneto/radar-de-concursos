@@ -29,6 +29,8 @@
   --color-mist-100: #e8edf5;
   --color-mist-200: #cbd5e5;
   --color-mist-300: #98a4b8;
+  /* mist-350 existe para o texto terciário: #66738a dava 3,46–4,16:1 (abaixo de 4,5). */
+  --color-mist-350: #7c8aa3;
   --color-mist-400: #66738a;
   --color-mist-500: #4a5568;
 
@@ -43,7 +45,7 @@
   /* --- Semânticos: texto ------------------------------------------------ */
   --color-fg: var(--color-mist-100);
   --color-fg-2: var(--color-mist-300);
-  --color-fg-3: var(--color-mist-400);
+  --color-fg-3: var(--color-mist-350);
   --color-fg-inverse: #0b0e14;
 
   /* --- Semânticos: ação -------------------------------------------------- */
@@ -110,6 +112,8 @@
   }
 
   html {
+    /* Declarado no CSS (não só no meta): define barra de rolagem e controles nativos escuros. */
+    color-scheme: dark;
     background: var(--color-bg);
     color: var(--color-fg);
     font-family: var(--font-sans);

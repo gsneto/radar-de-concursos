@@ -50,7 +50,8 @@ export function StudiesPage() {
         description="Sessões, revisões, questões e simulados registrados no servidor local. Nenhum percentual é exibido sem denominador."
       />
 
-      <div role="tablist" aria-label="Seções de estudos" className="mb-3 flex gap-1 overflow-x-auto border-b border-line pb-px">
+      {/* Quebra em duas linhas no celular: antes a última aba ficava fora da tela. */}
+      <div role="tablist" aria-label="Seções de estudos" className="mb-3 flex flex-wrap gap-1 border-b border-line pb-px">
         {TABS.map(([path, text]) => (
           <button
             key={path}

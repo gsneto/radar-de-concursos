@@ -23,7 +23,13 @@ import {
   siShort,
   siTones,
 } from '@/lib/domain';
-import { OPERATIONAL_GROUPS, UPCOMING_DAYS, isOperationalGroup, isUpcoming } from '@/lib/deadlines';
+import {
+  OPERATIONAL_GROUPS,
+  UPCOMING_DAYS,
+  isOperationalGroup,
+  isUpcoming,
+  nextOperationalDeadline,
+} from '@/lib/deadlines';
 import { duration, integer, longToday, percent, percentOf, relativeDays, shortDate, truncate } from '@/lib/format';
 import type { Deadline, Opportunity } from '@/lib/types';
 
@@ -44,12 +50,9 @@ const causeLabels: Record<string, string> = {
   extraido_ambiguo: 'Extração ambígua',
 };
 
-function nextDeadline(item: Opportunity): Deadline | null {
-  const future = item.prazos
-    .filter((d) => d.estado_temporal === 'futuro' && d.dias_restantes !== null)
-    .sort((a, b) => (a.dias_restantes ?? 9999) - (b.dias_restantes ?? 9999));
-  return future[0] ?? null;
-}
+// Só prazo que exige ação: recurso/resultado de isenção não é o prazo da oportunidade.
+const nextDeadline = (item: Opportunity): Deadline | null =>
+  nextOperationalDeadline(item.prazos);
 
 function dossierLink(item: Opportunity): string {
   const params = new URLSearchParams();

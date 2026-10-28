@@ -320,6 +320,40 @@ class ReadyStateTest(unittest.TestCase):
         self.assertEqual(resumo["linhas_divergentes"], 1)
 
 
+class ResultCacheTest(unittest.TestCase):
+    """Cache do resultado não pode servir estado velho depois de uma decisão."""
+
+    def setUp(self):
+        self.tmp, self.db = make_db()
+        self.addCleanup(self.tmp.cleanup)
+        _, version = add_document(self.db, "c1", text="CARGO A 1 0 0 0 0 0 0 1")
+        self.proposal = _prop(self.db, "c1", version=version,
+                              field="immediate_vacancies", value=1,
+                              quote="CARGO A 1 0 0 0 0 0 0 1")
+
+    def test_resultado_igual_em_chamadas_repetidas(self):
+        first = review_groups.groups(self.db, now=NOON)
+        second = review_groups.groups(self.db, now=NOON)
+        self.assertEqual(first["total"], second["total"])
+        self.assertEqual(first["itens"][0]["pendentes"], second["itens"][0]["pendentes"])
+
+    def test_objeto_devolvido_nao_e_compartilhado(self):
+        first = review_groups.groups(self.db, now=NOON)
+        first["itens"][0]["pendentes"] = 999
+        second = review_groups.groups(self.db, now=NOON)
+        self.assertEqual(second["itens"][0]["pendentes"], 1)
+
+    def test_decisao_invalida_o_cache(self):
+        antes = review_groups.groups(self.db, state="todos", now=NOON)
+        self.assertEqual(antes["itens"][0]["pendentes"], 1)
+        self.assertEqual(antes["resumo"]["decisoes_registradas"], 0)
+        review.decide_proposal(self.db, self.proposal, "validado", reviewer="teste",
+                               reason="conferido", origin="cli")
+        depois = review_groups.groups(self.db, state="todos", now=NOON)
+        self.assertEqual(depois["itens"][0]["estado"], "decidido")
+        self.assertEqual(depois["resumo"]["decisoes_registradas"], 1)
+
+
 class CrossPageAuditTest(unittest.TestCase):
     def setUp(self):
         self.tmp, self.db = make_db()

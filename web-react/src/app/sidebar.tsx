@@ -83,7 +83,7 @@ export function Sidebar({
           <div key={group.label} className="mb-4 last:mb-0">
             <p
               className={cn(
-                'mb-1 px-2 text-[9px] font-semibold tracking-[0.14em] text-fg-3/70 uppercase',
+                'mb-1 px-2 text-[9px] font-semibold tracking-[0.14em] text-fg-3 uppercase',
                 collapsed && 'lg:hidden',
               )}
             >
@@ -145,7 +145,7 @@ export function Sidebar({
         </button>
         <p
           className={cn(
-            'mt-1 flex items-center gap-1.5 px-2 py-1 text-[10px] text-fg-3/80',
+            'mt-1 flex items-center gap-1.5 px-2 py-1 text-[10px] text-fg-3',
             collapsed && 'lg:justify-center lg:px-0',
           )}
         >

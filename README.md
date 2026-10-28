@@ -366,6 +366,29 @@ O recorte é feito no servidor (`GET /api/prazos/calendario?groups=...`), então
 contagens do resumo correspondem à lista exibida. Datas de calendário (`YYYY-MM-DD`)
 são formatadas sem deslocamento de fuso.
 
+A página **Prazos** separa as situações em abas (Próximos, Mais adiante, Vencidos, Sem
+data) com paginação de 25 itens e estado na URL (`?aba=&pagina=`): antes eram 119 linhas
+de uma vez, com 81 vencidos empurrando o único prazo futuro para fora da tela.
+
+## Interface: acessibilidade e uso no celular
+
+- Texto terciário (`fg-3`) foi escurecido para `#7c8aa3`: o anterior (#66738a) ficava em
+  3,46–4,16:1, abaixo do mínimo 4,5:1 da spec. O contraste dos tokens é verificado por
+  teste (`src/styles/tokens.test.ts`), não estimado.
+- Abaixo de 768px as tabelas de Oportunidades e Prazos viram listas de cartões, sem
+  rolagem horizontal; as abas de Estudos e Prazos quebram linha em vez de esconder itens.
+- `color-scheme: dark` declarado no CSS (barra de rolagem e controles nativos escuros) e
+  `theme-color` no HTML.
+
+## Desempenho da revisão por linha
+
+`/api/revisao/grupos` monta a página em ~2 s sobre 15 mil propostas. O resultado agora é
+mantido em memória e invalidado por assinatura da base (arquivo + contagens de
+`propostas_campo`, `revisoes_campo`, `valores_atuais`, `reconciliacoes_cargo`), então
+qualquer decisão derruba o cache e nada velho é servido. Repetir a consulta cai de ~2 s
+para ~0,01 s; a primeira leitura após iniciar o servidor ainda paga ~9 s de reparse dos
+PDFs (cache de contexto em processo).
+
 ## Interface React "Observatório" (Fase 46)
 
 A raiz `http://127.0.0.1:8000/` serve o app React (`web-react/`): visão geral, oportunidades,

@@ -17,7 +17,10 @@ exposta como `rotulo_divergente`; não é corrigida aqui.
 
 from __future__ import annotations
 
+import copy
 import json
+import os
+import threading
 from contextlib import closing
 from datetime import datetime, timezone
 from hashlib import sha256
@@ -69,7 +72,30 @@ TABLE_METHODS = ("quadro-colunas-pdf", "distribuicao-texto")
 # Cache em processo do contexto de linha. A chave inclui a versão (imutável) e a versão do
 # parser: mudar o parser invalida; a base não muda o resultado de uma versão já gravada.
 _CONTEXT_CACHE: dict = {}
-_CONTEXT_LOCK = __import__("threading").Lock()
+_CONTEXT_LOCK = threading.Lock()
+
+# Cache do resultado montado. Montar a página custa ~2 s sobre 15 mil propostas; a mesma
+# consulta se repete ao navegar. A chave inclui a assinatura da base, então qualquer
+# decisão (escrita) invalida — nunca se serve estado velho de revisão.
+_GROUPS_CACHE: dict = {}
+_GROUPS_LOCK = threading.Lock()
+_GROUPS_CACHE_LIMIT = 16
+_GROUPS_CACHE_STATS = {"hits": 0, "misses": 0}
+
+
+def _signature(conn, db_path) -> tuple:
+    """Impressão barata da base: arquivo + contagens das tabelas que mudam a resposta."""
+    try:
+        stat = os.stat(db_path)
+        stamp = (stat.st_mtime_ns, stat.st_size)
+    except OSError:  # pragma: no cover - banco em memória/temporário
+        stamp = (0, 0)
+    counts = tuple(
+        conn.execute("SELECT COUNT(*) FROM " + table).fetchone()[0]
+        for table in ("propostas_campo", "revisoes_campo", "valores_atuais",
+                      "reconciliacoes_cargo")
+    )
+    return (stamp, counts)
 
 
 def _now(now=None):
@@ -90,9 +116,11 @@ def linha_id(key: tuple) -> str:
 
 
 def cache_stats() -> dict:
-    """Situação do cache em processo (diagnóstico; não expõe conteúdo)."""
-    with _CONTEXT_LOCK:
-        return {"versoes": len(_CONTEXT_CACHE)}
+    """Situação dos caches em processo (diagnóstico; não expõe conteúdo)."""
+    with _CONTEXT_LOCK, _GROUPS_LOCK:
+        return {"versoes": len(_CONTEXT_CACHE), "paginas": len(_GROUPS_CACHE),
+                "hits": _GROUPS_CACHE_STATS["hits"],
+                "misses": _GROUPS_CACHE_STATS["misses"]}
 
 
 def _contexts(db_path, versions):
@@ -100,9 +128,11 @@ def _contexts(db_path, versions):
     from radar import modality_legend, reprocess, vacancy_columns, vacancy_inline
 
     parser_version = vacancy_columns.VERSION
+    # Caminho resolvido: CLI e servidor apontando para o mesmo banco compartilham o cache.
+    root = os.path.abspath(str(db_path))
     out = {}
     for version in versions:
-        cache_key = (str(db_path), version, parser_version)
+        cache_key = (root, version, parser_version)
         with _CONTEXT_LOCK:
             cached = _CONTEXT_CACHE.get(cache_key)
         if cached is not None:
@@ -317,6 +347,19 @@ def groups(db_path, *, contest_id=None, document_id=None, version_id=None,
     with closing(connect_documents(db_path)) as conn:
         if not is_readable_schema(conn):
             raise ValueError("migração documental pendente")
+        cache_key = (_signature(conn, db_path), contest_id, document_id, version_id,
+                     state, field_name, contexto, linha, limit, offset,
+                     now_dt.date().isoformat())
+        with _GROUPS_LOCK:
+            cached = _GROUPS_CACHE.get(cache_key)
+            if cached is not None:
+                _GROUPS_CACHE_STATS["hits"] += 1
+                resposta = copy.deepcopy(cached)
+                # O instante da consulta é sempre o desta chamada, não o da montagem.
+                resposta["generated_at"] = now_dt.isoformat()
+                resposta["denominador"]["referencia"] = now_dt.isoformat()
+                return resposta
+            _GROUPS_CACHE_STATS["misses"] += 1
         rows = review._rows(conn)
         reconciled = review._reconciled_map(conn)
         editais = review._official_editais(conn)
@@ -523,7 +566,7 @@ def groups(db_path, *, contest_id=None, document_id=None, version_id=None,
         "valores_vigentes": totals["vigentes"],
         "lotes_abertos": totals["lotes_abertos"],
     }
-    return {
+    resultado = {
         "version": GROUP_VERSION, "generated_at": now_dt.isoformat(),
         "total": total, "limit": limit, "offset": offset,
         "has_more": offset + len(page) < total,
@@ -544,6 +587,11 @@ def groups(db_path, *, contest_id=None, document_id=None, version_id=None,
                       "mantém estado e histórico próprios. Soma correta não confirma "
                       "interpretação; divergência não autoriza trocar o total publicado."),
     }
+    with _GROUPS_LOCK:
+        if len(_GROUPS_CACHE) >= _GROUPS_CACHE_LIMIT:
+            _GROUPS_CACHE.clear()
+        _GROUPS_CACHE[cache_key] = copy.deepcopy(resultado)
+    return resultado
 
 
 def repair_summary(db_path) -> dict:
