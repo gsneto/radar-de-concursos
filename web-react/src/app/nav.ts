@@ -1,6 +1,7 @@
 import {
   BookOpen,
   CalendarDays,
+  ClipboardCheck,
   ClipboardList,
   Compass,
   Gauge,
@@ -32,6 +33,7 @@ export const navGroups: NavGroup[] = [
       { to: '/', label: 'Visão geral', icon: Gauge, end: true },
       { to: '/oportunidades', label: 'Oportunidades', icon: Compass },
       { to: '/prazos', label: 'Prazos', icon: CalendarDays },
+      { to: '/revisao', label: 'Revisão', icon: ClipboardCheck },
     ],
   },
   {

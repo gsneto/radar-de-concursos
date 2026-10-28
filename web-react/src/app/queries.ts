@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, qs } from '@/lib/api';
 import type {
   ContestDetails,
@@ -11,6 +11,7 @@ import type {
   Performance,
   Portfolio,
   Preferences,
+  ReviewGroups,
   StudyPanel,
   StudySession,
   Timeline,
@@ -226,6 +227,54 @@ export function useContestDetails(contestId: string | undefined) {
     queryFn: () =>
       api.get<ContestDetails>(`/api/concursos/${encodeURIComponent(contestId!)}/detalhes`),
     enabled: Boolean(contestId),
+  });
+}
+
+export type ReviewState = 'prontos' | 'aberto' | 'decidido' | 'todos';
+
+export function useReviewGroups(state: ReviewState, limit = 20, offset = 0) {
+  return useQuery({
+    queryKey: ['review-groups', state, limit, offset] as const,
+    queryFn: () =>
+      api.get<ReviewGroups>(
+        `/api/revisao/grupos${qs({ state, limit, offset })}`,
+      ),
+    staleTime: 30_000,
+  });
+}
+
+export interface DecisionInput {
+  proposalId: string;
+  decision: 'validado' | 'rejeitado' | 'adiado' | 'ambiguo' | 'nova_extracao';
+  reviewer: string;
+  reason: string;
+  evidenceSha256: string;
+  scopeSnapshot: string[];
+}
+
+/**
+ * Decisão humana por campo. A interface declara a impressão da evidência vista
+ * (`evidence_sha256`) e o escopo no momento da abertura: o servidor recusa se
+ * algo mudou desde então.
+ */
+export function useDecideProposal() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: DecisionInput) =>
+      api.post<{ decision: string; duplicada?: boolean }>(
+        `/api/revisao/proposta/${encodeURIComponent(input.proposalId)}`,
+        {
+          decision: input.decision,
+          reviewer: input.reviewer,
+          reason: input.reason,
+          origin: 'interface',
+          evidence_sha256: input.evidenceSha256,
+          scope_snapshot: input.scopeSnapshot,
+        },
+      ),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['review-groups'] });
+    },
   });
 }
 

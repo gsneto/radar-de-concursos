@@ -375,3 +375,87 @@ export interface FlashcardStats {
   pct_acerto: number | null;
   basis: string;
 }
+
+/* --- Revisão humana por linha documental --------------------------------- */
+
+export interface ReviewEvidence {
+  quote: string | null;
+  page_number: number | null;
+  version_id: string;
+  start_offset: number | null;
+  end_offset: number | null;
+  document_id: string;
+}
+
+export interface ReviewProposal {
+  proposal_id: string;
+  field_name: string;
+  field_label: string;
+  value: unknown;
+  state: string;
+  last_decision: string | null;
+  selected: boolean;
+  consequencia?: string | null;
+  historico: { decision: string; reviewed_at: string; reviewer: string; reason: string }[];
+  ambiguity_reason: string | null;
+  extraction_method: string;
+  evidence_sha256: string;
+  scope_snapshot: string[];
+  evidence: ReviewEvidence;
+}
+
+export interface ReviewValidation {
+  tipo: string;
+  publicado: number | null;
+  soma: number | null;
+  diferenca: number | null;
+  estado: string;
+  regra: string;
+}
+
+export interface ReviewGroup {
+  linha_id: string;
+  contest_id: string;
+  competition_id: string | null;
+  document_id: string;
+  document_title: string | null;
+  tipo_documental: string | null;
+  issuer: string | null;
+  official_url: string | null;
+  version_id: string;
+  page_number: number | null;
+  scope: string;
+  scopes: string[];
+  identidade: 'reconciliado' | 'pendente';
+  prioridade: number;
+  estado: 'pendente' | 'parcial' | 'decidido';
+  estados: string[];
+  pendentes: number;
+  conflito: boolean;
+  contexto: { tipo?: string; trecho?: string | null; cargo?: string | null } | null;
+  validacao: ReviewValidation | null;
+  rotulo_divergente: { armazenado: string; parser: string } | null;
+  propostas: ReviewProposal[];
+  proxima_acao: string;
+}
+
+export interface ReviewGroups {
+  version: string;
+  generated_at: string;
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+  filtros: Record<string, unknown>;
+  resumo: {
+    linhas: number;
+    linhas_prontas: number;
+    linhas_divergentes: number;
+    propostas: number;
+    propostas_pendentes: number;
+    com_conflito: number;
+    decisoes_registradas: number;
+  };
+  itens: ReviewGroup[];
+  limitacao: string;
+}
