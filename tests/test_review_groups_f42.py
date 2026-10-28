@@ -4,6 +4,7 @@ import json
 import sqlite3
 import unittest
 from contextlib import closing
+from unittest import mock
 
 from radar import label_repair, review, review_groups, vacancy_columns
 from tests.test_portfolio_f36 import NOON, add_document, add_proposal, make_db
@@ -318,6 +319,65 @@ class ReadyStateTest(unittest.TestCase):
         self.assertEqual(resumo["linhas"], 2)
         self.assertEqual(resumo["linhas_prontas"], 1)
         self.assertEqual(resumo["linhas_divergentes"], 1)
+
+
+class DiskContextCacheTest(unittest.TestCase):
+    """Contexto de linha é reaproveitado entre processos, sem reparsear o PDF.
+
+    Reabrir 460 páginas custa ~9 s; o contexto só depende do artefato e da versão do
+    parser. O cache em disco evita pagar isso a cada reinício do servidor.
+    """
+
+    def setUp(self):
+        self.tmp, self.db = make_db()
+        self.addCleanup(self.tmp.cleanup)
+        pdf = _wide_pdf([
+            {"cargo": "Professor", "formacao": "Física", "escolaridade": "Superior",
+             "values": ["2", "0", "0", "0", "0", "1", "0", "3"]},
+        ])
+        _store_version(self.db, pdf)
+        review_groups._CONTEXT_CACHE.clear()
+
+    def tearDown(self):
+        review_groups._CONTEXT_CACHE.clear()
+
+    def _versions(self):
+        with closing(sqlite3.connect(self.db)) as conn:
+            return [row[0] for row in conn.execute("SELECT id FROM versoes_documento")]
+
+    def test_segundo_processo_nao_reparseia(self):
+        # Primeira carga: parseia e grava o cache em disco.
+        review_groups._contexts(self.db, self._versions())
+        review_groups._CONTEXT_CACHE.clear()  # simula reinício do processo
+        with mock.patch.object(vacancy_columns, "parse_wide_table",
+                               side_effect=AssertionError("reparseou o PDF")):
+            contexts = review_groups._contexts(self.db, self._versions())
+        self.assertTrue(contexts, "cache em disco não foi usado")
+        self.assertTrue(contexts[self._versions()[0]]["wide"]["rows"])
+
+    def test_versao_do_parser_invalida_o_cache(self):
+        review_groups._contexts(self.db, self._versions())
+        review_groups._CONTEXT_CACHE.clear()
+        with mock.patch.object(vacancy_columns, "VERSION", "quadro_colunas_v999"):
+            with mock.patch.object(vacancy_columns, "parse_wide_table",
+                                   wraps=vacancy_columns.parse_wide_table) as spy:
+                review_groups._contexts(self.db, self._versions())
+        self.assertTrue(spy.called, "mudar a versão do parser deveria reparsear")
+
+    def test_cache_corrompido_nao_quebra(self):
+        review_groups._contexts(self.db, self._versions())
+        cache_dir = review_groups._disk_cache_dir(self.db)
+        for path in cache_dir.glob("*.json"):
+            path.write_text("{ isto não é json", encoding="utf-8")
+        review_groups._CONTEXT_CACHE.clear()
+        contexts = review_groups._contexts(self.db, self._versions())
+        self.assertTrue(contexts[self._versions()[0]]["wide"]["rows"])
+
+    def test_falha_de_escrita_nao_impede_a_leitura(self):
+        with mock.patch.object(review_groups, "_write_disk_cache",
+                               side_effect=OSError("disco cheio")):
+            contexts = review_groups._contexts(self.db, self._versions())
+        self.assertTrue(contexts[self._versions()[0]]["wide"]["rows"])
 
 
 class ResultCacheTest(unittest.TestCase):

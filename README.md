@@ -382,12 +382,20 @@ de uma vez, com 81 vencidos empurrando o único prazo futuro para fora da tela.
 
 ## Desempenho da revisão por linha
 
-`/api/revisao/grupos` monta a página em ~2 s sobre 15 mil propostas. O resultado agora é
-mantido em memória e invalidado por assinatura da base (arquivo + contagens de
-`propostas_campo`, `revisoes_campo`, `valores_atuais`, `reconciliacoes_cargo`), então
-qualquer decisão derruba o cache e nada velho é servido. Repetir a consulta cai de ~2 s
-para ~0,01 s; a primeira leitura após iniciar o servidor ainda paga ~9 s de reparse dos
-PDFs (cache de contexto em processo).
+`/api/revisao/grupos` monta a página sobre 15 mil propostas. Há dois caches, ambos
+descartáveis:
+
+1. **Resultado da página**, em memória, invalidado por assinatura da base (arquivo +
+   contagens de `propostas_campo`, `revisoes_campo`, `valores_atuais`,
+   `reconciliacoes_cargo`): qualquer decisão derruba o cache, nada velho é servido.
+2. **Contexto de linha** (quadro, notação e distribuição em texto), em memória **e em
+   disco** em `data/<banco>.cache/contextos/`, com chave `sha256(versão dos parsers |
+   sha256 do artefato | versão do documento)`. Reiniciar o servidor não reparseia 460
+   páginas de PDF.
+
+Medido na base real (13.224 linhas, 6 versões com quadro): **9,6 s** sem cache,
+**1,5 s** com processo novo e cache em disco, **0,01 s** com memória quente. O cache
+fica em `data/` (fora do Git) e pode ser apagado a qualquer momento — é só reconstruído.
 
 ## Interface React "Observatório" (Fase 46)
 

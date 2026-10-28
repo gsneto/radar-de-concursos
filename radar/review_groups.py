@@ -24,6 +24,7 @@ import threading
 from contextlib import closing
 from datetime import datetime, timezone
 from hashlib import sha256
+from pathlib import Path
 
 from radar import review
 from radar.document_fields import LABEL_PREFIX
@@ -123,11 +124,50 @@ def cache_stats() -> dict:
                 "misses": _GROUPS_CACHE_STATS["misses"]}
 
 
+def _disk_cache_dir(db_path):
+    """Diretório do cache de contexto, ao lado do banco (dentro de `data/`, fora do Git)."""
+    path = os.path.abspath(str(db_path))
+    return Path(path + ".cache") / "contextos"
+
+
+def _read_disk_cache(db_path, key):
+    """Contexto já calculado para o mesmo artefato e parser; None se ausente/inválido."""
+    try:
+        with open(_disk_cache_dir(db_path) / (key + ".json"), encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _write_disk_cache(db_path, key, payload):
+    """Grava o contexto de forma atômica. Falha de escrita nunca impede a leitura."""
+    directory = _disk_cache_dir(db_path)
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / (key + ".json")
+    # Nome único por processo/thread: duas requisições simultâneas não disputam o temporário.
+    temporary = directory / f"{key}.{os.getpid()}.{threading.get_ident()}.tmp"
+    try:
+        with open(temporary, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle)
+        os.replace(temporary, target)
+    finally:
+        if temporary.exists():
+            try:
+                temporary.unlink()
+            except OSError:
+                pass
+
+
 def _contexts(db_path, versions):
-    """Contexto de linha por versão, lido do parser atual (somente leitura)."""
+    """Contexto de linha por versão, lido do parser atual (somente leitura).
+
+    O cálculo depende só do artefato (sha256) e da versão dos parsers, então o
+    resultado fica em cache em disco: reiniciar o servidor não reparseia 460 páginas.
+    """
     from radar import modality_legend, reprocess, vacancy_columns, vacancy_inline
 
-    parser_version = vacancy_columns.VERSION
+    parser_version = "|".join((vacancy_columns.VERSION, vacancy_inline.VERSION))
     # Caminho resolvido: CLI e servidor apontando para o mesmo banco compartilham o cache.
     root = os.path.abspath(str(db_path))
     out = {}
@@ -141,6 +181,17 @@ def _contexts(db_path, versions):
         with closing(connect_documents(db_path)) as conn:
             blocks = reprocess.stored_blocks(conn, version)
             artifact = reprocess._artifact_path(conn, version)
+            digest = conn.execute("SELECT sha256 FROM versoes_documento WHERE id=?",
+                                  (version,)).fetchone()
+        digest = digest[0] if digest else ""
+        disk_key = sha256(f"{parser_version}|{digest}|{version}".encode("utf-8")).hexdigest()
+        if artifact is not None and digest:
+            from_disk = _read_disk_cache(db_path, disk_key)
+            if from_disk is not None:
+                out[version] = from_disk
+                with _CONTEXT_LOCK:
+                    _CONTEXT_CACHE[cache_key] = from_disk
+                continue
         definitions = {}
         for block in blocks:
             for key, value in modality_legend.parse_definitions(
@@ -162,6 +213,11 @@ def _contexts(db_path, versions):
                 _CONTEXT_CACHE[cache_key] = out[version]
                 if len(_CONTEXT_CACHE) > 8:
                     _CONTEXT_CACHE.pop(next(iter(_CONTEXT_CACHE)), None)
+            try:
+                _write_disk_cache(db_path, disk_key, out[version])
+            except (OSError, TypeError, ValueError):
+                # Cache é otimização: sem permissão de escrita, segue sem ele.
+                pass
     return out
 
 
@@ -410,6 +466,9 @@ def groups(db_path, *, contest_id=None, document_id=None, version_id=None,
         scope_name = review.role_scope(row, reconciled)[0]
         scope_ids.setdefault((row["contest_id"], scope_name, row["field_name"]),
                              set()).add(row["proposal_id"])
+    # O snapshot é o mesmo para toda proposta do mesmo escopo/campo: ordena uma vez,
+    # em vez de uma vez por proposta (15 mil chamadas de sorted).
+    scope_snapshot = {key: tuple(sorted(ids)) for key, ids in scope_ids.items()}
 
     page_ids = [row["proposal_id"] for group_rows in grouped.values()
                 for row in group_rows]
@@ -487,7 +546,7 @@ def groups(db_path, *, contest_id=None, document_id=None, version_id=None,
                 "evidence_sha256": review._evidence_hash(
                     row["value_json"], row["quote"], row["version_id"],
                     row["start_offset"], row["end_offset"]),
-                "scope_snapshot": sorted(scope_ids.get(
+                "scope_snapshot": list(scope_snapshot.get(
                     (row["contest_id"], review.role_scope(row, reconciled)[0],
                      row["field_name"]), ())),
                 "evidence": {"quote": row["quote"], "page_number": row["page_number"],
