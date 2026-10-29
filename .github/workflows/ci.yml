@@ -17,20 +17,30 @@ jobs:
     name: Python (unittest)
     # Windows: há testes específicos de notificação nativa e caminhos do Windows.
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
-      # Node é usado pelos testes funcionais do JS da UI legada (tests/test_ui.py).
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
+          cache: npm
+          cache-dependency-path: web-react/package-lock.json
       - run: python -m pip install -r requirements.txt
       # Testes que dependem da base real em data/ (fora do Git) se pulam sozinhos.
       - run: python -m unittest discover -s tests -t .
+      # O dist/ é versionado. A checagem roda no Windows de propósito: o build não é
+      # idêntico entre plataformas (Tailwind/CSS), então comparar com o Linux daria
+      # falso negativo em toda execução.
+      - name: dist/ versionado está atualizado
+        working-directory: web-react
+        run: |
+          npm ci
+          npm run build
+          git diff --exit-code --stat -- web-react/dist
 
   web-react:
     name: Frontend React (tsc, vitest, build)
@@ -50,6 +60,3 @@ jobs:
       - run: npx tsc -b
       - run: npm test
       - run: npm run build
-      # O dist/ é versionado; falha se alguém mudou o frontend sem rebuildar.
-      - name: dist/ versionado está atualizado
-        run: git diff --exit-code --stat -- dist
