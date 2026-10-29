@@ -459,3 +459,228 @@ export interface ReviewGroups {
   itens: ReviewGroup[];
   limitacao: string;
 }
+
+/* --- Identidades: reconciliação de cargo e conflitos ---------------------- */
+
+export interface ReconciliationFactor {
+  fator: string;
+  pontos: number;
+  motivo: string;
+}
+
+export interface ReconciliationSuggestion {
+  role_id: string;
+  role_name: string;
+  specialty: string | null;
+  code: string | null;
+  state: string;
+  pontuacao: number;
+  fatores: ReconciliationFactor[];
+}
+
+export interface ReconciliationEvidence {
+  document_id: string;
+  document_title: string | null;
+  tipo_documental: string | null;
+  published_at: string | null;
+  page_number: number | null;
+  quote: string | null;
+  version_id: string;
+  proposal_id: string;
+}
+
+export interface ReconciliationItem {
+  contest_id: string;
+  label: string;
+  nature: string;
+  nature_label: string;
+  normalized: string;
+  proposals: number;
+  fields: string[];
+  documents: { document_id: string; title: string | null }[];
+  pages: number[];
+  first_evidence: ReconciliationEvidence | null;
+  suggestions: ReconciliationSuggestion[];
+  cargo_count: number;
+  decision: { state: string; reviewer: string; reason: string; decided_at: string } | null;
+  state: string;
+}
+
+export interface ReconciliationQueue {
+  version: string;
+  generated_at: string;
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+  itens: ReconciliationItem[];
+  limitacao: string;
+}
+
+export interface ConflictProposal {
+  proposal_id: string;
+  value: unknown;
+  state: string;
+  document_id: string;
+  document_title: string | null;
+  tipo_documental: string | null;
+  published_at: string | null;
+  version_id: string;
+  page_number: number | null;
+  quote: string | null;
+  extraction_method: string;
+}
+
+export interface ConflictGroup {
+  contest_id: string;
+  scope: string;
+  field_name: string;
+  cause: string;
+  cause_label: string;
+  motivos: string[];
+  prioridade: number;
+  proxima_acao: string;
+  valores_distintos: number;
+  propostas: ConflictProposal[];
+  documentos: { document_id: string; title: string | null; tipo_documental: string | null }[];
+  vigente_candidato: unknown;
+  vigente_documento: unknown;
+}
+
+export interface ConflictGroups {
+  version: string;
+  generated_at: string;
+  total: number;
+  por_causa: Record<string, number>;
+  por_prioridade: Record<string, number>;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+  itens: ConflictGroup[];
+  limitacao: string;
+}
+
+/* --- Pipeline documental -------------------------------------------------- */
+
+export interface PipelineSummary {
+  version: string;
+  generated_at: string;
+  concursos: number;
+  concursos_com_documento: number;
+  concursos_com_edital: number;
+  documentos: number;
+  documentos_com_texto: number;
+  versoes: number;
+  versoes_extraidas: number;
+  propostas: number;
+  evidencias: number;
+  revisoes_humanas: number;
+  campos_confirmados: number;
+  falhas_por_codigo: Record<string, number>;
+}
+
+export interface PipelineDocument {
+  document_id: string;
+  contest_id: string;
+  title: string | null;
+  official_url: string | null;
+  tipo_documental: string | null;
+  kind: string | null;
+  issuer: string | null;
+  source_identifier: string | null;
+  stages: string[];
+  versions: number;
+  extracted_versions: number;
+  blocks: number;
+  proposals: number;
+  association_state: string | null;
+  contest_state: string | null;
+  blocked_at: string | null;
+  blocked_reason: string | null;
+  last_extraction_state: string | null;
+  review_ready: boolean;
+}
+
+export interface PipelineDocuments {
+  version: string;
+  generated_at: string;
+  total: number;
+  returned: number;
+  truncated: boolean;
+  por_bloqueio: Record<string, number>;
+  itens: PipelineDocument[];
+  limitacao: string;
+}
+
+export interface PipelineCoverage {
+  version: string;
+  generated_at: string;
+  concursos: number;
+  por_categoria: Record<string, number>;
+  itens: {
+    contest_id: string;
+    categoria: string;
+    documentos: number;
+    documentos_oficiais: number;
+    edital_principal: number;
+    retificacoes: number;
+    documentos_com_texto: number;
+    propostas: number;
+    campos_com_proposta: number;
+    falhas_extracao: number;
+    sem_texto: number;
+  }[];
+  limitacao: string;
+}
+
+/* --- Mesa: oportunidades técnicas ---------------------------------------- */
+
+export interface OpportunityField {
+  campo: string;
+  label: string;
+  estado: string;
+  valores: string[];
+  propostas: number;
+  com_pagina: number;
+}
+
+export interface OpportunityRow {
+  contest_id: string;
+  competition_id: string | null;
+  contest_title: string | null;
+  role_id: string | null;
+  scope: string;
+  role_name: string | null;
+  role_reconciliado: boolean;
+  role_code: string | null;
+  role_specialty: string | null;
+  documental: {
+    estado: string;
+    estado_label: string;
+    documentos: number;
+    documentos_oficiais: number;
+    editais: number;
+    retificacoes: number;
+    proxima_acao: string;
+  };
+  campos: Record<string, OpportunityField>;
+  pendentes: number;
+  propostas: number;
+  conflitos: number;
+  tem_pagina: boolean;
+  ultima_atualizacao: string | null;
+  prioridade: number;
+  motivos: string[];
+  proxima_acao: string;
+}
+
+export interface OpportunityList {
+  version: string;
+  generated_at: string;
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+  itens: OpportunityRow[];
+  limitacao: string;
+}

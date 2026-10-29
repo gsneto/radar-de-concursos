@@ -337,22 +337,19 @@ pesadas concorrentes recebem 429. Inventário, gate e evidências:
 [docs/READINESS_GATE.md](docs/READINESS_GATE.md),
 [docs/API.md](docs/API.md).
 
-## Interface de produto (Fase 45)
+## Interface (única)
 
-A interface passou a ser uma aplicação de produto com shell próprio: sidebar recolhível,
-topbar com busca, dashboards, oportunidades com filtros e paginação, dossiê em abas,
-estudos e operação. HTML, CSS e JavaScript sem framework e sem build; os painéis técnicos
-continuam acessíveis em **Operação**.
+A interface é o app React em `web-react/`, servido na raiz. A UI antiga em HTML/CSS/JS
+(`web/`, Fase 45) foi **removida**; `/legacy/` responde `301` para `/` para que favoritos
+antigos não fiquem num endereço fantasma.
 
 ```powershell
 python -m radar serve --db .\data\radar.sqlite3
 ```
 
-Desde a Fase 46 esta interface fica em `http://127.0.0.1:8000/legacy/` (rotas `#/visao-geral`,
-`#/oportunidades`, `#/prazos`, `#/estudos`, `#/historico`, `#/configuracoes`, `#/operacao`,
-`#/dossie/<uuid>`). Design e evidências:
-[`docs/superpowers/specs/2026-10-19-frontend-produto-design.md`](docs/superpowers/specs/2026-10-19-frontend-produto-design.md)
-e [`docs/superpowers/plans/2026-10-19-frontend-produto-prova-real.md`](docs/superpowers/plans/2026-10-19-frontend-produto-prova-real.md).
+Telas: `/` (visão geral), `/oportunidades`, `/prazos`, `/revisao`, `/mesa`, `/identidades`,
+`/pipeline`, `/estudos/*`, `/historico`, `/configuracoes` e `/operacao` (Diagnóstico).
+O que não tem tela roda por CLI — a página Diagnóstico lista os comandos.
 
 ## Recorte de "Prazos próximos"
 
@@ -397,13 +394,23 @@ Medido na base real (13.224 linhas, 6 versões com quadro): **9,6 s** sem cache,
 **1,5 s** com processo novo e cache em disco, **0,01 s** com memória quente. O cache
 fica em `data/` (fora do Git) e pode ser apagado a qualquer momento — é só reconstruído.
 
-## Interface React "Observatório" (Fase 46)
+## App React "Observatório"
 
 A raiz `http://127.0.0.1:8000/` serve o app React (`web-react/`): visão geral, oportunidades,
-dossiê, prazos, estudos, histórico, configurações e operação, com URLs reais
-(`/oportunidades`, `/dossie/<uuid>`, `/estudos/simulados`...). O build `web-react/dist/` é
-**versionado**, então `python -m radar serve` funciona **sem Node**. Rotas `/api/*`
-desconhecidas continuam respondendo 404, nunca o app.
+dossiê, prazos, revisão, mesa, identidades, pipeline, estudos, histórico, configurações e
+diagnóstico, com URLs reais (`/oportunidades`, `/dossie/<uuid>`, `/estudos/simulados`...).
+O build `web-react/dist/` é **versionado**, então `python -m radar serve` funciona **sem
+Node**. Rotas `/api/*` desconhecidas continuam respondendo 404, nunca o app.
+
+Telas de trabalho portadas da UI antiga:
+
+- **`/revisao`** — linhas prontas (pendente, sem conflito, soma publicada fechando), com o
+  trecho do documento e decisão por campo (validar, rejeitar, ambíguo, adiar). Exige
+  responsável e justificativa e envia `evidence_sha256` + `scope_snapshot`.
+- **`/identidades`** — reconciliação de cargo com sugestão estrutural (pontuação não é
+  probabilidade) e conflitos classificados por causa.
+- **`/mesa`** — concurso × cargo com estado documental e de cada campo decisivo.
+- **`/pipeline`** — onde cada documento parou, com a primeira etapa faltante e o motivo.
 
 Para desenvolver o frontend (Node 24):
 

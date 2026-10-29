@@ -28,12 +28,15 @@ from urllib.parse import parse_qs, unquote, urlparse, urlsplit
 from radar.document_store import get_competition_details, list_competition_identities, monitoring_status
 from radar.storage import list_records
 
-# Diretório web: irmão do pacote ``radar`` (raiz do projeto).
-WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 # Build do frontend React (Fase 46). Commitado; servido em ``/``.
 DIST_DIR = Path(__file__).resolve().parent.parent / "web-react" / "dist"
-LEGACY_PREFIX = "/legacy"
 _API_PREFIX = "/api"
+# Endereço da interface antiga, removida. Não é rota de API: só redireciona.
+_LEGACY_PREFIX = "/legacy"
+
+
+def _is_legacy_path(path: str) -> bool:
+    return path == _LEGACY_PREFIX or path.startswith(_LEGACY_PREFIX + "/")
 
 
 def _is_api_path(path: str) -> bool:
@@ -42,8 +45,6 @@ def _is_api_path(path: str) -> bool:
 
 _CONTENT_TYPES = {
     "index.html": "text/html; charset=utf-8",
-    "styles.css": "text/css; charset=utf-8",
-    "app.js": "application/javascript; charset=utf-8",
     ".js": "application/javascript; charset=utf-8",
     ".css": "text/css; charset=utf-8",
     ".woff2": "font/woff2",
@@ -53,28 +54,11 @@ _CONTENT_TYPES = {
     ".map": "application/json; charset=utf-8",
 }
 
-# Rotas de assets, aceitando também o prefixo ``/web/``.
 # GETs que varrem PDF/banco inteiro: no máximo dois em paralelo no processo local.
 _EXPENSIVE_PATHS = {
     "/api/carteira/dossie", "/api/revisao/grupos", "/api/saude/prontidao",
     "/api/quadro-vagas", "/api/pipeline/parciais", "/api/revisao/piloto",
 }
-
-_ASSET_ROUTES = {
-    "/styles.css": "styles.css",
-    "/web/styles.css": "styles.css",
-    "/product.css": "product.css",
-    "/web/product.css": "product.css",
-    "/app.js": "app.js",
-    "/web/app.js": "app.js",
-    "/shell.js": "shell.js",
-    "/web/shell.js": "shell.js",
-}
-
-# Módulos do frontend de produto (JS/CSS locais, sem build). O caminho é resolvido
-# contra ``web/`` e o ``_serve_file`` bloqueia qualquer escape do diretório.
-_ASSET_DIRS = ("core/", "components/", "views/")
-_WEB_PREFIX = "/web/"
 
 
 class _RadarHTTPServer(ThreadingHTTPServer):
@@ -135,13 +119,13 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
-    def _serve_file(self, filename: str, *, root=None, cache=None):
-        """Serve um arquivo dentro de ``root`` (padrão: ``web/``), bloqueando escape.
+    def _serve_file(self, filename: str, *, root, cache=None):
+        """Serve um arquivo dentro de ``root``, bloqueando qualquer escape.
 
-        ``filename`` nunca vem cru do cliente nas rotas fixas; quando vem, é
-        normalizado antes e reconferido aqui contra o diretório raiz.
+        ``filename`` nunca vem cru do cliente: é reconferido contra o diretório raiz
+        depois de resolvido, o que bloqueia path traversal.
         """
-        base = (root or WEB_DIR).resolve()
+        base = Path(root).resolve()
         candidate = (base / filename).resolve()
         if base != candidate and base not in candidate.parents:
             self._send_no_content(HTTPStatus.NOT_FOUND)
@@ -153,7 +137,6 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         if content_type is None:
             content_type = "application/octet-stream"
         if cache is None:
-            # Assets sem hash (UI legada): o navegador sempre revalida.
             cache = "no-cache"
         self._send(HTTPStatus.OK, content_type, candidate.read_bytes(),
                    {"Cache-Control": cache})
@@ -1646,20 +1629,15 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
             else:
                 self._serve_study(practice_store.list_exams, limit=limit)
-        elif path == LEGACY_PREFIX or path.startswith(LEGACY_PREFIX + "/"):
-            # UI anterior (Operação) preservada em /legacy/.
-            relative = path[len(LEGACY_PREFIX):].lstrip("/") or "index.html"
-            if relative.startswith(_ASSET_DIRS) or relative.endswith(
-                    (".js", ".css", ".html")):
-                self._serve_file(relative)
-            else:
-                self._send_no_content(HTTPStatus.NOT_FOUND)
+        elif _is_legacy_path(path):
+            # A UI antiga foi removida. Redireciona em vez de servir o app aqui:
+            # /legacy/ não deve parecer que ainda existe uma segunda interface.
+            self._send(HTTPStatus.MOVED_PERMANENTLY, "text/plain; charset=utf-8",
+                       b"a interface antiga foi removida; use a raiz", {"Location": "/"})
         elif path in ("/", "/index.html"):
             self._serve_spa()
         elif path.startswith("/assets/"):
             self._serve_dist_file(path[1:])
-        elif path in _ASSET_ROUTES:
-            self._serve_file(_ASSET_ROUTES[path])
         elif DIST_DIR.is_dir() and (DIST_DIR / path[1:]).is_file() and ".." not in path:
             self._serve_dist_file(path[1:])
         elif not _is_api_path(path) and "." not in path.rsplit("/", 1)[-1]:
@@ -1667,13 +1645,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             # desconhecidas continuam 404 (contrato), nunca o index do app.
             self._serve_spa()
         else:
-            relative = (path[len(_WEB_PREFIX):]
-                        if path.startswith(_WEB_PREFIX) else path[1:])
-            if (relative.startswith(_ASSET_DIRS) and ".." not in relative
-                    and relative.endswith((".js", ".css"))):
-                self._serve_file(relative)
-            else:
-                self._send_no_content(HTTPStatus.NOT_FOUND)
+            self._send_no_content(HTTPStatus.NOT_FOUND)
 
     def _method_not_allowed(self, allow="GET"):
         self._send_no_content(HTTPStatus.METHOD_NOT_ALLOWED, {"Allow": allow})

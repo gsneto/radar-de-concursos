@@ -644,32 +644,45 @@ class PrewarmTest(unittest.TestCase):
 
 
 class UiStaticTest(unittest.TestCase):
-    """A UI oferece decisão por campo e não tem confirmação da linha inteira."""
+    """A tela de revisão decide por campo e não tem confirmação da linha inteira.
 
-    def setUp(self):
-        self.html = open(os.path.join(ROOT, "web", "index.html"), encoding="utf-8").read()
-        self.js = open(os.path.join(ROOT, "web", "app.js"), encoding="utf-8").read()
+    A UI antiga foi removida; a garantia passou a ser verificada no app React.
+    """
 
-    def test_painel_do_piloto(self):
-        for marker in ('id="piloto-panel"', 'id="piloto-select"',
-                       'id="piloto-linha"', 'id="piloto-status"'):
-            self.assertIn(marker, self.html)
-        self.assertIn("'progress'", self.js)
-        self.assertIn("Próxima linha pendente", self.js)
+    PASTA = os.path.join(ROOT, "web-react", "src", "features", "review")
+    QUERIES = os.path.join(ROOT, "web-react", "src", "app", "queries.ts")
+
+    def _source(self):
+        if not os.path.isdir(self.PASTA):
+            self.skipTest("frontend React ausente")
+        texto = ""
+        for name in sorted(os.listdir(self.PASTA)):
+            if name.endswith((".ts", ".tsx")) and not name.endswith(".test.tsx"):
+                with open(os.path.join(self.PASTA, name), encoding="utf-8") as handle:
+                    texto += handle.read()
+        # O cliente HTTP e as rotas de revisão vivem em queries.ts.
+        with open(self.QUERIES, encoding="utf-8") as handle:
+            texto += handle.read()
+        return texto
+
+    def test_painel_de_revisao_existe(self):
+        source = self._source()
+        self.assertIn("/api/revisao/grupos", source)
+        self.assertIn("Justificativa", source)
 
     def test_sem_confirmacao_da_linha_inteira(self):
+        source = self._source()
         for proibido in ("confirmarLinha", "aprovarLinha", "validarLinha",
                          "decidirLinha", "confirmarTudo", "aprovarTodos"):
-            self.assertNotIn(proibido, self.js)
+            self.assertNotIn(proibido, source)
         # Cada decisão envia um único proposal_id.
-        self.assertIn("'/api/revisao/proposta/' + encodeURIComponent(proposalId)", self.js)
+        self.assertIn("/api/revisao/proposta/${encodeURIComponent(input.proposalId)}", source)
 
     def test_avisos_e_consequencias(self):
-        self.assertIn("vaga unificada", self.js)
-        self.assertIn("nunca substitui o total", self.js)
-        self.assertIn("consequencia", self.js)
-        self.assertIn("Histórico", self.js)
-
+        source = self._source()
+        self.assertIn("consequencia", source)
+        self.assertIn("evidence_sha256", source)
+        self.assertIn("scope_snapshot", source)
 
 if __name__ == "__main__":
     unittest.main()

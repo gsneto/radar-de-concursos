@@ -2,15 +2,21 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, qs } from '@/lib/api';
 import type {
   ContestDetails,
+  ConflictGroups,
   Coverage,
   DeadlineCalendar,
   Discipline,
   Dossier,
   FlashcardStats,
   Opportunity,
+  OpportunityList,
   Performance,
+  PipelineCoverage,
+  PipelineDocuments,
+  PipelineSummary,
   Portfolio,
   Preferences,
+  ReconciliationQueue,
   ReviewGroups,
   StudyPanel,
   StudySession,
@@ -275,6 +281,138 @@ export function useDecideProposal() {
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ['review-groups'] });
     },
+  });
+}
+
+export interface ReconciliationFilters {
+  state?: string;
+  nature?: string;
+  minCandidates?: number;
+  contestId?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export function useReconciliation(filters: ReconciliationFilters) {
+  const query = qs({
+    state: filters.state,
+    nature: filters.nature,
+    min_candidates: filters.minCandidates,
+    contest_id: filters.contestId,
+    limit: filters.limit ?? 50,
+    offset: filters.offset ?? 0,
+  });
+  return useQuery({
+    queryKey: ['reconciliation', filters] as const,
+    queryFn: () => api.get<ReconciliationQueue>(`/api/reconciliacao${query}`),
+    staleTime: 60_000,
+  });
+}
+
+export interface ReconciliationDecision {
+  contestId: string;
+  label: string;
+  state: 'confirmada' | 'rejeitada' | 'ambigua' | 'reaberta';
+  reviewer: string;
+  reason: string;
+  roleId?: string | null;
+  nature?: string | null;
+}
+
+/**
+ * Decisão de identidade de cargo: append-only, com autor e justificativa.
+ * `dry_run` vai como false explicitamente — o padrão do servidor é simular.
+ */
+export function useDecideReconciliation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ReconciliationDecision) =>
+      api.post<{ state: string; gravado?: boolean }>('/api/reconciliacao', {
+        contest_id: input.contestId,
+        label: input.label,
+        state: input.state,
+        reviewer: input.reviewer,
+        reason: input.reason,
+        role_id: input.roleId ?? null,
+        nature: input.nature ?? null,
+        dry_run: false,
+      }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['reconciliation'] });
+      void client.invalidateQueries({ queryKey: ['review-groups'] });
+    },
+  });
+}
+
+export function useConflicts(filters: { cause?: string; contestId?: string; limit?: number; offset?: number }) {
+  const query = qs({
+    cause: filters.cause,
+    contest_id: filters.contestId,
+    limit: filters.limit ?? 25,
+    offset: filters.offset ?? 0,
+  });
+  return useQuery({
+    queryKey: ['conflicts', filters] as const,
+    queryFn: () => api.get<ConflictGroups>(`/api/conflitos-revisao${query}`),
+    staleTime: 60_000,
+  });
+}
+
+export function usePipelineSummary() {
+  return useQuery({
+    queryKey: ['pipeline', 'summary'] as const,
+    queryFn: () => api.get<PipelineSummary>('/api/pipeline'),
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function usePipelineCoverage(limit = 500) {
+  return useQuery({
+    queryKey: ['pipeline', 'coverage', limit] as const,
+    queryFn: () => api.get<PipelineCoverage>(`/api/pipeline/cobertura?limit=${limit}`),
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function usePipelineDocuments(filters: { pending?: boolean; contestId?: string; limit?: number }) {
+  const query = qs({
+    pending: filters.pending ? '1' : undefined,
+    contest_id: filters.contestId,
+    limit: filters.limit ?? 100,
+  });
+  return useQuery({
+    queryKey: ['pipeline', 'documents', filters] as const,
+    queryFn: () => api.get<PipelineDocuments>(`/api/pipeline/documentos${query}`),
+    staleTime: 5 * 60_000,
+  });
+}
+
+export interface MesaFilters {
+  field?: string;
+  conflict?: string;
+  documentState?: string;
+  search?: string;
+  minPriority?: number;
+  contestId?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export function useOpportunities(filters: MesaFilters) {
+  const query = qs({
+    field: filters.field,
+    conflict: filters.conflict,
+    document_state: filters.documentState,
+    search: filters.search,
+    min_priority: filters.minPriority,
+    contest_id: filters.contestId,
+    limit: filters.limit ?? 25,
+    offset: filters.offset ?? 0,
+  });
+  return useQuery({
+    queryKey: ['opportunities', filters] as const,
+    queryFn: () => api.get<OpportunityList>(`/api/oportunidades${query}`),
+    staleTime: 60_000,
   });
 }
 

@@ -9,6 +9,9 @@ import { HistoryPage } from '@/features/history/HistoryPage';
 import { SettingsPage } from '@/features/settings/SettingsPage';
 import { OperationPage } from '@/features/operation/OperationPage';
 import { ReviewPage } from '@/features/review/ReviewPage';
+import { IdentityPage } from '@/features/identity/IdentityPage';
+import { PipelinePage } from '@/features/pipeline/PipelinePage';
+import { MesaPage } from '@/features/mesa/MesaPage';
 
 export const router = createBrowserRouter([
   {
@@ -28,6 +31,9 @@ export const router = createBrowserRouter([
       },
       { path: 'prazos', element: <DeadlinesPage />, handle: { title: 'Prazos' } },
       { path: 'revisao', element: <ReviewPage />, handle: { title: 'Revisão' } },
+      { path: 'mesa', element: <MesaPage />, handle: { title: 'Mesa' } },
+      { path: 'identidades', element: <IdentityPage />, handle: { title: 'Identidades' } },
+      { path: 'pipeline', element: <PipelinePage />, handle: { title: 'Pipeline documental' } },
       { path: 'estudos/*', element: <StudiesPage />, handle: { title: 'Estudos' } },
       { path: 'historico', element: <HistoryPage />, handle: { title: 'Histórico' } },
       { path: 'configuracoes', element: <SettingsPage />, handle: { title: 'Configurações' } },

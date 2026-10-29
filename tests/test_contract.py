@@ -14,10 +14,8 @@ ponta a ponta, sem duplicar lógica de produção:
 - HTML incompleto falha em ``collect`` antes de qualquer persistência;
   fluxo real do CLI (``_cmd_collect``) com fetch falhando ou retornando
   HTML quebrado não grava nem apaga dados existentes;
-- ``GET /api/concursos`` com ``application/json``; caminhos estáticos
-  servem; desconhecidos/traversal 404; métodos de escrita 405;
-- ``web/app.js`` sem ``innerHTML``, com renderização textual e restrição
-  de link a URL HTTPS.
+- ``GET /api/concursos`` com ``application/json``; a raiz serve o app;
+  desconhecidos/traversal 404; métodos de escrita 405.
 """
 
 from __future__ import annotations
@@ -39,7 +37,6 @@ from radar.server import create_server
 from radar.storage import list_records, upsert_records
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "guajara-oficial.html"
-APP_JS_PATH = Path(__file__).resolve().parent.parent / "web" / "app.js"
 
 VERIFIED_AT = "2026-10-09T12:00:00-04:00"
 VERIFIED_AT_LATER = "2026-10-10T09:00:00+00:00"
@@ -384,17 +381,9 @@ class ApiAndStaticPathsEndToEndTest(ServerTestCase):
 
     def test_static_paths_are_served(self):
         self.persist_official_fixture()
-        for path, marker in [
-            ("/", "GSN Concursos"),
-            ("/app.js", "/api/concursos"),
-            ("/styles.css", None),
-            ("/web/app.js", None),
-            ("/web/styles.css", None),
-        ]:
-            status, headers, body = self.request("GET", path)
-            self.assertEqual(status, 200, "path %r deve servir" % path)
-            if marker is not None:
-                self.assertIn(marker, body.decode("utf-8"))
+        status, headers, body = self.request("GET", "/")
+        self.assertEqual(status, 200, "a raiz deve servir o app")
+        self.assertIn("GSN Concursos", body.decode("utf-8"))
 
     def test_unknown_path_serves_spa_and_missing_asset_404(self):
         # SPA: rota sem extensão devolve o index; asset inexistente continua 404.
@@ -408,7 +397,7 @@ class ApiAndStaticPathsEndToEndTest(ServerTestCase):
     def test_path_traversal_returns_404(self):
         for path in (
             "/../radar/collector.py",
-            "/web/../radar/storage.py",
+            "/assets/../../radar/server.py",
             "/..%2fradar%2fserver.py",
         ):
             status, _, body = self.request("GET", path)
@@ -431,32 +420,6 @@ class ApiAndStaticPathsEndToEndTest(ServerTestCase):
         self.assertEqual(len(data), 4)
         for record in data:
             self.assertEqual(list(record.keys()), CONTRACT_FIELDS)
-
-
-class UiStaticSecurityTest(unittest.TestCase):
-    """Escopo estático do frontend: renderização textual e link HTTPS."""
-
-    def setUp(self):
-        self.js = APP_JS_PATH.read_text(encoding="utf-8")
-
-    def test_app_js_has_no_inner_html(self):
-        self.assertNotIn("innerHTML", self.js)
-
-    def test_app_js_uses_textual_rendering(self):
-        self.assertIn("textContent", self.js)
-        self.assertIn("createElement", self.js)
-
-    def test_links_are_gated_on_https_scheme(self):
-        # O link só é criado após checagem explícita de esquema https://.
-        self.assertRegex(self.js, r"function\s+isHttpsUrl")
-        self.assertRegex(self.js, r"if\s*\(\s*isHttpsUrl\(")
-        # Padrões de esquema não-HTTPS não passam pela checagem.
-        self.assertRegex(self.js, r"\^https:\\/\\/")
-
-    def test_no_document_write_or_eval(self):
-        self.assertNotIn("document.write", self.js)
-        self.assertNotIn("eval(", self.js)
-        self.assertNotIn("new Function", self.js)
 
 
 if __name__ == "__main__":

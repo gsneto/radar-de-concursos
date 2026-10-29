@@ -5,12 +5,15 @@ import {
   ClipboardList,
   Compass,
   Gauge,
+  GitMerge,
   History,
   Layers,
+  LayoutGrid,
   ListChecks,
   Settings,
   Sparkles,
   Target,
+  Workflow,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -37,6 +40,14 @@ export const navGroups: NavGroup[] = [
     ],
   },
   {
+    label: 'Trabalho',
+    items: [
+      { to: '/mesa', label: 'Mesa', icon: LayoutGrid },
+      { to: '/identidades', label: 'Identidades', icon: GitMerge },
+      { to: '/pipeline', label: 'Pipeline', icon: Workflow },
+    ],
+  },
+  {
     label: 'Estudos',
     items: [
       { to: '/estudos', label: 'Visão geral', icon: BookOpen, end: true },
@@ -51,7 +62,7 @@ export const navGroups: NavGroup[] = [
     items: [
       { to: '/historico', label: 'Histórico', icon: History },
       { to: '/configuracoes', label: 'Configurações', icon: Settings },
-      { to: '/operacao', label: 'Operação', icon: Target },
+      { to: '/operacao', label: 'Diagnóstico', icon: Target },
     ],
   },
 ];

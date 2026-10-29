@@ -3,8 +3,7 @@
 Cobrem, com ``http.client`` e servidor real em porta efêmera (port=0):
 - ``GET /api/concursos`` com banco vazio (200, JSON, array vazio);
 - ``GET /api/concursos`` com registros persistidos (contrato correto);
-- ``GET /`` serve a página estática ``web/index.html``;
-- assets locais ``/styles.css`` e ``/app.js`` (e variantes ``/web/...``);
+- ``GET /`` serve o app React (``web-react/dist``);
 - ``POST /api/concursos`` e métodos de escrita retornam 405;
 - caminhos desconhecidos (incluindo tentativa de path traversal) retornam 404.
 """
@@ -136,24 +135,6 @@ class StaticServingTest(ServerTestCase):
         self.assertEqual(status, 200)
         self.assertIn("text/html", headers.get("content-type", ""))
         self.assertIn("GSN Concursos", body.decode("utf-8"))
-
-    def test_styles_css_is_served(self):
-        status, headers, body = self.request("GET", "/styles.css")
-        self.assertEqual(status, 200)
-        self.assertIn("text/css", headers.get("content-type", ""))
-        self.assertTrue(len(body) > 0)
-
-    def test_app_js_is_served(self):
-        status, headers, body = self.request("GET", "/app.js")
-        self.assertEqual(status, 200)
-        self.assertIn("javascript", headers.get("content-type", ""))
-        self.assertIn("/api/concursos", body.decode("utf-8"))
-
-    def test_web_prefixed_assets_are_served(self):
-        status, _, _ = self.request("GET", "/web/styles.css")
-        self.assertEqual(status, 200)
-        status, _, _ = self.request("GET", "/web/app.js")
-        self.assertEqual(status, 200)
 
 
 class MethodAndPathTest(ServerTestCase):

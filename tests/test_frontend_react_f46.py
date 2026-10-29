@@ -83,11 +83,13 @@ class ReactServingTest(unittest.TestCase):
             self.assertEqual(status, 200, path)
             self.assertIn(b'<div id="root">', body, path)
 
-    def test_legacy_serve_a_ui_vanilla(self):
-        status, _, body = self.get("/legacy/")
-        self.assertEqual(status, 200)
-        self.assertNotIn(b'<div id="root">', body)
-        self.assertIn(b'id="view-root"', body)
+    def test_legacy_nao_existe_mais(self):
+        # A UI antiga foi removida: /legacy/ redireciona para o app, sem servir nada antigo.
+        for path in ("/legacy/", "/legacy/index.html", "/legacy"):
+            status, headers, body = self.get(path)
+            self.assertEqual(status, 301, path)
+            self.assertEqual(headers.get("Location"), "/", path)
+            self.assertNotIn(b'id="view-root"', body, path)
 
     def test_api_desconhecida_nao_vira_app(self):
         status, _, body = self.get("/api/rota-que-nao-existe")
@@ -95,7 +97,7 @@ class ReactServingTest(unittest.TestCase):
         self.assertNotIn(b'<div id="root">', body)
 
     def test_traversal_bloqueado(self):
-        for path in ("/assets/../../radar/server.py", "/legacy/../radar/server.py"):
+        for path in ("/assets/../../radar/server.py", "/assets/..%2f..%2fradar%2fserver.py"):
             status, _, body = self.get(path)
             self.assertNotEqual(status, 200, path)
             self.assertNotIn(b"import", body, path)
