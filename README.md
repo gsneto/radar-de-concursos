@@ -1,35 +1,35 @@
 # GSN Concursos
 
-O GSN Concursos é uma ferramenta para **coletar, organizar e analisar** informações sobre concursos públicos brasileiros. Ele reúne dados de uma fonte oficial em um banco local, guarda o **histórico dos documentos** (editais, retificações e versões) e extrai **fatos com evidência** — sempre como propostas que passam por **revisão humana explícita** antes de serem consideradas confirmadas.
+O GSN Concursos é uma ferramenta local para **coletar, organizar e analisar** informações sobre concursos públicos brasileiros. Ele reúne dados de **múltiplas fontes oficiais configuradas** (FGV Conhecimento, Quadrix, Diário Oficial da União — Seção 3, IBFC, Prefeitura de Guajará-Mirim) e canais complementares de descoberta (PCI Concursos) em um banco SQLite local, guarda o **histórico imutável dos documentos** (editais, retificações e versões com SHA-256) e extrai **fatos com evidência literal por página** — sempre como propostas que passam por **revisão humana explícita** antes de serem consideradas confirmadas.
 
-O foco do projeto é a **rastreabilidade**: cada informação pode ser rastreada até o documento, a versão e o trecho que a originaram.
+O foco do projeto é a **rastreabilidade**: cada informação pode ser rastreada até o documento, a versão, a página e o trecho que a originaram.
 
 ## O que o Radar faz
 
-- Coleta informações de uma fonte oficial configurada.
-- Organiza concursos e cargos em um banco SQLite local.
-- Registra, baixa e analisa documentos HTML e PDF textual.
-- Mantém o histórico de versões de cada documento, por conteúdo.
-- Extrai propostas de fatos (vagas, datas, locais, escolaridade) com citação de evidência.
-- Associa retificações ao documento original.
-- Identifica conflitos entre propostas do mesmo campo e escopo.
-- Permite revisar propostas e selecionar explicitamente o valor corrente.
-- Monitora as fontes oficiais em busca de novas publicações e alterações, com um comando que pode ser agendado no Windows.
-- Oferece uma interface web para consultar concursos e o histórico documental.
+- Coleta informações de fontes oficiais e catálogos configurados, respeitando `robots.txt`, políticas de persistência (`source_policy.py`) e orçamento por fonte (`budget.py`).
+- Organiza certames, containers de publicação e cargos em um banco SQLite local (schema v21, 45 tabelas).
+- Registra, baixa e analisa documentos HTML e PDF textual (com suporte a OCR local opcional via Windows OCR `pt-BR` ou Tesseract para PDFs escaneados).
+- Mantém o histórico de versões de cada documento por hash SHA-256.
+- Extrai propostas de fatos (vagas imediatas, cadastro de reserva, vagas indígenas, requisitos de formação e compatibilidade com Sistemas de Informação, prazos e locais de prova/lotação) com citação literal de evidência.
+- Associa retificações ao documento original e audita conflitos entre versões e páginas.
+- Permite revisar propostas de forma append-only e selecionar explicitamente o valor vigente.
+- Monitora as fontes periodicamente com agendamento no Windows (`scripts/*.ps1`) e alertas locais.
+- Oferece a interface web **Observatório** em React (`web-react/`, servida diretamente pelo servidor Python em `http://127.0.0.1:8000/`) e um módulo completo de gestão de estudos e prática (disciplinas, sessões Pomodoro, conteúdo programático, flashcards, questões e simulados).
 
-A extração gera **propostas que exigem revisão**; nada é confirmado automaticamente. O suporte atual é limitado às fontes e aos formatos configurados.
+A extração gera **propostas que exigem revisão**; nada é confirmado automaticamente. Veja o retrato real de cobertura da base em [`docs/COBERTURA_DADOS.md`](docs/COBERTURA_DADOS.md) e o guia de operação local em [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 ## Tecnologias
 
-Python 3 (biblioteca padrão), SQLite, HTML/CSS/JavaScript sem dependências de frontend e `pypdf` para PDF textual.
+- **Backend**: Python 3.11+ (biblioteca padrão + `pypdf` e `pymupdf` listados em `requirements.txt`) e SQLite.
+- **Frontend**: React 19, TypeScript 5.9, React Router 7 e Vite 7 em `web-react/`. O build de produção (`web-react/dist/`) é versionado no repositório para que `python -m radar serve` funcione sem exigir Node.js na máquina de uso.
 
 ## Pré-requisitos
 
-- Python 3.9 ou superior (testado com Python 3.12).
-- Acesso à internet para a coleta da fonte oficial.
-- `pypdf`, instalado a partir de `requirements.txt`.
+- Python 3.11 ou superior (recomendado usar sempre o ambiente virtual `.venv` do projeto).
+- `pypdf` e `pymupdf`, instalados a partir de `requirements.txt`.
+- Acesso à internet apenas durante os comandos de coleta/revalidação das fontes.
 
-Os comandos abaixo usam PowerShell (Windows). Em outros sistemas, use os comandos equivalentes do seu shell.
+Os comandos abaixo usam PowerShell (Windows). Use sempre `.\.venv\Scripts\python.exe` para garantir que `pypdf` e `pymupdf` estejam ativos.
 
 ## Instalação
 
@@ -38,27 +38,28 @@ Na raiz do repositório:
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
 ## Como executar
 
-1. Crie a pasta de dados (o SQLite não cria diretórios):
+1. Crie a pasta de dados (se ainda não existir):
 
 ```powershell
 New-Item -ItemType Directory -Path .\data -Force
 ```
 
-2. Colete a fonte oficial pela primeira vez:
+2. Execute um ciclo de coleta ou a coleta v1 inicial:
 
 ```powershell
-python -m radar collect --db .\data\radar.sqlite3
+.\.venv\Scripts\python.exe -m radar collect --db .\data\radar.sqlite3
+.\.venv\Scripts\python.exe -m radar ops-ciclo --limit 10
 ```
 
 3. Inicie o servidor local:
 
 ```powershell
-python -m radar serve --db .\data\radar.sqlite3
+.\.venv\Scripts\python.exe -m radar serve --db .\data\radar.sqlite3
 ```
 
 4. Abra a interface no navegador:
@@ -445,12 +446,12 @@ sem autenticação, por desenho; não exponha a porta na rede).
 
 ## Limitações
 
-- Cobertura restrita às fontes oficiais configuradas no projeto.
-- Extração de PDF apenas quando há texto; documentos digitalizados (imagem) não são lidos por OCR.
+- Cobertura restrita às fontes oficiais configuradas no projeto (veja a medição completa em [`docs/COBERTURA_DADOS.md`](docs/COBERTURA_DADOS.md)).
+- Documentos digitalizados (`pdf_sem_texto`) dependem de execução explícita de OCR local (`ocr-executar --apply` via Windows OCR `pt-BR` ou Tesseract) e suas propostas são marcadas como camada derivada (`ocr:`).
 - A extração produz propostas que precisam de revisão humana para virarem fatos confirmados.
 - A data exibida indica quando a fonte foi consultada, não garante a situação atual do certame; confirme sempre nos documentos oficiais.
 - Notificações nativas são **opcionais** (`notifications.local`) e a exibição visual depende das configurações de foco/notificação do Windows; a entrega é confirmável, a exibição não é garantida.
-- A **priorização geográfica** usa apenas localização com evidência documental; a base atual ainda tem poucas propostas de local, então muitos concursos aparecem como "sem dados"/localização não informada (honesto, sem inferência). Distâncias são **linha reta** (não rodoviárias) e dependem de coordenadas conhecidas (seed limitado + provedor local opcional).
+- A **priorização geográfica** usa apenas localização com evidência documental; concursos sem local extraído permanecem como localização não informada (sem inferência). Distâncias são **linha reta** (Haversine, não rodoviárias) desde o município de referência configurado (`Paulo Afonso/BA`).
 - O **perfil de conhecimento** é declarado pelo usuário; não há inferência a partir da formação e a cobertura **não** é probabilidade de aprovação.
 - A **extração do conteúdo programático** é conservadora (prefere precisão a cobertura): formatos de seção muito incomuns podem ficar como "não localizado". A base real ainda não tem propostas de conteúdo porque as versões foram analisadas antes desta fase; a extração ocorre nas próximas análises.
 **Cobertura e qualidade dos dados:** a seção **Cobertura** (`#coverage-panel`, `#gaps-panel`) mostra o funil real da base (concursos → com documento → com edital oficial → com propostas → com campo confirmado), a distribuição de causas da insuficiência e as dimensões obrigatórias com **denominador explícito**. Quem ainda não foi pesquisado aparece em `fora_do_denominador` e nunca conta como zero; notícia de agregador não é tratada como prova oficial; dimensão sem campo no modelo aparece como `nao_mapeado`. A **fila de lacunas** prioriza com critérios declarados e separa coleta automática de revisão humana. API `/api/cobertura`, `/api/cobertura/resumo`, `/api/lacunas`, `POST /api/cobertura/papeis`; CLI `cobertura`, `lacunas`, `cobertura-papeis [--apply]`. O enriquecimento cria identidades de cargo a partir do rótulo literal do edital (idempotente, `dry_run` por padrão) e **não** resolve ambiguidade nem valida nada. Ver [`docs/superpowers/specs/2026-10-17-data-coverage-diagnostics-design.md`](docs/superpowers/specs/2026-10-17-data-coverage-diagnostics-design.md).

@@ -135,5 +135,129 @@ class ClosestExamMunicipioDistanceTest(unittest.TestCase):
         self.assertEqual(out.get("municipio"), "Vitória")
 
 
+class ServerDispatchAndHardeningTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import threading
+        from radar.server import create_server
+
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.db = str(Path(cls._tmp.name) / "radar.sqlite3")
+        migrate_document_schema(cls.db)
+        cls.server = create_server(cls.db, port=0)
+        cls.port = cls.server.server_address[1]
+        cls._thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
+        cls._thread.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+        cls.server.server_close()
+        cls._tmp.cleanup()
+
+    def _request(self, method: str, path: str, *, headers=None, body: bytes | None = None):
+        import http.client
+
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        try:
+            conn.request(method, path, body=body, headers=headers or {})
+            resp = conn.getresponse()
+            return resp.status, dict(resp.getheaders()), resp.read()
+        finally:
+            conn.close()
+
+    def test_tabela_get_dispatch_aponta_apenas_para_metodos_existentes_e_mantem_contrato(self):
+        from radar import api_contract
+        from radar.server import _RadarRequestHandler
+
+        dispatch = _RadarRequestHandler._GET_DISPATCH
+        self.assertGreaterEqual(len(dispatch), 65)
+        for route, handler_name in dispatch.items():
+            self.assertTrue(route.startswith("/api/"), route)
+            self.assertTrue(hasattr(_RadarRequestHandler, handler_name), (route, handler_name))
+            self.assertTrue(callable(getattr(_RadarRequestHandler, handler_name)))
+
+        root = Path(__file__).resolve().parent.parent
+        contract = api_contract.verify(str(root / "radar" / "server.py"))
+        self.assertTrue(contract["ok"], contract)
+
+    def test_despacho_get_atende_todos_os_dominios_principais(self):
+        paths = [
+            "/api/concursos",
+            "/api/saude",
+            "/api/pipeline",
+            "/api/revisao/pilotos",
+            "/api/carteira?limit=5",
+            "/api/elegibilidade?limit=5",
+            "/api/prazos?limit=5",
+            "/api/estudos/painel",
+            "/api/fontes",
+        ]
+        for path in paths:
+            status, headers, raw = self._request("GET", path)
+            self.assertEqual(status, 200, path)
+            self.assertIn("application/json", headers.get("Content-Type", ""), path)
+            self.assertEqual(headers.get("Cache-Control"), "no-store", path)
+            self.assertEqual(headers.get("X-Content-Type-Options"), "nosniff", path)
+            json.loads(raw.decode("utf-8"))
+
+    def test_bloqueia_dns_rebinding_por_host_header(self):
+        for bad_host in ("evil.example.com", f"evil.example.com:{self.port}", "127.0.0.1:9999"):
+            status, _, raw = self._request("GET", "/api/concursos", headers={"Host": bad_host})
+            self.assertEqual(status, 403, bad_host)
+            self.assertIn("host nao autorizado", raw.decode("utf-8"))
+
+    def test_bloqueia_csrf_por_origin_externa_e_content_type_nao_json(self):
+        payload = b'{"nome":"Direito Constitucional"}'
+        status, _, raw = self._request(
+            "POST",
+            "/api/estudos/disciplinas",
+            headers={
+                "Origin": "https://attacker.example",
+                "Content-Type": "application/json",
+                "Content-Length": str(len(payload)),
+            },
+            body=payload,
+        )
+        self.assertEqual(status, 403)
+        self.assertIn("origem nao autorizada", raw.decode("utf-8"))
+
+        status_ct, _, raw_ct = self._request(
+            "POST",
+            "/api/estudos/disciplinas",
+            headers={
+                "Origin": f"http://127.0.0.1:{self.port}",
+                "Content-Type": "text/plain",
+                "Content-Length": str(len(payload)),
+            },
+            body=payload,
+        )
+        self.assertEqual(status_ct, 415)
+        self.assertIn("Content-Type deve ser application/json", raw_ct.decode("utf-8"))
+
+    def test_bloqueia_corpo_acima_do_limite_e_path_traversal(self):
+        huge = b'{"nome":"' + (b"A" * 10000) + b'"}'
+        status, _, raw = self._request(
+            "POST",
+            "/api/estudos/disciplinas",
+            headers={
+                "Content-Type": "application/json",
+                "Content-Length": str(len(huge)),
+            },
+            body=huge,
+        )
+        self.assertEqual(status, 400)
+        self.assertIn("grande demais", raw.decode("utf-8"))
+
+        for traversal in (
+            "/../../radar/server.py",
+            "/assets/../../radar/server.py",
+            "/..%2f..%2fREADME.md",
+        ):
+            st, _, body = self._request("GET", traversal)
+            self.assertNotIn(b"class _RadarRequestHandler", body, traversal)
+            self.assertIn(st, (200, 404), traversal)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,10 +1,10 @@
-# Gate de prontidão do backend para o frontend — Fase 44
+# Gate de prontidão do backend para o frontend — Fase 44 (atualizado na Fase 47)
 
-Data de referência: **2026-10-19**. Base: `radar-configuracao`, HEAD de fechamento após
-`b2fddc2`. Schema **v21**. Relatório reproduzível:
+Data de referência: **2026-11-04** (baseline original Fase 44: `2026-10-19`). Base: `radar-configuracao`,
+schema **v21**. Relatório reproduzível:
 
 ```powershell
-python -m radar prontidao --db .\data\radar.sqlite3
+.\.venv\Scripts\python.exe -m radar prontidao --db .\data\radar.sqlite3
 ```
 
 Estados: **APROVADO**, **REPROVADO**, **PENDENTE EXTERNO**. Um item `PENDENTE EXTERNO`
@@ -16,7 +16,7 @@ não reprova o backend; um item `REPROVADO` bloqueia.
 |---|---|---|
 | Banco íntegro | APROVADO | `PRAGMA integrity_check` = `ok`; `foreign_key_check` = 0 violações; 45 tabelas. |
 | Migrações verificadas | APROVADO | Schema v21; migrações aditivas e idempotentes cobertas por `test_document_store.py` e `test_practice.py`; nenhuma migração nova nesta fase. |
-| Proveniência documental | APROVADO | 9.340 propostas = 9.340 evidências; 0 propostas sem evidência; 0 evidências com trecho vazio; toda versão com SHA-256 de 64 caracteres. |
+| Proveniência documental | APROVADO | **18.240 propostas = 18.240 evidências**; 0 propostas sem evidência; 0 evidências com trecho vazio; todas as **2.013 versões** com SHA-256 de 64 caracteres. |
 | Idempotência | APROVADO | Reprocessamento (`test_reprocess.py`), decisão repetida (`test_review.py`), lote (`test_review.py`), simulado (`test_practice.py`), importação (`test_study_backup.py`) e lote de páginas (`test_multipage.py`). |
 | Atualização de versões | APROVADO | Versão imutável por SHA-256; `previous_version_id`; retificação vinculada; `test_document_versions.py`, `test_document_amendment.py`. |
 | Políticas de persistência | APROVADO | `source_policy` consultada no ponto de escrita (`monitoring.py`); corpo não autorizado descartado; `test_sources.py`. |
@@ -25,12 +25,12 @@ não reprova o backend; um item `REPROVADO` bloqueia.
 
 | Critério | Estado | Evidência |
 |---|---|---|
-| Identidade de concurso e cargo | APROVADO | `concursos_identidade` separa `certame` de `container_fonte`; 125 identidades de cargo; reconciliação exige decisão humana; `test_identity.py`, `test_role_identity_f35.py`. |
-| Campos decisivos com estados | APROVADO | `decisive_report` com `candidato`, `ambiguo`, `nao_localizado`, `nao_pesquisado`, `sem_data_documental`; 60 conflitos classificados; `test_vacancy_tables.py`, `test_indigenous_scope_f40.py`. |
+| Identidade de concurso e cargo | APROVADO | `concursos_identidade` separa `certame` (843) de `container_fonte` (1); 125 identidades de cargo; reconciliação exige decisão humana; `test_identity.py`, `test_role_identity_f35.py`. |
+| Campos decisivos com estados | APROVADO | `decisive_report` com `candidato`, `ambiguo`, `nao_localizado`, `nao_pesquisado`, `sem_data_documental`; 127 conflitos classificados; `test_vacancy_tables.py`, `test_indigenous_scope_f40.py`. |
 | Elegibilidade e reservas | APROVADO | PI exclusivo, PPIQ/PI-PQ unificadas, `CR`/`CR*`, zero explícito e menção fora de escopo separados; `test_eligibility_f38.py`, `test_eligibility_f39.py`, `test_vacancy_columns_f41.py`. |
-| Prazos e documentos rastreáveis | APROVADO | Grupos de prazo por documento/versão; revalidação com fonte e hash; 11 revalidações; `test_deadline_audit_f37.py`. |
-| Carteira sem mistura de cargos | APROVADO | 676 oportunidades por concurso+cargo; prioridade explicada; `test_portfolio_f36.py`. |
-| Dados incompletos sem quebrar | APROVADO | Lacunas explícitas; 166 documentos sem versão, 5 versões sem texto, 1.104 parciais históricas e 60 conflitos aparecem como pendência, não como erro. |
+| Prazos e documentos rastreáveis | APROVADO | Grupos de prazo por documento/versão; revalidação com fonte e hash; 14 revalidações (`0` pendentes); `test_deadline_audit_f37.py`. |
+| Carteira sem mistura de cargos | APROVADO | **894 oportunidades** por concurso+cargo; prioridade explicada e menor distância desde Paulo Afonso–BA; `test_portfolio_f36.py`, `test_coverage_consolidation_f47.py`. |
+| Dados incompletos sem quebrar | APROVADO | Lacunas explícitas; 1.407 documentos secundários/agregador sem versão (`0` editais oficiais decisivos pendentes), 1 PDF corrompido na origem (`pdf_ilegivel`), 1.111 parciais históricas e 127 conflitos aparecem como pendência, não como erro. |
 
 ## Coleta e operação
 
@@ -73,20 +73,20 @@ não reprova o backend; um item `REPROVADO` bloqueia.
 | Nenhum defeito crítico/alto conhecido | APROVADO | Revisão independente de código e de segurança: 0 crítico, 0 alto; 2 médios corrigidos (Host/DNS rebinding e concorrência de GETs pesados). |
 | Nenhuma quebra de integridade | APROVADO | `integrity ok`, FK vazia, 0 decisões fictícias, 0 revisões/valores/reconciliações/lotes reais. |
 | Nenhuma credencial exposta | APROVADO | Nenhum segredo no diff; credenciais apenas por `RADAR_*`; respostas de erro sem caminho/SQL/traceback; prontidão HTTP redige caminho absoluto. |
-| Suíte aprovada | APROVADO | **1.906 testes, OK** (1 ignorado por ausência de motor de OCR); linha de base **1.877, OK** (1 ignorado); 29 novos testes. |
+| Suíte aprovada | APROVADO | **1.915+ testes Python, OK** (em `.venv`) + suíte completa React (`vitest`). |
 | Fluxos essenciais cobertos | APROVADO | Contrato, escrita/CSRF/Host, prontidão, estados de extração, cache/invalidação, estudos, importação/exportação, simulados, pipeline, coleta e revisão. |
-| Recuperação documentada | APROVADO | Backup por API (`data/radar.sqlite3.bak-20261019-072446`), ciclo interrompido, retomada de páginas, reprocessamento, importação transacional. |
+| Recuperação documentada | APROVADO | Backup por API (`data/radar.sqlite3.bak-20261104`), ciclo interrompido, retomada de páginas, reprocessamento, importação transacional. |
 
 ## Conclusão
 
-**BACKEND PRONTO PARA INÍCIO DO FRONTEND.**
+**BACKEND CONSOLIDADO E PRONTO.**
 
-Não há bloqueador concreto. Permanecem como não bloqueadores:
+Não há bloqueador concreto. Permanecem como não bloqueadores (documentados em [`docs/COBERTURA_DADOS.md`](COBERTURA_DADOS.md)):
 
-- 2 fontes dependem de credencial/termos externos (`dados-gov-br`, `quest-api`);
-- 166 documentos descobertos sem versão e 1.104 versões históricas parciais (retomáveis);
-- 5 versões sem texto (OCR opcional);
-- 60 conflitos documentais aguardando decisão humana;
+- 2 fontes dependem de credencial/termos externos (`dados-gov-br`, `conecta-gov-br`);
+- 1.407 documentos secundários/agregador sem versão (`0` editais oficiais decisivos pendentes) e 1.111 versões históricas parciais (retomáveis);
+- 1 versão com PDF corrompido na origem (`pdf_ilegivel`; todas as 6 versões `pdf_sem_texto` foram processadas por OCR na Fase 47);
+- 127 conflitos documentais classificados aguardando decisão humana;
 - 0 decisões humanas reais (o piloto está preparado, não revisado);
 - itens P2 listados em `docs/BACKEND_INVENTORY.md`.
 

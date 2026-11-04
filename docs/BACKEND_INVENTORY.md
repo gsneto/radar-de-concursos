@@ -1,10 +1,10 @@
-# Inventário do backend — fechamento para o frontend (Fase 44)
+# Inventário do backend — fechamento para o frontend (Fase 44) e consolidação (Fase 47)
 
-Referência: `radar-configuracao`, base `b2fddc2`, schema **v21**, 92 módulos em
-`radar/`, 83 arquivos de teste, **129 entradas método+rota** (112 caminhos), 45 tabelas.
-Data de referência: 2026-10-19. Números da base no fechamento: 1.276 documentos,
-1.110 versões, 17.515 blocos, 9.340 propostas/evidências, 0 revisões, 0 valores vigentes,
-0 reconciliações, 0 lotes.
+Referência: `radar-configuracao`, schema **v21**, 92 módulos em
+`radar/`, 85 arquivos de teste, **130 entradas método+rota** (113 caminhos), 45 tabelas documentais/estudos (+ tabela v1 `concursos`).
+Data de atualização (Fase 47): **2026-11-04**. Números da base consolidada: **3.420 documentos**,
+**2.013 versões**, **42.009 blocos**, **18.240 propostas/evidências**, **843 certames** (+1 container DOU),
+**894 oportunidades na carteira**, **14 revalidações de prazo** (`0` pendentes).
 
 Estados usados: **implementado e testado**; **implementado parcialmente**;
 **implementado, não validado suficientemente**; **ausente**; **bloqueado externo**;
@@ -230,3 +230,38 @@ com cache por versão/bloco/proposta). Nenhum índice novo foi necessário.
 | Banco e integridade | Aprovado |
 | Segurança | Aprovado |
 | Desempenho | Aprovado após correções medidas |
+
+---
+
+## 16. Inventário Completo e Classificação de Consolidação (Fase 47)
+
+Nenhuma tabela ou subcomando foi removido na Fase 47 para preservar 100% de compatibilidade com os testes e scripts operacionais. Abaixo está a classificação explícita do que é ativo, o que é diagnóstico/manutenção e o que é legado contratual v1 candidato a agrupamento futuro.
+
+### 16.1 Classificação dos Subcomandos CLI (`radar/__main__.py` — 120 subcomandos de topo + 8 subparsers `estudos-*`)
+
+| Categoria | Qtd | Subcomandos | Papel e Recomendação de Consolidação |
+|---|---:|---|---|
+| **Operação cotidiana e servidor** | 12 | `serve`, `prontidao`, `ops-ciclo`, `ops-saude`, `ops-alertas`, `ops-alerta-marcar`, `ops-config`, `ops-triagem`, `ops-notificar`, `ops-identidade`, `ops-prioridades`, `ops-preferencias` | **Ativos (núcleo operacional).** Usados pelos scripts PowerShell (`scripts/*.ps1`) e operação local. |
+| **Carteira, elegibilidade e prazos** | 15 | `carteira`, `carteira-destaques`, `carteira-dossie`, `elegibilidade`, `elegibilidade-pendentes`, `elegibilidade-revisao`, `elegibilidade-destaques`, `prazos`, `prazos-calendario`, `prazos-auditoria`, `prazos-caso`, `prazos-verificar-documento`, `prazos-revalidar`, `prazos-revalidacao-historico`, `campos-decisivos` | **Ativos (decisão do usuário).** Espelham diretamente as telas principais da SPA React. |
+| **Revisão humana, reconciliação e conflitos** | 21 | `revisao-fila`, `revisao-grupos`, `revisao-decidir`, `revisao-selecionar`, `revisao-lote`, `revisao-exportar`, `revisao-importar`, `revisao-duplicados`, `revisao-prewarm`, `reconciliacao`, `reconciliacao-historico`, `reconciliacao-decidir`, `reconciliacao-criar-cargo`, `conflitos-revisao`, `conflitos-versao`, `piloto-revisao`, `pilotos`, `identidades-sugeridas`, `oportunidades`, `oportunidade`, `evidencia` | **Ativos (auditoria e curadoria humana).** Sustentam o fluxo append-only de decisão e resolução de conflitos. |
+| **Pipeline documental, OCR e aquisição** | 28 | `pipeline`, `pipeline-documentos`, `pipeline-duplicados`, `pipeline-cobertura`, `pipeline-continuidade`, `pipeline-regional`, `documentos-tipos`, `documentos-reprocessar`, `documentos-nominais`, `documentos-nominais-destino`, `documentos-parciais`, `documentos-paginas`, `documentos-lote`, `documentos-pendentes`, `documentos-extrair`, `documentos-bloqueados`, `documentos-baixar-bloqueados`, `documentos-reclassificar-bloqueios`, `documentos-importar`, `aquisicao-planejar`, `aquisicao-executar`, `editais-faltantes`, `ocr-pendentes`, `ocr-executar`, `cobertura`, `cobertura-papeis`, `cobertura-estados`, `lacunas` | **Ativos (manutenção e redução de pendências).** Usados na Tarefa 2 da Fase 47 para zerar versões `nao_iniciada`, `pdf_sem_texto` e editais oficiais sem versão. Candidatos a agrupamento futuro sob `radar pipeline <acao>` e `radar doc <acao>`. |
+| **Fontes, confirmação, identidade e contrato** | 15 | `fontes`, `fontes-consumo`, `fontes-revisar`, `fontes-politica`, `confirmacao-status`, `confirmacao-reconciliar`, `confirmacao-lote`, `confirmacao-item`, `confirmacao-metricas`, `confirmacao-prioridades`, `confirmacao-oportunidades`, `identidade`, `identidade-reparar`, `associacoes`, `associacoes-fila` | **Ativos (governança de fontes e vínculos).** |
+| **Utilitários de domínio e contrato** | 6 | `api-contrato`, `linha-do-tempo`, `localidades`, `quadro-vagas`, `quadro-auditoria`, `monitor` | **Ativos (diagnóstico e geração de `docs/API.md`).** |
+| **Estudos e prática pessoal** | 16 (+8 sub) | `estudos-painel`, `estudos-disciplina`, `estudos-topico`, `estudos-sessao`, `estudos-revisao`, `estudos-conteudo`, `estudos-perfil`, `estudos-cobertura`, `estudos-exportar`, `estudos-importar`, `estudos-backup`, `estudos-flashcard`, `estudos-questao`, `estudos-simulado`, `estudos-pacote`, `estudos-desempenho` | **Ativos (módulo de estudos).** Já organizados sob o prefixo `estudos-*`. |
+| **Legado contratual v1 / pilotos de fase** | 15 | `collect`, `documents-migrate`, `documents-sync`, `documents-register`, `documents-fetch`, `documents-analyze`, `documents-review`, `documents-select`, `documents-coverage`, `documents-reconcile`, `documents-link-amendment`, `documents-role`, `associacao-revisar`, `ibfc-piloto`, `quadrix-cargos` | **Legado preservado (compatibilidade v1/Fases 3–18).** Substituídos no uso diário pelos comandos em português (`documentos-*`, `revisao-*`, `reconciliacao-*`, `ops-ciclo`), mas mantidos para não quebrar a suíte de testes históricos. |
+
+### 16.2 Classificação das 45 Tabelas SQLite (`data/radar.sqlite3`, Schema v21)
+
+| Grupo | Tabelas (contagem em `2026-11-04`) | Situação |
+|---|---|---|
+| **1. Identidade e Observações Canônicas (4)** | `concursos_identidade` (844), `observacoes_concurso` (844), `cargos_identidade` (125), `observacoes_cargo` (0) | **Ativas.** `observacoes_cargo` é populada quando conectores estruturados registram cargo antes da extração de PDF. |
+| **2. Armazenamento e Extração Documental (8)** | `documentos` (3.420), `documento_urls` (3.420), `versoes_documento` (2.013), `blocos_documento` (42.009), `propostas_campo` (18.240), `evidencias` (18.240), `eventos_documentais` (7.559), `associacoes_documento` (206) | **Ativas (núcleo de rastreabilidade).** |
+| **3. Revisão Humana, Reconciliação e Prazos (7)** | `revisoes_campo` (0), `valores_atuais` (0), `lotes_revisao` (0), `lote_revisao_itens` (0), `reconciliacoes_cargo` (0), `revalidacoes_prazo` (14), `auditorias_cobertura` (0) | **Ativas** (aguardando decisões humanas na base real). Nota: `auditorias_cobertura` é **legada de fases iniciais** (cobertura atual é calculada por `coverage_states.py` e `cobertura-papeis`), mantida por compatibilidade de schema. |
+| **4. Coleta, Fontes, Monitoramento e Operação (11)** | `ciclos_monitoramento` (76), `ciclos_fontes` (328), `alertas` (4.536), `ops_state` (3), `fila_confirmacao` (709), `tentativas_download` (1.183), `ingestoes_documentais` (0), `fontes_estado` (1), `fontes_consumo` (2), `fontes_revisoes` (0), `localidades_ibge` (5.570) | **Ativas.** Sustentam o ciclo autônomo, orçamento de fontes e geografia IBGE. |
+| **5. Estudos e Prática Pessoal (15)** | `estudo_disciplinas` (0), `estudo_topicos` (0), `estudo_progresso` (0), `estudo_sessoes` (0), `estudo_revisoes` (0), `estudo_perfil` (0), `pratica_flashcards` (0), `pratica_flashcard_revisoes` (0), `pratica_midias` (0), `pratica_questoes` (0), `pratica_questao_versoes` (0), `pratica_tentativas` (0), `pratica_simulados` (0), `pratica_simulado_questoes` (0), `pratica_pacotes` (0) | **Ativas (dados pessoais do usuário).** Isoladas das tabelas de concursos. |
+
+### 16.3 Refatoração Estrutural de `radar/server.py` (Fase 47)
+
+- O método `do_GET` de `_RadarRequestHandler` (anteriormente uma cadeia monolítica de ~1.035 linhas com 75+ ramos `elif`) foi consolidado em uma tabela de despacho declarativa (`_GET_DISPATCH`, $O(1)$ por caminho exato) combinada com 6 métodos por domínio (`_get_core_and_ops`, `_get_pipeline_and_documents`, `_get_review_and_reconciliation`, `_get_portfolio_and_eligibility`, `_get_deadlines_and_conflicts`, `_get_studies_and_practice`) e `_get_dynamic_routes` para rotas parametrizadas.
+- `radar/api_contract.py:server_routes()` foi atualizado para inspecionar `do_GET` e os handlers `_get_*` no AST, preservando `api_contract.verify()` com 130 rotas verificadas (`ok=True`).
+

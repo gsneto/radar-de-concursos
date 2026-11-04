@@ -607,7 +607,94 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         body = json.dumps({"id": alert_id, "action": action, "updated": True}).encode("utf-8")
         self._send(HTTPStatus.OK, "application/json; charset=utf-8", body)
 
-    # --- Roteamento ----------------------------------------------------------
+    # --- Roteamento GET por tabela de despacho -------------------------------
+
+    _GET_DISPATCH = {
+        # Concursos, monitoramento, operação, fontes e qualidade de dados
+        "/api/concursos": "_get_core_and_ops",
+        "/api/concursos/identidades": "_get_core_and_ops",
+        "/api/monitoramento": "_get_core_and_ops",
+        "/api/confirmacao": "_get_core_and_ops",
+        "/api/alertas": "_get_core_and_ops",
+        "/api/saude/prontidao": "_get_core_and_ops",
+        "/api/saude": "_get_core_and_ops",
+        "/api/triagem": "_get_core_and_ops",
+        "/api/prioridades": "_get_core_and_ops",
+        "/api/identidade": "_get_core_and_ops",
+        "/api/associacoes/fila": "_get_core_and_ops",
+        "/api/associacoes": "_get_core_and_ops",
+        "/api/linha-do-tempo": "_get_core_and_ops",
+        "/api/fontes": "_get_core_and_ops",
+        "/api/fontes-consumo": "_get_core_and_ops",
+        "/api/cobertura": "_get_core_and_ops",
+        "/api/cobertura/resumo": "_get_core_and_ops",
+        "/api/cobertura/estados": "_get_core_and_ops",
+        "/api/campos-decisivos": "_get_core_and_ops",
+        "/api/lacunas": "_get_core_and_ops",
+        "/api/preferencias": "_get_core_and_ops",
+        # Pipeline documental e aquisição
+        "/api/pipeline": "_get_pipeline_and_documents",
+        "/api/pipeline/continuidade": "_get_pipeline_and_documents",
+        "/api/pipeline/parciais": "_get_pipeline_and_documents",
+        "/api/pipeline/escopo-regional": "_get_pipeline_and_documents",
+        "/api/pipeline/ocr": "_get_pipeline_and_documents",
+        "/api/pipeline/duplicidades": "_get_pipeline_and_documents",
+        "/api/pipeline/cobertura": "_get_pipeline_and_documents",
+        "/api/pipeline/documentos": "_get_pipeline_and_documents",
+        "/api/documentos/nominais": "_get_pipeline_and_documents",
+        "/api/documentos/nominais-destino": "_get_pipeline_and_documents",
+        "/api/documentos/bloqueados": "_get_pipeline_and_documents",
+        "/api/editais-faltantes": "_get_pipeline_and_documents",
+        "/api/quadro-vagas": "_get_pipeline_and_documents",
+        # Revisão humana e reconciliação de cargos
+        "/api/reconciliacao": "_get_review_and_reconciliation",
+        "/api/reconciliacao/historico": "_get_review_and_reconciliation",
+        "/api/revisao/duplicidades": "_get_review_and_reconciliation",
+        "/api/revisao/fila": "_get_review_and_reconciliation",
+        "/api/revisao/pilotos": "_get_review_and_reconciliation",
+        "/api/revisao/piloto": "_get_review_and_reconciliation",
+        "/api/revisao/identidades": "_get_review_and_reconciliation",
+        "/api/revisao/grupos": "_get_review_and_reconciliation",
+        # Carteira operacional e elegibilidade
+        "/api/oportunidades": "_get_portfolio_and_eligibility",
+        "/api/carteira": "_get_portfolio_and_eligibility",
+        "/api/carteira/destaques": "_get_portfolio_and_eligibility",
+        "/api/carteira/dossie": "_get_portfolio_and_eligibility",
+        "/api/elegibilidade": "_get_portfolio_and_eligibility",
+        "/api/elegibilidade/pendentes": "_get_portfolio_and_eligibility",
+        "/api/elegibilidade/revisao": "_get_portfolio_and_eligibility",
+        "/api/elegibilidade/destaques": "_get_portfolio_and_eligibility",
+        # Prazos e conflitos
+        "/api/conflitos-revisao": "_get_deadlines_and_conflicts",
+        "/api/conflitos": "_get_deadlines_and_conflicts",
+        "/api/prazos": "_get_deadlines_and_conflicts",
+        "/api/prazos/calendario": "_get_deadlines_and_conflicts",
+        "/api/prazos/auditoria": "_get_deadlines_and_conflicts",
+        "/api/prazos/caso": "_get_deadlines_and_conflicts",
+        "/api/prazos/revalidacao": "_get_deadlines_and_conflicts",
+        "/api/prazos/revalidacao/historico": "_get_deadlines_and_conflicts",
+        # Estudos e prática
+        "/api/estudos/painel": "_get_studies_and_practice",
+        "/api/estudos/disciplinas": "_get_studies_and_practice",
+        "/api/estudos/topicos": "_get_studies_and_practice",
+        "/api/estudos/progresso": "_get_studies_and_practice",
+        "/api/estudos/sessoes": "_get_studies_and_practice",
+        "/api/estudos/sessao-atual": "_get_studies_and_practice",
+        "/api/estudos/revisoes": "_get_studies_and_practice",
+        "/api/estudos/perfil": "_get_studies_and_practice",
+        "/api/estudos/conteudo": "_get_studies_and_practice",
+        "/api/estudos/preparacao": "_get_studies_and_practice",
+        "/api/estudos/exportar": "_get_studies_and_practice",
+        "/api/estudos/flashcards": "_get_studies_and_practice",
+        "/api/estudos/flashcards/fila": "_get_studies_and_practice",
+        "/api/estudos/flashcards/estatisticas": "_get_studies_and_practice",
+        "/api/estudos/questoes": "_get_studies_and_practice",
+        "/api/estudos/tentativas": "_get_studies_and_practice",
+        "/api/estudos/desempenho": "_get_studies_and_practice",
+        "/api/estudos/pacotes": "_get_studies_and_practice",
+        "/api/estudos/pacotes/exportar": "_get_studies_and_practice",
+        "/api/estudos/simulados": "_get_studies_and_practice",
+    }
 
     def do_GET(self):
         if not self._host_allowed():
@@ -615,7 +702,9 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                        b'{"error":"host nao autorizado"}')
             return
         self._expensive_acquired = False
-        if urlsplit(self.path).path in _EXPENSIVE_PATHS:
+        parts = urlsplit(self.path)
+        path = parts.path
+        if path in _EXPENSIVE_PATHS:
             # Espera uma vaga curta antes de recusar: navegar entre telas não deve
             # produzir 429 para o próprio usuário.
             if not self.server.expensive.acquire(timeout=5):
@@ -624,10 +713,32 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                            b'{"error":"consulta pesada em andamento; tente novamente"}')
                 return
             self._expensive_acquired = True
-        from radar import study_store, knowledge_store, study_backup, practice_store, packages
+        handler_name = self._GET_DISPATCH.get(path)
+        if handler_name is not None:
+            getattr(self, handler_name)(path, parts)
+            return
+        if self._get_dynamic_routes(path, parts):
+            return
+        if _is_legacy_path(path):
+            # A UI antiga foi removida. Redireciona em vez de servir o app aqui:
+            # /legacy/ não deve parecer que ainda existe uma segunda interface.
+            self._send(HTTPStatus.MOVED_PERMANENTLY, "text/plain; charset=utf-8",
+                       b"a interface antiga foi removida; use a raiz", {"Location": "/"})
+        elif path in ("/", "/index.html"):
+            self._serve_spa()
+        elif path.startswith("/assets/"):
+            self._serve_dist_file(path[1:])
+        elif DIST_DIR.is_dir() and (DIST_DIR / path[1:]).is_file() and ".." not in path:
+            self._serve_dist_file(path[1:])
+        elif not _is_api_path(path) and "." not in path.rsplit("/", 1)[-1]:
+            # Rota de navegação do app (sem extensão): fallback SPA. Rotas de API
+            # desconhecidas continuam 404 (contrato), nunca o index do app.
+            self._serve_spa()
+        else:
+            self._send_no_content(HTTPStatus.NOT_FOUND)
+
+    def _get_core_and_ops(self, path: str, parts):
         from radar import data_quality
-        parts = urlsplit(self.path)
-        path = parts.path
         if path == "/api/concursos":
             self._serve_api()
         elif path == "/api/concursos/identidades":
@@ -635,16 +746,6 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
             else:
                 self._serve_document_api()
-        elif path.startswith("/api/concursos/") and path.endswith("/detalhes"):
-            segment = path[len("/api/concursos/"):-len("/detalhes")]
-            try:
-                contest_id = str(UUID(segment))
-                if segment != contest_id or parts.query:
-                    raise ValueError("UUID ou query inválida")
-            except ValueError:
-                self._send_no_content(HTTPStatus.BAD_REQUEST)
-            else:
-                self._serve_document_api(contest_id)
         elif path == "/api/monitoramento":
             if parts.query:
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
@@ -726,7 +827,104 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             else:
                 from radar import association
                 self._serve_study(association.suspect_associations)
-        elif path == "/api/pipeline":
+        elif path == "/api/linha-do-tempo":
+            query = parse_qs(parts.query)
+            if set(query) - {"since", "limit"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["200"])[0])
+            except ValueError:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import timeline
+            self._serve_study(timeline.timeline, since=(query.get("since") or [None])[0],
+                              limit=limit)
+        elif path == "/api/fontes":
+            if parts.query:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import budget
+            try:
+                from radar.ops_config import load_config
+                config = load_config(self.server.config_path)
+            except Exception:
+                config = {}
+            self._serve_study(budget.state_report, config=config)
+        elif path == "/api/fontes-consumo":
+            query = parse_qs(parts.query)
+            if set(query) - {"source_id", "limit"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["50"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            from radar import budget
+            self._serve_study(budget.consumption_report,
+                              source_id=query.get("source_id", [None])[0], limit=limit)
+        elif path == "/api/cobertura":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_study(data_quality.audit)
+        elif path == "/api/cobertura/resumo":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_study(data_quality.summary)
+        elif path == "/api/cobertura/estados":
+            query = parse_qs(parts.query)
+            if set(query) - {"limit"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["5000"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            if limit < 0:
+                self._bad_request("limit inválido")
+                return
+            from radar import coverage_states
+            self._serve_study(coverage_states.coverage_report, limit=limit)
+        elif path == "/api/campos-decisivos":
+            query = parse_qs(parts.query)
+            if set(query) - {"limit", "contest_id"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["200"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            if limit < 0:
+                self._bad_request("limit inválido")
+                return
+            from radar import decisive_fields
+            contest_ids = query.get("contest_id") or None
+            self._serve_study(decisive_fields.decisive_report,
+                              contest_ids=contest_ids, limit=limit)
+        elif path == "/api/lacunas":
+            query = parse_qs(parts.query)
+            try:
+                limit = int(query.get("limit", ["50"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            if limit < 1 or set(query) - {"limit"}:
+                self._bad_request("parâmetros inválidos")
+            else:
+                self._serve_study(data_quality.gaps, limit=limit)
+        elif path == "/api/preferencias":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_preferences()
+
+    def _get_pipeline_and_documents(self, path: str, parts):
+        if path == "/api/pipeline":
             if parts.query:
                 self._bad_request("parâmetros inválidos")
                 return
@@ -738,7 +936,256 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 return
             from radar import table_continuity
             self._serve_study(table_continuity.continuity_report_all)
-        elif path == "/api/oportunidades":
+        elif path == "/api/pipeline/parciais":
+            query = parse_qs(parts.query)
+            if set(query) - {"limit"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["500"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            if limit < 1:
+                self._bad_request("limit inválido")
+                return
+            from radar import page_batches
+            self._serve_study(page_batches.batch_report, limit=limit)
+        elif path == "/api/pipeline/escopo-regional":
+            query = parse_qs(parts.query)
+            if set(query) - {"version_id"} or "version_id" not in query:
+                self._bad_request("version_id obrigatório")
+                return
+            from radar import regional_scope
+            version_id = query["version_id"][0]
+            try:
+                self._serve_study(regional_scope.scope_report, version_id=version_id)
+            except ValueError as error:
+                self._bad_request(str(error))
+        elif path == "/api/pipeline/ocr":
+            query = parse_qs(parts.query)
+            if set(query) - {"limit"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["100"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            from radar import ocr
+            self._serve_study(ocr.ocr_report, limit=limit)
+        elif path == "/api/pipeline/duplicidades":
+            query = parse_qs(parts.query)
+            if set(query) - {"limit"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["100"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            from radar import pipeline
+            self._serve_study(pipeline.duplicate_report, limit=limit)
+        elif path == "/api/pipeline/cobertura":
+            query = parse_qs(parts.query)
+            if set(query) - {"limit"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["500"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            from radar import pipeline
+            self._serve_study(pipeline.contest_coverage, limit=limit)
+        elif path == "/api/pipeline/documentos":
+            query = parse_qs(parts.query)
+            if set(query) - {"contest_id", "limit", "pending"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["100"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            pending_raw = query.get("pending", ["0"])[0].lower()
+            if pending_raw not in ("0", "1", "true", "false"):
+                self._bad_request("pending inválido")
+                return
+            from radar import pipeline
+            self._serve_study(pipeline.audit_documents,
+                              contest_id=query.get("contest_id", [None])[0],
+                              limit=limit,
+                              only_pending=pending_raw in ("1", "true"))
+        elif path == "/api/documentos/nominais":
+            query = parse_qs(parts.query)
+            if set(query) - {"limit", "offset"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["200"])[0])
+                offset = int(query.get("offset", ["0"])[0])
+            except ValueError:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import nominal_triage
+            self._serve_study(nominal_triage.nominal_triage, limit=limit, offset=offset)
+        elif path == "/api/documentos/nominais-destino":
+            query = parse_qs(parts.query)
+            allowed = {"limit", "offset", "contest_id", "destination"}
+            if set(query) - allowed:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["200"])[0])
+                offset = int(query.get("offset", ["0"])[0])
+            except ValueError:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import nominal_destination
+            self._serve_study(nominal_destination.nominal_destinations, limit=limit,
+                              offset=offset,
+                              contest_id=query.get("contest_id", [None])[0],
+                              destination=query.get("destination", [None])[0])
+        elif path == "/api/documentos/bloqueados":
+            query = parse_qs(parts.query)
+            if set(query) - {"contest_id", "limit", "state"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["200"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            states = query.get("state", [None])[0]
+            from radar import document_ingest
+            self._serve_study(document_ingest.blocked_report,
+                              contest_id=query.get("contest_id", [None])[0],
+                              states=states, limit=limit)
+        elif path == "/api/editais-faltantes":
+            query = parse_qs(parts.query)
+            if set(query) - {"limit", "source"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["50"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            if limit < 1:
+                self._bad_request("limit inválido")
+                return
+            from radar import acquisition
+            self._serve_study(acquisition.targets,
+                              source_id=(query.get("source") or [None])[0], limit=limit)
+        elif path == "/api/quadro-vagas":
+            query = parse_qs(parts.query)
+            if set(query) - {"contest_id", "version_id"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import vacancy_columns
+            self._serve_study(vacancy_columns.report,
+                              contest_id=query.get("contest_id", [None])[0],
+                              version_id=query.get("version_id", [None])[0])
+
+    def _get_review_and_reconciliation(self, path: str, parts):
+        if path == "/api/reconciliacao":
+            query = parse_qs(parts.query)
+            allowed = {"limit", "offset", "contest_id", "nature", "state", "min_candidates"}
+            if set(query) - allowed:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["50"])[0])
+                offset = int(query.get("offset", ["0"])[0])
+                min_candidates = (int(query["min_candidates"][0])
+                                  if "min_candidates" in query else 0)
+            except ValueError:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import role_identity
+            self._serve_study(role_identity.reconciliation_queue, limit=limit, offset=offset,
+                              contest_id=query.get("contest_id", [None])[0],
+                              nature=query.get("nature", [None])[0],
+                              state=query.get("state", [None])[0],
+                              min_candidates=min_candidates)
+        elif path == "/api/reconciliacao/historico":
+            query = parse_qs(parts.query)
+            if set(query) - {"contest_id", "label"} or "contest_id" not in query \
+                    or "label" not in query:
+                self._bad_request("contest_id e label obrigatórios")
+                return
+            from radar import role_identity
+            self._serve_study(role_identity.reconciliation_history,
+                              contest_id=query["contest_id"][0], label=query["label"][0])
+        elif path == "/api/revisao/duplicidades":
+            query = parse_qs(parts.query)
+            if set(query) - {"limit", "contest_id", "field"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["50"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            from radar import review
+            self._serve_study(review.duplicate_groups,
+                              contest_id=query.get("contest_id", [None])[0],
+                              field_name=query.get("field", [None])[0], limit=limit)
+        elif path == "/api/revisao/fila":
+            self._review_queue(parts)
+        elif path == "/api/revisao/pilotos":
+            if parts.query:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import pilot
+            self._serve_study(pilot.available)
+        elif path == "/api/revisao/piloto":
+            query = parse_qs(parts.query)
+            if set(query) - {"contest_id", "size"} or "contest_id" not in query:
+                self._bad_request("contest_id obrigatório")
+                return
+            try:
+                size = int(query.get("size", ["16"])[0])
+            except ValueError:
+                self._bad_request("tamanho inválido")
+                return
+            from radar import pilot
+            self._serve_study(pilot.report, contest_id=query["contest_id"][0], size=size)
+        elif path == "/api/revisao/identidades":
+            query = parse_qs(parts.query)
+            if set(query) - {"contest_id"} or "contest_id" not in query:
+                self._bad_request("contest_id obrigatório")
+                return
+            from radar import identity_suggestions
+            self._serve_study(identity_suggestions.report,
+                              contest_id=query["contest_id"][0])
+        elif path == "/api/revisao/grupos":
+            query = parse_qs(parts.query)
+            allowed = {"limit", "offset", "state", "field", "contest_id", "document_id",
+                       "version_id", "contexto", "linha"}
+            if set(query) - allowed:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["25"])[0])
+                offset = int(query.get("offset", ["0"])[0])
+            except ValueError:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import review_groups
+            self._serve_study(review_groups.groups, limit=limit, offset=offset,
+                              state=query.get("state", ["aberto"])[0],
+                              field_name=query.get("field", [None])[0],
+                              contest_id=query.get("contest_id", [None])[0],
+                              document_id=query.get("document_id", [None])[0],
+                              version_id=query.get("version_id", [None])[0],
+                              contexto={"1": True, "0": False}.get(
+                                  query.get("contexto", [None])[0]),
+                              linha=query.get("linha", [None])[0])
+
+    def _get_portfolio_and_eligibility(self, path: str, parts):
+        if path == "/api/oportunidades":
             from radar import coverage_states
             query = parse_qs(parts.query)
             allowed = {"limit", "offset", "field", "conflict", "document_state", "has_page",
@@ -780,116 +1227,6 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                               has_page=has_page, search=query.get("search", [None])[0],
                               min_priority=min_priority,
                               contest_id=query.get("contest_id", [None])[0])
-        elif path == "/api/documentos/nominais":
-            query = parse_qs(parts.query)
-            if set(query) - {"limit", "offset"}:
-                self._bad_request("parâmetros inválidos")
-                return
-            try:
-                limit = int(query.get("limit", ["200"])[0])
-                offset = int(query.get("offset", ["0"])[0])
-            except ValueError:
-                self._bad_request("parâmetros inválidos")
-                return
-            from radar import nominal_triage
-            self._serve_study(nominal_triage.nominal_triage, limit=limit, offset=offset)
-        elif path == "/api/linha-do-tempo":
-            query = parse_qs(parts.query)
-            if set(query) - {"since", "limit"}:
-                self._bad_request("parâmetros inválidos")
-                return
-            try:
-                limit = int(query.get("limit", ["200"])[0])
-            except ValueError:
-                self._bad_request("parâmetros inválidos")
-                return
-            from radar import timeline
-            self._serve_study(timeline.timeline, since=(query.get("since") or [None])[0],
-                              limit=limit)
-        elif path.startswith("/api/revisao/evidencia/"):
-            proposal_id = unquote(path[len("/api/revisao/evidencia/"):])
-            if not proposal_id or "/" in proposal_id or parts.query:
-                self._bad_request("proposta inválida")
-                return
-            from radar import opportunities
-            self._serve_study(opportunities.proposal_evidence, proposal_id)
-        elif path.startswith("/api/oportunidades/"):
-            contest_id = unquote(path[len("/api/oportunidades/"):])
-            if not contest_id or "/" in contest_id:
-                self._bad_request("concurso inválido")
-                return
-            query = parse_qs(parts.query)
-            if set(query) - {"role_id", "scope"}:
-                self._bad_request("parâmetros inválidos")
-                return
-            from radar import opportunities
-            self._serve_study(opportunities.opportunity_dossier, contest_id,
-                              role_id=(query.get("role_id") or [None])[0],
-                              scope=(query.get("scope") or [None])[0])
-        elif path == "/api/reconciliacao":
-            query = parse_qs(parts.query)
-            allowed = {"limit", "offset", "contest_id", "nature", "state", "min_candidates"}
-            if set(query) - allowed:
-                self._bad_request("parâmetros inválidos")
-                return
-            try:
-                limit = int(query.get("limit", ["50"])[0])
-                offset = int(query.get("offset", ["0"])[0])
-                min_candidates = (int(query["min_candidates"][0])
-                                  if "min_candidates" in query else 0)
-            except ValueError:
-                self._bad_request("parâmetros inválidos")
-                return
-            from radar import role_identity
-            self._serve_study(role_identity.reconciliation_queue, limit=limit, offset=offset,
-                              contest_id=query.get("contest_id", [None])[0],
-                              nature=query.get("nature", [None])[0],
-                              state=query.get("state", [None])[0],
-                              min_candidates=min_candidates)
-        elif path == "/api/reconciliacao/historico":
-            query = parse_qs(parts.query)
-            if set(query) - {"contest_id", "label"} or "contest_id" not in query \
-                    or "label" not in query:
-                self._bad_request("contest_id e label obrigatórios")
-                return
-            from radar import role_identity
-            self._serve_study(role_identity.reconciliation_history,
-                              contest_id=query["contest_id"][0], label=query["label"][0])
-        elif path == "/api/conflitos-revisao":
-            query = parse_qs(parts.query)
-            allowed = {"limit", "offset", "contest_id", "field", "cause", "priority"}
-            if set(query) - allowed:
-                self._bad_request("parâmetros inválidos")
-                return
-            try:
-                limit = int(query.get("limit", ["50"])[0])
-                offset = int(query.get("offset", ["0"])[0])
-                priority = (int(query["priority"][0]) if "priority" in query else None)
-            except ValueError:
-                self._bad_request("parâmetros inválidos")
-                return
-            from radar import conflict_review
-            self._serve_study(conflict_review.conflict_groups, limit=limit, offset=offset,
-                              contest_id=query.get("contest_id", [None])[0],
-                              field=query.get("field", [None])[0],
-                              cause=query.get("cause", [None])[0], priority=priority)
-        elif path == "/api/prazos":
-            query = parse_qs(parts.query)
-            allowed = {"limit", "offset", "contest_id", "group", "state"}
-            if set(query) - allowed:
-                self._bad_request("parâmetros inválidos")
-                return
-            try:
-                limit = int(query.get("limit", ["100"])[0])
-                offset = int(query.get("offset", ["0"])[0])
-            except ValueError:
-                self._bad_request("parâmetros inválidos")
-                return
-            from radar import deadline_review
-            self._serve_study(deadline_review.deadline_report, limit=limit, offset=offset,
-                              contest_id=query.get("contest_id", [None])[0],
-                              group=query.get("group", [None])[0],
-                              state=query.get("state", [None])[0])
         elif path == "/api/carteira":
             query = parse_qs(parts.query)
             allowed = {"limit", "offset", "prontidao", "prazo", "si", "indigena",
@@ -919,6 +1256,28 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                               search=query.get("search", [None])[0],
                               contest_id=query.get("contest_id", [None])[0],
                               role_id=query.get("role_id", [None])[0])
+        elif path == "/api/carteira/destaques":
+            query = parse_qs(parts.query)
+            if set(query) - {"limit"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["12"])[0])
+            except ValueError:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import portfolio
+            self._serve_study(portfolio.portfolio_highlights, limit=limit)
+        elif path == "/api/carteira/dossie":
+            query = parse_qs(parts.query)
+            if set(query) - {"contest_id", "role_id", "scope"} \
+                    or "contest_id" not in query:
+                self._bad_request("contest_id obrigatório")
+                return
+            from radar import portfolio
+            self._serve_study(portfolio.portfolio_dossier, query["contest_id"][0],
+                              role_id=query.get("role_id", [None])[0],
+                              scope=query.get("scope", [None])[0])
         elif path == "/api/elegibilidade":
             query = parse_qs(parts.query)
             allowed = {"limit", "offset", "profile", "eligibility", "indigenous",
@@ -992,37 +1351,60 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             from radar import eligibility
             self._serve_study(eligibility.highlights, limit=limit,
                               profile=query.get("profile", [None])[0])
-        elif path == "/api/quadro-vagas":
+
+    def _get_deadlines_and_conflicts(self, path: str, parts):
+        if path == "/api/conflitos-revisao":
             query = parse_qs(parts.query)
-            if set(query) - {"contest_id", "version_id"}:
-                self._bad_request("parâmetros inválidos")
-                return
-            from radar import vacancy_columns
-            self._serve_study(vacancy_columns.report,
-                              contest_id=query.get("contest_id", [None])[0],
-                              version_id=query.get("version_id", [None])[0])
-        elif path == "/api/carteira/destaques":
-            query = parse_qs(parts.query)
-            if set(query) - {"limit"}:
+            allowed = {"limit", "offset", "contest_id", "field", "cause", "priority"}
+            if set(query) - allowed:
                 self._bad_request("parâmetros inválidos")
                 return
             try:
-                limit = int(query.get("limit", ["12"])[0])
+                limit = int(query.get("limit", ["50"])[0])
+                offset = int(query.get("offset", ["0"])[0])
+                priority = (int(query["priority"][0]) if "priority" in query else None)
             except ValueError:
                 self._bad_request("parâmetros inválidos")
                 return
-            from radar import portfolio
-            self._serve_study(portfolio.portfolio_highlights, limit=limit)
-        elif path == "/api/carteira/dossie":
+            from radar import conflict_review
+            self._serve_study(conflict_review.conflict_groups, limit=limit, offset=offset,
+                              contest_id=query.get("contest_id", [None])[0],
+                              field=query.get("field", [None])[0],
+                              cause=query.get("cause", [None])[0], priority=priority)
+        elif path == "/api/conflitos":
             query = parse_qs(parts.query)
-            if set(query) - {"contest_id", "role_id", "scope"} \
-                    or "contest_id" not in query:
-                self._bad_request("contest_id obrigatório")
+            if set(query) - {"limit", "contest_id"}:
+                self._bad_request("parâmetros inválidos")
                 return
-            from radar import portfolio
-            self._serve_study(portfolio.portfolio_dossier, query["contest_id"][0],
-                              role_id=query.get("role_id", [None])[0],
-                              scope=query.get("scope", [None])[0])
+            try:
+                limit = int(query.get("limit", ["200"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            if limit < 0:
+                self._bad_request("limit inválido")
+                return
+            from radar import version_conflicts
+            self._serve_study(version_conflicts.conflicts,
+                              contest_id=(query.get("contest_id") or [None])[0],
+                              limit=limit)
+        elif path == "/api/prazos":
+            query = parse_qs(parts.query)
+            allowed = {"limit", "offset", "contest_id", "group", "state"}
+            if set(query) - allowed:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["100"])[0])
+                offset = int(query.get("offset", ["0"])[0])
+            except ValueError:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import deadline_review
+            self._serve_study(deadline_review.deadline_report, limit=limit, offset=offset,
+                              contest_id=query.get("contest_id", [None])[0],
+                              group=query.get("group", [None])[0],
+                              state=query.get("state", [None])[0])
         elif path == "/api/prazos/calendario":
             query = parse_qs(parts.query)
             allowed = {"limit", "offset", "contest_id", "group", "groups", "state",
@@ -1101,349 +1483,10 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             self._serve_study(deadline_revalidation.history, limit=limit, offset=offset,
                               contest_id=query.get("contest_id", [None])[0],
                               grupo=query.get("group", [None])[0])
-        elif path == "/api/documentos/nominais-destino":
-            query = parse_qs(parts.query)
-            allowed = {"limit", "offset", "contest_id", "destination"}
-            if set(query) - allowed:
-                self._bad_request("parâmetros inválidos")
-                return
-            try:
-                limit = int(query.get("limit", ["200"])[0])
-                offset = int(query.get("offset", ["0"])[0])
-            except ValueError:
-                self._bad_request("parâmetros inválidos")
-                return
-            from radar import nominal_destination
-            self._serve_study(nominal_destination.nominal_destinations, limit=limit,
-                              offset=offset,
-                              contest_id=query.get("contest_id", [None])[0],
-                              destination=query.get("destination", [None])[0])
-        elif path == "/api/cobertura/estados":
-            query = parse_qs(parts.query)
-            if set(query) - {"limit"}:
-                self._bad_request("parâmetros inválidos")
-                return
-            try:
-                limit = int(query.get("limit", ["5000"])[0])
-            except ValueError:
-                self._bad_request("limit inválido")
-                return
-            if limit < 0:
-                self._bad_request("limit inválido")
-                return
-            from radar import coverage_states
-            self._serve_study(coverage_states.coverage_report, limit=limit)
-        elif path == "/api/campos-decisivos":
-            query = parse_qs(parts.query)
-            if set(query) - {"limit", "contest_id"}:
-                self._bad_request("parâmetros inválidos")
-                return
-            try:
-                limit = int(query.get("limit", ["200"])[0])
-            except ValueError:
-                self._bad_request("limit inválido")
-                return
-            if limit < 0:
-                self._bad_request("limit inválido")
-                return
-            from radar import decisive_fields
-            contest_ids = query.get("contest_id") or None
-            self._serve_study(decisive_fields.decisive_report,
-                              contest_ids=contest_ids, limit=limit)
-        elif path == "/api/conflitos":
-            query = parse_qs(parts.query)
-            if set(query) - {"limit", "contest_id"}:
-                self._bad_request("parâmetros inválidos")
-                return
-            try:
-                limit = int(query.get("limit", ["200"])[0])
-            except ValueError:
-                self._bad_request("limit inválido")
-                return
-            if limit < 0:
-                self._bad_request("limit inválido")
-                return
-            from radar import version_conflicts
-            self._serve_study(version_conflicts.conflicts,
-                              contest_id=(query.get("contest_id") or [None])[0],
-                              limit=limit)
-        elif path == "/api/editais-faltantes":
-            query = parse_qs(parts.query)
-            if set(query) - {"limit", "source"}:
-                self._bad_request("parâmetros inválidos")
-                return
-            try:
-                limit = int(query.get("limit", ["50"])[0])
-            except ValueError:
-                self._bad_request("limit inválido")
-                return
-            if limit < 1:
-                self._bad_request("limit inválido")
-                return
-            from radar import acquisition
-            self._serve_study(acquisition.targets,
-                              source_id=(query.get("source") or [None])[0], limit=limit)
-        elif path == "/api/pipeline/parciais":
-            query = parse_qs(parts.query)
-            if set(query) - {"limit"}:
-                self._bad_request("parâmetros inválidos")
-                return
-            try:
-                limit = int(query.get("limit", ["500"])[0])
-            except ValueError:
-                self._bad_request("limit inválido")
-                return
-            if limit < 1:
-                self._bad_request("limit inválido")
-                return
-            from radar import page_batches
-            self._serve_study(page_batches.batch_report, limit=limit)
-        elif path == "/api/pipeline/escopo-regional":
-            query = parse_qs(parts.query)
-            if set(query) - {"version_id"} or "version_id" not in query:
-                self._bad_request("version_id obrigatório")
-                return
-            from radar import regional_scope
-            version_id = query["version_id"][0]
-            try:
-                self._serve_study(regional_scope.scope_report, version_id=version_id)
-            except ValueError as error:
-                self._bad_request(str(error))
-        elif path == "/api/revisao/duplicidades":
-            query = parse_qs(parts.query)
-            if set(query) - {"limit", "contest_id", "field"}:
-                self._bad_request("parâmetros inválidos")
-                return
-            try:
-                limit = int(query.get("limit", ["50"])[0])
-            except ValueError:
-                self._bad_request("limit inválido")
-                return
-            from radar import review
-            self._serve_study(review.duplicate_groups,
-                              contest_id=query.get("contest_id", [None])[0],
-                              field_name=query.get("field", [None])[0], limit=limit)
-        elif path == "/api/pipeline/ocr":
-            query = parse_qs(parts.query)
-            if set(query) - {"limit"}:
-                self._bad_request("parâmetros inválidos")
-                return
-            try:
-                limit = int(query.get("limit", ["100"])[0])
-            except ValueError:
-                self._bad_request("limit inválido")
-                return
-            from radar import ocr
-            self._serve_study(ocr.ocr_report, limit=limit)
-        elif path == "/api/pipeline/duplicidades":
-            query = parse_qs(parts.query)
-            if set(query) - {"limit"}:
-                self._bad_request("parâmetros inválidos")
-                return
-            try:
-                limit = int(query.get("limit", ["100"])[0])
-            except ValueError:
-                self._bad_request("limit inválido")
-                return
-            from radar import pipeline
-            self._serve_study(pipeline.duplicate_report, limit=limit)
-        elif path == "/api/pipeline/cobertura":
-            query = parse_qs(parts.query)
-            if set(query) - {"limit"}:
-                self._bad_request("parâmetros inválidos")
-                return
-            try:
-                limit = int(query.get("limit", ["500"])[0])
-            except ValueError:
-                self._bad_request("limit inválido")
-                return
-            from radar import pipeline
-            self._serve_study(pipeline.contest_coverage, limit=limit)
-        elif path == "/api/pipeline/documentos":
-            query = parse_qs(parts.query)
-            if set(query) - {"contest_id", "limit", "pending"}:
-                self._bad_request("parâmetros inválidos")
-                return
-            try:
-                limit = int(query.get("limit", ["100"])[0])
-            except ValueError:
-                self._bad_request("limit inválido")
-                return
-            pending_raw = query.get("pending", ["0"])[0].lower()
-            if pending_raw not in ("0", "1", "true", "false"):
-                self._bad_request("pending inválido")
-                return
-            from radar import pipeline
-            self._serve_study(pipeline.audit_documents,
-                              contest_id=query.get("contest_id", [None])[0],
-                              limit=limit,
-                              only_pending=pending_raw in ("1", "true"))
-        elif path == "/api/fontes":
-            if parts.query:
-                self._bad_request("parâmetros inválidos")
-                return
-            from radar import budget
-            try:
-                from radar.ops_config import load_config
-                config = load_config(self.server.config_path)
-            except Exception:
-                config = {}
-            self._serve_study(budget.state_report, config=config)
-        elif path.startswith("/api/fontes/"):
-            remainder = path[len("/api/fontes/"):]
-            if not remainder or "/" in remainder or parts.query:
-                self._bad_request("fonte inválida")
-                return
-            from radar import budget, connectors, source_policy
-            try:
-                source_policy.catalog.get_source(remainder)
-            except KeyError:
-                self._bad_request("fonte desconhecida")
-                return
-            def detail(db):
-                try:
-                    connector = connectors.get_connector(remainder).describe()
-                    implemented = True
-                except connectors.ConnectorError:
-                    connector, implemented = None, False
-                return {
-                    "source": source_policy.catalog.get_source(remainder),
-                    "connector": connector,
-                    "implemented": implemented,
-                    "policy": [source_policy.decision(remainder, content_type)
-                               for content_type in
-                               source_policy.catalog.get_source(remainder)["content"]],
-                    "reviews": source_policy.review_history(db, remainder)["itens"],
-                }
-            self._serve_study(detail)
-        elif path == "/api/fontes-consumo":
-            query = parse_qs(parts.query)
-            if set(query) - {"source_id", "limit"}:
-                self._bad_request("parâmetros inválidos")
-                return
-            try:
-                limit = int(query.get("limit", ["50"])[0])
-            except ValueError:
-                self._bad_request("limit inválido")
-                return
-            from radar import budget
-            self._serve_study(budget.consumption_report,
-                              source_id=query.get("source_id", [None])[0], limit=limit)
-        elif path == "/api/revisao/fila":
-            self._review_queue(parts)
-        elif path == "/api/revisao/pilotos":
-            if parts.query:
-                self._bad_request("parâmetros inválidos")
-                return
-            from radar import pilot
-            self._serve_study(pilot.available)
-        elif path == "/api/revisao/piloto":
-            query = parse_qs(parts.query)
-            if set(query) - {"contest_id", "size"} or "contest_id" not in query:
-                self._bad_request("contest_id obrigatório")
-                return
-            try:
-                size = int(query.get("size", ["16"])[0])
-            except ValueError:
-                self._bad_request("tamanho inválido")
-                return
-            from radar import pilot
-            self._serve_study(pilot.report, contest_id=query["contest_id"][0], size=size)
-        elif path == "/api/revisao/identidades":
-            query = parse_qs(parts.query)
-            if set(query) - {"contest_id"} or "contest_id" not in query:
-                self._bad_request("contest_id obrigatório")
-                return
-            from radar import identity_suggestions
-            self._serve_study(identity_suggestions.report,
-                              contest_id=query["contest_id"][0])
-        elif path == "/api/revisao/grupos":
-            query = parse_qs(parts.query)
-            allowed = {"limit", "offset", "state", "field", "contest_id", "document_id",
-                       "version_id", "contexto", "linha"}
-            if set(query) - allowed:
-                self._bad_request("parâmetros inválidos")
-                return
-            try:
-                limit = int(query.get("limit", ["25"])[0])
-                offset = int(query.get("offset", ["0"])[0])
-            except ValueError:
-                self._bad_request("parâmetros inválidos")
-                return
-            from radar import review_groups
-            self._serve_study(review_groups.groups, limit=limit, offset=offset,
-                              state=query.get("state", ["aberto"])[0],
-                              field_name=query.get("field", [None])[0],
-                              contest_id=query.get("contest_id", [None])[0],
-                              document_id=query.get("document_id", [None])[0],
-                              version_id=query.get("version_id", [None])[0],
-                              contexto={"1": True, "0": False}.get(
-                                  query.get("contexto", [None])[0]),
-                              linha=query.get("linha", [None])[0])
-        elif path.startswith("/api/revisao/proposta/"):
-            proposal_id = path[len("/api/revisao/proposta/"):]
-            if not proposal_id or "/" in proposal_id or parts.query:
-                self._bad_request("proposta inválida")
-                return
-            from radar import review
-            self._serve_study(review.proposal_detail, proposal_id)
-        elif path.startswith("/api/revisao/lotes/"):
-            remainder = path[len("/api/revisao/lotes/"):]
-            if remainder.endswith("/exportar"):
-                lote_id = remainder[:-len("/exportar")]
-                if not lote_id or "/" in lote_id or parts.query:
-                    self._bad_request("lote inválido")
-                    return
-                from radar import review
-                self._serve_study(review.export_batch, lote_id)
-            else:
-                if not remainder or "/" in remainder or parts.query:
-                    self._bad_request("lote inválido")
-                    return
-                from radar import review
-                self._serve_study(review.batch_status, remainder)
-        elif path == "/api/documentos/bloqueados":
-            query = parse_qs(parts.query)
-            if set(query) - {"contest_id", "limit", "state"}:
-                self._bad_request("parâmetros inválidos")
-                return
-            try:
-                limit = int(query.get("limit", ["200"])[0])
-            except ValueError:
-                self._bad_request("limit inválido")
-                return
-            states = query.get("state", [None])[0]
-            from radar import document_ingest
-            self._serve_study(document_ingest.blocked_report,
-                              contest_id=query.get("contest_id", [None])[0],
-                              states=states, limit=limit)
-        elif path == "/api/cobertura":
-            if parts.query:
-                self._send_no_content(HTTPStatus.BAD_REQUEST)
-            else:
-                self._serve_study(data_quality.audit)
-        elif path == "/api/cobertura/resumo":
-            if parts.query:
-                self._send_no_content(HTTPStatus.BAD_REQUEST)
-            else:
-                self._serve_study(data_quality.summary)
-        elif path == "/api/lacunas":
-            query = parse_qs(parts.query)
-            try:
-                limit = int(query.get("limit", ["50"])[0])
-            except ValueError:
-                self._bad_request("limit inválido")
-                return
-            if limit < 1 or set(query) - {"limit"}:
-                self._bad_request("parâmetros inválidos")
-            else:
-                self._serve_study(data_quality.gaps, limit=limit)
-        elif path == "/api/preferencias":
-            if parts.query:
-                self._send_no_content(HTTPStatus.BAD_REQUEST)
-            else:
-                self._serve_preferences()
-        elif path == "/api/estudos/painel":
+
+    def _get_studies_and_practice(self, path: str, parts):
+        from radar import study_store, knowledge_store, study_backup, practice_store, packages
+        if path == "/api/estudos/painel":
             if parts.query:
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
             else:
@@ -1511,7 +1554,6 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
             else:
                 self._serve_study(study_backup.export_study_data)
-        # --- Prática: flashcards, questões e simulados (Fase 23) ---
         elif path == "/api/estudos/flashcards":
             query = parse_qs(parts.query)
             if set(query) - {"incluir_arquivados"}:
@@ -1561,36 +1603,6 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
             else:
                 self._serve_study(practice_store.performance_report)
-        elif path.startswith("/api/estudos/simulados/"):
-            if parts.query:
-                self._bad_request("rota dinâmica de simulado não aceita parâmetros")
-                return
-            rest = path[len("/api/estudos/simulados/"):]
-            if rest.endswith("/resultado"):
-                exam_id = rest[:-len("/resultado")]
-                if exam_id and "/" not in exam_id:
-                    self._serve_exam(lambda: practice_store.exam_result(self.server.db_path, exam_id))
-                    return
-            elif rest.endswith("/questoes"):
-                exam_id = rest[:-len("/questoes")]
-                if exam_id and "/" not in exam_id:
-                    self._serve_exam(lambda: practice_store.exam_questions(self.server.db_path, exam_id))
-                    return
-            elif rest.endswith("/resumo"):
-                exam_id = rest[:-len("/resumo")]
-                if exam_id and "/" not in exam_id:
-                    self._serve_exam(lambda: practice_store.exam_summary(self.server.db_path, exam_id))
-                    return
-            elif rest and "/" not in rest:
-                self._serve_exam(lambda: practice_store.get_exam(self.server.db_path, rest))
-                return
-            self._send_no_content(HTTPStatus.NOT_FOUND)
-        elif path == "/api/estudos/midia" or path.startswith("/api/estudos/midia/"):
-            media_id = path[len("/api/estudos/midia/"):] if path.startswith("/api/estudos/midia/") else ""
-            if parts.query or not media_id or "/" in media_id:
-                self._bad_request("midia inválida")
-                return
-            self._serve_media(media_id)
         elif path == "/api/estudos/pacotes":
             query = parse_qs(parts.query)
             try:
@@ -1629,23 +1641,127 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
             else:
                 self._serve_study(practice_store.list_exams, limit=limit)
-        elif _is_legacy_path(path):
-            # A UI antiga foi removida. Redireciona em vez de servir o app aqui:
-            # /legacy/ não deve parecer que ainda existe uma segunda interface.
-            self._send(HTTPStatus.MOVED_PERMANENTLY, "text/plain; charset=utf-8",
-                       b"a interface antiga foi removida; use a raiz", {"Location": "/"})
-        elif path in ("/", "/index.html"):
-            self._serve_spa()
-        elif path.startswith("/assets/"):
-            self._serve_dist_file(path[1:])
-        elif DIST_DIR.is_dir() and (DIST_DIR / path[1:]).is_file() and ".." not in path:
-            self._serve_dist_file(path[1:])
-        elif not _is_api_path(path) and "." not in path.rsplit("/", 1)[-1]:
-            # Rota de navegação do app (sem extensão): fallback SPA. Rotas de API
-            # desconhecidas continuam 404 (contrato), nunca o index do app.
-            self._serve_spa()
-        else:
+
+    def _get_dynamic_routes(self, path: str, parts) -> bool:
+        from radar import practice_store
+        if path.startswith("/api/concursos/") and path.endswith("/detalhes"):
+            segment = path[len("/api/concursos/"):-len("/detalhes")]
+            try:
+                contest_id = str(UUID(segment))
+                if segment != contest_id or parts.query:
+                    raise ValueError("UUID ou query inválida")
+            except ValueError:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+            else:
+                self._serve_document_api(contest_id)
+            return True
+        if path.startswith("/api/revisao/evidencia/"):
+            proposal_id = unquote(path[len("/api/revisao/evidencia/"):])
+            if not proposal_id or "/" in proposal_id or parts.query:
+                self._bad_request("proposta inválida")
+                return True
+            from radar import opportunities
+            self._serve_study(opportunities.proposal_evidence, proposal_id)
+            return True
+        if path.startswith("/api/oportunidades/"):
+            contest_id = unquote(path[len("/api/oportunidades/"):])
+            if not contest_id or "/" in contest_id:
+                self._bad_request("concurso inválido")
+                return True
+            query = parse_qs(parts.query)
+            if set(query) - {"role_id", "scope"}:
+                self._bad_request("parâmetros inválidos")
+                return True
+            from radar import opportunities
+            self._serve_study(opportunities.opportunity_dossier, contest_id,
+                              role_id=(query.get("role_id") or [None])[0],
+                              scope=(query.get("scope") or [None])[0])
+            return True
+        if path.startswith("/api/fontes/"):
+            remainder = path[len("/api/fontes/"):]
+            if not remainder or "/" in remainder or parts.query:
+                self._bad_request("fonte inválida")
+                return True
+            from radar import connectors, source_policy
+            try:
+                source_policy.catalog.get_source(remainder)
+            except KeyError:
+                self._bad_request("fonte desconhecida")
+                return True
+            def detail(db):
+                try:
+                    connector = connectors.get_connector(remainder).describe()
+                    implemented = True
+                except connectors.ConnectorError:
+                    connector, implemented = None, False
+                return {
+                    "source": source_policy.catalog.get_source(remainder),
+                    "connector": connector,
+                    "implemented": implemented,
+                    "policy": [source_policy.decision(remainder, content_type)
+                               for content_type in
+                               source_policy.catalog.get_source(remainder)["content"]],
+                    "reviews": source_policy.review_history(db, remainder)["itens"],
+                }
+            self._serve_study(detail)
+            return True
+        if path.startswith("/api/revisao/proposta/"):
+            proposal_id = path[len("/api/revisao/proposta/"):]
+            if not proposal_id or "/" in proposal_id or parts.query:
+                self._bad_request("proposta inválida")
+                return True
+            from radar import review
+            self._serve_study(review.proposal_detail, proposal_id)
+            return True
+        if path.startswith("/api/revisao/lotes/"):
+            remainder = path[len("/api/revisao/lotes/"):]
+            if remainder.endswith("/exportar"):
+                lote_id = remainder[:-len("/exportar")]
+                if not lote_id or "/" in lote_id or parts.query:
+                    self._bad_request("lote inválido")
+                    return True
+                from radar import review
+                self._serve_study(review.export_batch, lote_id)
+            else:
+                if not remainder or "/" in remainder or parts.query:
+                    self._bad_request("lote inválido")
+                    return True
+                from radar import review
+                self._serve_study(review.batch_status, remainder)
+            return True
+        if path.startswith("/api/estudos/simulados/"):
+            if parts.query:
+                self._bad_request("rota dinâmica de simulado não aceita parâmetros")
+                return True
+            rest = path[len("/api/estudos/simulados/"):]
+            if rest.endswith("/resultado"):
+                exam_id = rest[:-len("/resultado")]
+                if exam_id and "/" not in exam_id:
+                    self._serve_exam(lambda: practice_store.exam_result(self.server.db_path, exam_id))
+                    return True
+            elif rest.endswith("/questoes"):
+                exam_id = rest[:-len("/questoes")]
+                if exam_id and "/" not in exam_id:
+                    self._serve_exam(lambda: practice_store.exam_questions(self.server.db_path, exam_id))
+                    return True
+            elif rest.endswith("/resumo"):
+                exam_id = rest[:-len("/resumo")]
+                if exam_id and "/" not in exam_id:
+                    self._serve_exam(lambda: practice_store.exam_summary(self.server.db_path, exam_id))
+                    return True
+            elif rest and "/" not in rest:
+                self._serve_exam(lambda: practice_store.get_exam(self.server.db_path, rest))
+                return True
             self._send_no_content(HTTPStatus.NOT_FOUND)
+            return True
+        if path == "/api/estudos/midia" or path.startswith("/api/estudos/midia/"):
+            media_id = path[len("/api/estudos/midia/"):] if path.startswith("/api/estudos/midia/") else ""
+            if parts.query or not media_id or "/" in media_id:
+                self._bad_request("midia inválida")
+                return True
+            self._serve_media(media_id)
+            return True
+        return False
 
     def _method_not_allowed(self, allow="GET"):
         self._send_no_content(HTTPStatus.METHOD_NOT_ALLOWED, {"Allow": allow})

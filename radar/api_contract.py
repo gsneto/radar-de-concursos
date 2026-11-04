@@ -500,10 +500,12 @@ def server_routes(server_path: str) -> set[str]:
                    if isinstance(node, ast.ClassDef) and node.name == "_RadarRequestHandler")
     found = set()
     for node in handler.body:
-        if not isinstance(node, ast.FunctionDef) or node.name not in (
-                "do_GET", "do_POST", "do_DELETE"):
+        if not isinstance(node, ast.FunctionDef) or not (
+                node.name in ("do_GET", "do_POST", "do_DELETE")
+                or node.name.startswith("_get_")):
             continue
-        method = {"do_GET": "GET", "do_POST": "POST", "do_DELETE": "DELETE"}[node.name]
+        method = "GET" if (node.name == "do_GET" or node.name.startswith("_get_")) else (
+            {"do_POST": "POST", "do_DELETE": "DELETE"}[node.name])
         body = "\n".join(lines[node.lineno - 1:node.end_lineno])
         literals = set(re.findall(r'path == "([^"]+)"', body))
         literals |= set(re.findall(r'path\.startswith\("([^"]+)"\)', body))
