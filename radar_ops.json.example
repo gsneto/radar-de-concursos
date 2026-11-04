@@ -32,8 +32,8 @@
   "triage_horizon_days": 7,
   "max_new_alerts_per_cycle": 200,
   "preferences": {
-    "reference_municipio": null,
-    "reference_uf": null,
+    "reference_municipio": "Paulo Afonso",
+    "reference_uf": "BA",
     "interest_states": ["BA", "PE"],
     "practical_distance_km": 300,
     "priority": "equilibrado"

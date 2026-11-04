@@ -200,8 +200,8 @@ def prioritize(db_path, preferences, *, now=None, limit=200, provider=None) -> d
 
         # Distância da prova até a referência do usuário (linha reta, honesta).
         prova = loc["prova"]
-        distance = geography.distance_from_reference(
-            prova["municipios"][0] if prova["municipios"] else None, prova["uf"],
+        distance = geography.closest_distance_from_reference(
+            prova["municipios"], prova["uf"],
             reference=reference, provider=provider)
 
         decisive = [p for p in props if p["field_name"] in _DECISIVE]

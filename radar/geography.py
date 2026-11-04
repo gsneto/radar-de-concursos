@@ -145,3 +145,26 @@ def distance_from_reference(municipio, uf, *, reference, provider=None) -> dict:
     out["distance_km"] = round(haversine_km(origin, dest), 1)
     out["known"] = True
     return out
+
+
+def closest_distance_from_reference(municipios, uf, *, reference, provider=None) -> dict:
+    """Menor distância geográfica (linha reta) entre os municípios de prova informados e a referência.
+
+    Quando o certame publica múltiplos municípios de prova na mesma UF, avalia todos os que
+    possuem coordenada conhecida e escolhe o mais próximo do candidato. Se nenhum tiver
+    coordenada, devolve o diagnóstico honesto do primeiro município (ou ``None``).
+    """
+    candidates = [m for m in (municipios or ()) if isinstance(m, str) and m.strip()]
+    if not candidates:
+        return distance_from_reference(None, uf, reference=reference, provider=provider)
+    best = None
+    first = None
+    for mun in candidates:
+        res = distance_from_reference(mun, uf, reference=reference, provider=provider)
+        if first is None:
+            first = res
+        if res.get("known") and res.get("distance_km") is not None:
+            if best is None or res["distance_km"] < best["distance_km"]:
+                best = dict(res)
+                best["municipio"] = mun
+    return best if best is not None else first

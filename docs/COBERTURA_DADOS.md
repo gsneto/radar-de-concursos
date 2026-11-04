@@ -210,3 +210,46 @@ até `campos_candidatos` no Radar:
 | `mesmo_documento_valores_distintos` | 15 | Conferir páginas distintas do mesmo edital (ex.: prova objetiva vs. prática) |
 | `retificacao_posterior` | 9 | Candidato da retificação mais nova pronto para confirmação humana |
 | `variacao_de_extracao` | 1 | Normalização equivalente entre extrações |
+
+---
+
+## 7. Resultado Pós-Execução da Tarefa 2 — Comparativo Antes vs. Depois
+
+Operações executadas sobre `data/radar.sqlite3` na Tarefa 2 (respeitando `budget.py`, `source_policy` e sem auto-confirmação de propostas extraídas):
+
+1. **Correção de catálogo de campos em `radar/document_store.py`**: inclusão de `vaga_municipio`, `unified_ppiq_vacancies`, `unified_pi_pq_vacancies` e `indigenous_reserve_notation` em `_FIELDS` (e contagens unificadas em `_COUNTS`), destravando a gravação de análises de tabelas da Quadrix e colunas unificadas PPIQ/PI-PQ.
+2. **Resolução geográfica de menor distância em `radar/geography.py` e `radar/priority.py`**: adição de `closest_distance_from_reference` para certames com múltiplas cidades de prova no mesmo estado e configuração de `reference_municipio="Paulo Afonso"` / `reference_uf="BA"` em `radar_ops.json` e `radar_ops.json.example`.
+3. **Extração das 6 versões `nao_iniciada`** já presentes em disco (`vid=557152fb`, `d4ae33cb`, `0429f43a`, `e142b63d`, `6bc2b0bc`, `cd35e5d4`).
+4. **Aquisição e extração de 25 documentos oficiais decisivos sem versão**:
+   - `aquisicao-executar --apply` no certame `980fb871` (ALE-AM — 1 edital retificado + 2 retificações);
+   - Download e extração dos 22 documentos oficiais decisivos da FGV (`edital_abertura`, `edital_retificado`, `retificacao`, `cronograma`, `pagina_concurso`), incluindo **TJ-PE (`tjpe26`)**, **DPE-RJ**, **MP-ES**, **PGE-AC**, **MP-SP** e **TCE-ES** (`ok=22, errs=0`).
+5. **Classificação tipológica (`documentos-tipos --apply`)**: 428 documentos sem `tipo_documental` foram classificados (`pagina_agregador`: 232, `edital_abertura`: 159, `comunicado`: 13, `pagina_orgao`: 9, `convocacao`: 9, `homologacao`: 5, `resultado`: 1).
+6. **OCR local (`ocr-executar --apply` com `windows_ocr` `pt-BR`)**: processadas todas as 6 versões `pdf_sem_texto` (`41fdac29`, `01682fb7`, `52482ae7`, `f7124a70`, `1cae1a04`, `aa93d966`).
+7. **Revalidação de prazos futuros (`prazos-revalidar --apply`)**: revalidados na fonte oficial todos os 3 prazos futuros pendentes (`8071bb87`, `10cf0970`, `4bcc186d`).
+
+### 7.1 Tabela Comparativa (Baseline vs. Pós-Tarefa 2)
+
+| Indicador | Antes (Baseline) | Depois (Pós-Tarefa 2) | Delta |
+|---|---:|---:|---:|
+| Certames com ao menos 1 documento | 842 (99,9%) | **843 (100,0%)** | +1 |
+| Total de documentos | 3.417 | **3.420** | +3 |
+| Documentos sem versão | 1.429 | **1.407** | -22 |
+| Documentos oficiais decisivos sem versão (`edital_abertura`, `edital_retificado`, `retificacao`, `cronograma`, `pagina_concurso`) | 22 | **0** | **-22 (100% resolvidos)** |
+| Documentos sem `tipo_documental` | 428 | **0** | **-428 (100% classificados)** |
+| Total de versões baixadas | 1.988 | **2.013** | +25 |
+| Versões extraídas (`concluida` + `parcial`) | 1.975 (99,3%) | **2.012 (99,95%)** | +37 |
+| Versões `nao_iniciada` | 6 | **0** | **-6 (zerado)** |
+| Versões `pdf_sem_texto` (elegíveis a OCR) | 6 | **0** | **-6 (zerado via OCR)** |
+| Versões `pdf_ilegivel` (PDF corrompido na origem) | 1 | **1** | 0 |
+| Propostas extraídas (`propostas_campo`) | 15.549 | **18.240** | **+2.691 (+17,3%)** |
+| Evidências literais válidas (`evidencias`) | 15.549 | **18.240** | **+2.691 (0 citações inválidas)** |
+| Certames em `campos_candidatos` (`coverage_states`) | 55 (6,5%) | **61 (7,2%)** | +6 (+10,9%) |
+| Certames em `oficial_sem_extracao` | 8 | **1** | **-7 (-87,5%)** |
+| Certames em `oficial_nao_importado` | 1 | **0** | **-1 (zerado)** |
+| Oportunidades na carteira (`portfolio_v1`) | 839 | **894** | +55 |
+| Oportunidades na matriz `eligibility_v3` | 597 | **610** | +13 |
+| Rótulos de cargo reconciliados (`cargos_concurso`) | 57 | **62** | +5 |
+| Prazos futuros `candidato_nao_revalidado` (`prazos_a_revalidar`) | 3 | **0** | **-3 (zerado)** |
+| Itens da carteira com `prazo_precisa_revalidacao` | 6 | **0** | **-6 (zerado)** |
+| Certames com distância calculada desde Paulo Afonso–BA | 0 (sem ref.) / 18 | **20** | +20 ativos na carteira |
+
