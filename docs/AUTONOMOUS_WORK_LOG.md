@@ -647,3 +647,29 @@ o-store; 2 GETs pesados concorrentes no maximo (429); nenhum segredo exposto.
 - **Base**: sem migracao (v21); 1.276 documentos, 1.110 versoes, 9.340 propostas; 0 revisoes, 0 valores, 0 reconciliacoes; `integrity ok`, FK vazia.
 - **Testes**: **1.925 testes, OK** (19 novos em `test_frontend_f45.py`; 1 pulado quando ha motor de OCR).
 
+### Fase 46 - Frontend React "Observatorio" e remocao da UI legada (2026-10-22)
+
+- **SPA React** (`web-react/`): React 19 + TypeScript + Vite 7 + React Router 7 + TanStack Query; build de producao (`web-react/dist/`) versionado e servido em `/` pelo servidor Python sem dependencia de Node em runtime.
+- **Remocao da UI antiga**: `web/` removida; `/legacy/*` redireciona `301` para `/`. Telas tecnicas portadas para `/revisao`, `/mesa`, `/identidades`, `/pipeline` e `/operacao`.
+
+### Fase 47 - Cobertura real de dados, reducao de pendencias e consolidacao (2026-11-04)
+
+- **Medicao de cobertura real (`docs/COBERTURA_DADOS.md`)**: retrato completo do funil sobre 843 certames (+1 container DOU), recorte para o perfil do usuario (Sistemas de Informacao, reserva indigena por cargo, deslocamento desde Paulo Afonso-BA e prazos futuros), comparativo com amostras das fontes e classificacao das 18 fontes catalogadas.
+- **Reducao de pendencias documentais com evidencia**:
+  - Correcao em `radar/document_store.py` adicionando `vaga_municipio`, `unified_ppiq_vacancies`, `unified_pi_pq_vacancies` e `indigenous_reserve_notation` em `_FIELDS`/`_COUNTS`, destravando analise de quadros da Quadrix e colunas unificadas;
+  - Adicao de `closest_distance_from_reference` em `radar/geography.py` e integracao em `radar/priority.py` + configuracao de `Paulo Afonso/BA` em `radar_ops.json` e `radar_ops.json.example`;
+  - Extracao das 6 versoes `nao_iniciada` (zerado: `6 -> 0`);
+  - Download e extracao dos 25 documentos oficiais decisivos sem versao (`edital_abertura`, `edital_retificado`, `retificacao`, `cronograma`, `pagina_concurso`, incluindo TJ-PE `tjpe26`, DPE-RJ, MP-ES, PGE-AC, MP-SP, TCE-ES e ALE-AM — zerado: `22 -> 0`);
+  - Classificacao tipologica de 428 documentos sem `tipo_documental` (`428 -> 0`);
+  - Execucao de OCR local (`windows_ocr` `pt-BR`) nas 6 versoes `pdf_sem_texto` (`6 -> 0`);
+  - Revalidacao na fonte oficial dos 3 prazos futuros pendentes (`prazos_a_revalidar: 3 -> 0`).
+  - Resultado na base real (`data/radar.sqlite3`): versoes `1.988 -> 2.013` (`2.012` extraidas), propostas/evidencias `15.549 -> 18.240` (`+2.691`, `0` citacoes invalidas), `oficial_sem_extracao: 8 -> 1`, `oficial_nao_importado: 1 -> 0`, oportunidades na carteira `839 -> 894`.
+- **Consolidacao e poda (`docs/BACKEND_INVENTORY.md`, `radar/server.py`, `radar/api_contract.py`)**:
+  - Inventario completo dos 128 parsers CLI e 45 tabelas SQLite classificados em ativos, manutencao e legado contratual v1;
+  - Refatoracao de `do_GET` em `radar/server.py` (de ~1.035 linhas de `elif` para tabela declarativa `_GET_DISPATCH` + 6 handlers por dominio e `_get_dynamic_routes`), mantendo `api_contract.verify()` com 130 rotas (`ok=True`);
+  - Atualizacao de `README.md`, `docs/READINESS_GATE.md` e `docs/DEPLOY.md` (modelo de ameaca loopback e verificacao de scripts `scripts/*.ps1`, atualizando a tarefa agendada para usar `.venv\Scripts\python.exe`).
+- **Qualidade e testes (`docs/TEST_COVERAGE.md`)**:
+  - 6 novas suites de pagina no React (`OverviewPage.test.tsx`, `OpportunitiesPage.test.tsx`, `DeadlinesPage.test.tsx`, `DossierPage.test.tsx`, `StudiesPage.test.tsx`, `SettingsPage.test.tsx`) -> **16 arquivos / 103 testes Vitest passando**;
+  - Novos testes Python em `tests/test_coverage_consolidation_f47.py` -> **1.919 testes Python passando** (1 skipped condicional).
+
+
