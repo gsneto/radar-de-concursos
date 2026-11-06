@@ -46,7 +46,10 @@ export function OpportunityGlowCard({ item }: OpportunityGlowCardProps) {
 
   const roleTitle = item.role_name ?? 'Cargo não reconciliado';
   const organTitle = item.contest_label ?? item.competition_id ?? 'Concurso';
-  const locationText = prova?.text ?? prova?.uf ?? (prova?.state === 'a_divulgar' ? 'A divulgar' : 'Não informado');
+  const locationText =
+    (prova?.text === 'a_divulgar' || prova?.state === 'a_divulgar')
+      ? 'A divulgar'
+      : (prova?.text ?? prova?.uf ?? 'Não informado');
 
   return (
     <GlowCard accent={accent} className="group flex flex-col justify-between h-full">

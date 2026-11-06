@@ -32,13 +32,13 @@ export const siLabels: Record<string, string> = {
 };
 
 export const siShort: Record<string, string> = {
-  explicito: 'aceitação expressa',
-  categoria_inclui_curso: 'categoria inclui',
-  area_correlata_interpretacao: 'exige interpretação',
-  outras_formacoes: 'outras formações',
-  nao_informado: 'não informado',
-  nao_encontrado: 'não encontrado',
-  extracao_incompleta: 'extração incompleta',
+  explicito: 'Aceitação expressa',
+  categoria_inclui_curso: 'Categoria inclui',
+  area_correlata_interpretacao: 'Exige interpretação',
+  outras_formacoes: 'Outras formações',
+  nao_informado: 'Não informado',
+  nao_encontrado: 'Não encontrado',
+  extracao_incompleta: 'Extração incompleta',
 };
 
 export const siTones: Record<string, Tone> = {
@@ -54,30 +54,42 @@ export const siTones: Record<string, Tone> = {
 export const indigenousLabels: Record<string, string> = {
   explicito_imediato: 'Vaga exclusiva publicada',
   apenas_reserva: 'Apenas reserva',
+  explicito_sem_vaga_imediata: 'Modalidade explícita, sem vaga imediata',
   mencao_sem_quantidade: 'Menção sem quantidade',
   reserva_combinada_com_outros_grupos: 'Reserva combinada',
-  nao_mencionado: 'Não mencionado',
+  mencao_fora_do_escopo_de_reserva: 'Fora do escopo de reserva',
   fora_do_escopo_de_reserva: 'Fora do escopo de reserva',
+  agregado_sem_modalidade: 'Agregado sem modalidade',
+  nao_mencionado: 'Não mencionado',
+  nao_pesquisado: 'Não pesquisado',
   reserva_sem_quantidade: 'Reserva sem quantidade',
 };
 
 export const indigenousShort: Record<string, string> = {
-  explicito_imediato: 'vaga exclusiva',
-  apenas_reserva: 'só reserva',
-  mencao_sem_quantidade: 'menção sem qtd.',
-  reserva_combinada_com_outros_grupos: 'reserva combinada',
-  nao_mencionado: 'não mencionado',
-  fora_do_escopo_de_reserva: 'fora do escopo',
-  reserva_sem_quantidade: 'sem quantidade',
+  explicito_imediato: 'Vaga exclusiva',
+  apenas_reserva: 'Apenas reserva',
+  explicito_sem_vaga_imediata: 'Sem vaga imediata',
+  mencao_sem_quantidade: 'Menção sem qtd.',
+  reserva_combinada_com_outros_grupos: 'Reserva combinada',
+  mencao_fora_do_escopo_de_reserva: 'Fora do escopo',
+  fora_do_escopo_de_reserva: 'Fora do escopo',
+  agregado_sem_modalidade: 'Sem modalidade',
+  nao_mencionado: 'Não mencionado',
+  nao_pesquisado: 'Não pesquisado',
+  reserva_sem_quantidade: 'Sem quantidade',
 };
 
 export const indigenousTones: Record<string, Tone> = {
   explicito_imediato: 'accent',
   apenas_reserva: 'verified',
+  explicito_sem_vaga_imediata: 'verified',
   mencao_sem_quantidade: 'neutral',
   reserva_combinada_com_outros_grupos: 'warn',
-  nao_mencionado: 'unknown',
+  mencao_fora_do_escopo_de_reserva: 'neutral',
   fora_do_escopo_de_reserva: 'neutral',
+  agregado_sem_modalidade: 'neutral',
+  nao_mencionado: 'unknown',
+  nao_pesquisado: 'unknown',
   reserva_sem_quantidade: 'verified',
 };
 
@@ -129,6 +141,7 @@ export const documentTypes: Record<string, string> = {
   anexo: 'Anexo',
   pagina_concurso: 'Página do concurso',
   pagina_banca: 'Página da banca',
+  pagina_agregador: 'Página de agregador',
   outro: 'Documento',
 };
 
@@ -175,4 +188,38 @@ export const fieldLabels: Record<string, string> = {
 export function label(map: Record<string, string>, value: unknown, fallback = '—'): string {
   if (value === null || value === undefined || value === '') return fallback;
   return map[String(value)] ?? String(value).replace(/_/g, ' ');
+}
+
+/**
+ * Converte títulos e rótulos totalmente em maiúsculas (ALL CAPS) em Title Case elegante.
+ * Preserva termos técnicos curtos conhecidos (como SI, TI, DRE, FGV, etc.) e preposições.
+ */
+export function formatTitleCase(text: string | null | undefined): string {
+  if (!text) return '';
+  const trimmed = text.trim();
+  const letters = trimmed.replace(/[^a-zA-ZÀ-ÿ]/g, '');
+  if (letters.length >= 3 && letters === letters.toUpperCase()) {
+    const lowercaseWords = new Set([
+      'e', 'de', 'da', 'do', 'das', 'dos', 'em', 'para', 'com', 'por', 'a', 'o', 'as', 'os', 'no', 'na', 'nos', 'nas'
+    ]);
+    const uppercaseAcronyms = new Set([
+      'ti', 'si', 'dre', 'fgv', 'dou', 'uf', 'cebraspe', 'fcc', 'pci', 'abdi', 'pas', 'pst', 'tjpb', 'tjrj', 'tjsp'
+    ]);
+
+    return trimmed
+      .toLowerCase()
+      .split(/\s+/)
+      .map((word, index) => {
+        const cleanWord = word.replace(/[^a-zÀ-ÿ]/g, '');
+        if (uppercaseAcronyms.has(cleanWord)) {
+          return word.toUpperCase();
+        }
+        if (index > 0 && lowercaseWords.has(cleanWord)) {
+          return word;
+        }
+        return word.charAt(0).toUpperCase() + word.slice(1);
+      })
+      .join(' ');
+  }
+  return trimmed;
 }

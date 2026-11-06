@@ -18,6 +18,7 @@ e a próxima data não feita passa a ser a pendente.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -25,6 +26,31 @@ from radar import study
 from radar.document_store import connect_documents
 
 _MAX_CONTEST_ID = 120
+
+
+def sanitize_discipline_name(name: str) -> str | None:
+    """Sanitiza o nome de uma disciplina do edital para o plano de estudos.
+
+    Remove prefixos/sufixos numéricos e pontuação; rejeita fórmulas, critérios de eliminação
+    ou cláusulas de pontuação que não são disciplinas reais.
+    """
+    if not isinstance(name, str):
+        return None
+    cleaned = name.strip()
+    cleaned = re.sub(r"^[:\s\d\.\)\-]+", "", cleaned).strip()
+    cleaned = re.sub(r":\s*\d+\s*$", "", cleaned).strip()
+    if len(cleaned) < 3 or len(cleaned) > 85:
+        return None
+    lower = cleaned.lower()
+    reject_patterns = [
+        "soma alg", "acertos", "eliminados", "classificados", "candidatos que",
+        "total 100", "questoes da prova", "questões da prova", "subitem",
+        "aproveitamento especificado", "nota final", "nfpos", "nb1", "nb2", "nb3",
+        "algebrica", "algébrica", "=",
+    ]
+    if any(pat in lower for pat in reject_patterns):
+        return None
+    return cleaned
 
 
 def _now() -> str:
@@ -552,7 +578,8 @@ def sync_program_to_study(db_path, contest_id: str) -> dict:
         disc_map: dict[str, str] = {row[1].strip().lower(): row[0] for row in disc_rows}
 
         for item in disciplinas_edital:
-            name = (item.get("value") or "").strip()
+            raw_name = (item.get("value") or "").strip()
+            name = sanitize_discipline_name(raw_name)
             if not name:
                 continue
             key = name.lower()
@@ -571,7 +598,8 @@ def sync_program_to_study(db_path, contest_id: str) -> dict:
         }
 
         for item in topicos_edital:
-            disc_name = (item.get("disciplina") or "Conhecimentos Gerais").strip()
+            raw_disc = (item.get("disciplina") or "Conhecimentos Gerais").strip()
+            disc_name = sanitize_discipline_name(raw_disc) or "Conhecimentos Gerais"
             disc_key = disc_name.lower()
             disc_id = disc_map.get(disc_key)
             if not disc_id:

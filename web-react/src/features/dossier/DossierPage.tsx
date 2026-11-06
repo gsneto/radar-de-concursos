@@ -70,6 +70,30 @@ function fieldStateLabel(field: FieldState | null | undefined): string {
   );
 }
 
+function formatGap(gap: string): string {
+  if (gap.startsWith('campo ausente: ')) {
+    const rawField = gap.replace('campo ausente: ', '').trim();
+    const translated = fieldLabels[rawField] ?? rawField.replace(/_/g, ' ');
+    return `Campo ausente: ${translated}`;
+  }
+  if (gap.startsWith('no concurso, vagas indígenas: ')) {
+    return `No certame, vagas indígenas: ${gap.replace('no concurso, vagas indígenas: ', '')}`;
+  }
+  if (gap.startsWith('vagas indígenas: ')) {
+    return `Vagas indígenas: ${gap.replace('vagas indígenas: ', '')}`;
+  }
+  if (gap.startsWith('local de prova ')) {
+    return `Local de prova ${gap.replace('local de prova ', '')}`;
+  }
+  if (gap.startsWith('sem documento oficial')) {
+    return 'Sem documento oficial';
+  }
+  if (gap.startsWith('cargo não reconciliado')) {
+    return 'Cargo não reconciliado';
+  }
+  return gap.charAt(0).toUpperCase() + gap.slice(1);
+}
+
 export function DossierPage() {
   const { contestId } = useParams<{ contestId: string }>();
   const [params, setParams] = useSearchParams();
@@ -234,7 +258,7 @@ function SummaryTab({ data, details }: { data: Dossier; details?: import('@/lib/
           <ul className="space-y-1.5">
             {data.lacunas.slice(0, 6).map((gap) => (
               <li key={gap} className="text-xs text-fg-2">
-                · {truncate(gap, 130)}
+                · {formatGap(truncate(gap, 130))}
               </li>
             ))}
           </ul>

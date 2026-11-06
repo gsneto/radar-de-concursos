@@ -6,6 +6,7 @@ import { Badge, type Tone } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Kpi, NumberTicker } from '@/components/ui/kpi';
 import { EmptyState, ErrorState, SkeletonRows } from '@/components/ui/states';
+import { documentTypes, extractionLabels } from '@/lib/domain';
 import { integer, percentOf, truncate } from '@/lib/format';
 import type { PipelineDocument } from '@/lib/types';
 
@@ -50,7 +51,7 @@ function StageTrail({ stages }: { stages: string[] }) {
             {index > 0 && <span aria-hidden className="text-fg-3">›</span>}
             <span
               className={
-                'rounded-xs px-1.5 py-0.5 text-[10px] ' +
+                'rounded-xs px-1.5 py-0.5 text-[10px] capitalize ' +
                 (done ? 'bg-ok-soft text-ok' : 'bg-white/[0.04] text-fg-3')
               }
             >
@@ -64,6 +65,13 @@ function StageTrail({ stages }: { stages: string[] }) {
 }
 
 function DocumentCard({ document }: { document: PipelineDocument }) {
+  const typeLabel =
+    (document.tipo_documental && documentTypes[document.tipo_documental]) ??
+    (document.tipo_documental ? document.tipo_documental.replace(/_/g, ' ') : null) ??
+    document.kind ??
+    'Tipo não classificado';
+  const formattedType = typeLabel.charAt(0).toUpperCase() + typeLabel.slice(1);
+
   return (
     <li className="border-t border-line/70 px-4 py-3 first:border-t-0">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -72,13 +80,14 @@ function DocumentCard({ document }: { document: PipelineDocument }) {
             {document.title ?? 'Documento sem título'}
           </p>
           <p className="mt-0.5 truncate text-2xs text-fg-3">
-            {document.tipo_documental ?? document.kind ?? 'tipo não classificado'}
+            {formattedType}
             {document.issuer ? ` · ${document.issuer}` : ''}
             {document.source_identifier ? ` · ${document.source_identifier}` : ''}
           </p>
         </div>
         <Badge tone={blockerTone(document.blocked_at)}>
-          {BLOCKER_LABELS[document.blocked_at ?? ''] ?? document.blocked_at ?? 'sem bloqueio'}
+          {BLOCKER_LABELS[document.blocked_at ?? ''] ??
+            (document.blocked_at ? document.blocked_at.replace(/_/g, ' ') : 'Sem bloqueio')}
         </Badge>
       </div>
 
@@ -89,7 +98,9 @@ function DocumentCard({ document }: { document: PipelineDocument }) {
       <p className="mt-1.5 text-2xs text-fg-3">
         {integer(document.versions)} versão(ões) · {integer(document.blocks)} bloco(s) ·{' '}
         {integer(document.proposals)} proposta(s)
-        {document.last_extraction_state ? ` · extração ${document.last_extraction_state}` : ''}
+        {document.last_extraction_state
+          ? ` · Extração ${extractionLabels[document.last_extraction_state] ?? document.last_extraction_state}`
+          : ''}
         {document.blocked_reason ? ` · ${document.blocked_reason}` : ''}
       </p>
 

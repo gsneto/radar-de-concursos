@@ -6,7 +6,7 @@ import { Badge, type Tone } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { EmptyState, ErrorState, SkeletonRows } from '@/components/ui/states';
-import { documentalLabels, fieldLabels } from '@/lib/domain';
+import { documentalLabels, fieldLabels, formatTitleCase } from '@/lib/domain';
 import { integer, shortDate, truncate } from '@/lib/format';
 import type { OpportunityRow } from '@/lib/types';
 
@@ -34,6 +34,19 @@ const FIELD_STATE_LABELS: Record<string, string> = {
   nao_extraido: 'não extraído',
 };
 
+function formatMotivo(m: unknown): string {
+  if (!m) return '';
+  let text = '';
+  if (typeof m === 'object' && m !== null) {
+    const obj = m as { motivo?: string; label?: string; code?: string; fator?: string };
+    text = obj.motivo ?? obj.label ?? obj.code ?? (obj.fator ? obj.fator.replace(/_/g, ' ') : '');
+  } else {
+    text = String(m).replace(/_/g, ' ');
+  }
+  if (!text) return '';
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 // Ordem de leitura: os decisivos primeiro; o resto do que o servidor mandou vem depois.
 const DECISIVE_FIELDS = [
   'indigenous_vacancies',
@@ -59,7 +72,7 @@ function OpportunityCard({ item }: { item: OpportunityRow }) {
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="truncate text-[13px] font-medium text-fg">
-              {item.role_name ?? 'Cargo não reconciliado'}
+              {formatTitleCase(item.role_name) || 'Cargo não reconciliado'}
               {item.role_code ? ` · ${item.role_code}` : ''}
             </p>
             <p className="mt-0.5 truncate text-2xs text-fg-3">
@@ -89,7 +102,7 @@ function OpportunityCard({ item }: { item: OpportunityRow }) {
         {fields.map((field) => (
           <div key={field.campo} className="flex items-center justify-between gap-2 text-2xs">
             <span className="min-w-0 truncate text-fg-3">{field.label}</span>
-            <Badge tone={FIELD_STATES[field.estado] ?? 'unknown'}>
+            <Badge tone={FIELD_STATES[field.estado] ?? 'unknown'} className="capitalize">
               {FIELD_STATE_LABELS[field.estado] ?? field.estado}
             </Badge>
           </div>
@@ -100,20 +113,15 @@ function OpportunityCard({ item }: { item: OpportunityRow }) {
       </div>
 
       {item.proxima_acao && (
-        <p className="border-t border-line px-4 py-2 text-2xs text-fg-2">{item.proxima_acao}</p>
+        <p className="border-t border-line px-4 py-2 text-2xs text-fg-2 first-letter:uppercase">
+          {item.proxima_acao}
+        </p>
       )}
 
       <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-2 text-2xs text-fg-3">
         <span>
-          prioridade <span className="tabular">{integer(item.prioridade)}</span>
-          {item.motivos.length ? ` · ${truncate(
-            typeof item.motivos[0] === 'object' && item.motivos[0] !== null
-              ? ((item.motivos[0] as { label?: string; code?: string }).label ??
-                 (item.motivos[0] as { code?: string }).code ??
-                 'motivo priorizado')
-              : String(item.motivos[0]),
-            60,
-          )}` : ''}
+          Prioridade <span className="tabular">{integer(item.prioridade)}</span>
+          {item.motivos.length ? ` · ${truncate(formatMotivo(item.motivos[0]), 60)}` : ''}
         </span>
         <Link
           to={`/dossie/${item.contest_id}${item.scope ? `?scope=${encodeURIComponent(item.scope)}` : ''}`}

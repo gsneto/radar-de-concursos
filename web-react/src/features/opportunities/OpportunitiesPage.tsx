@@ -69,9 +69,9 @@ function dossierLink(item: Opportunity): string {
 
 function locationText(item: Opportunity): string {
   const prova = item.localizacao?.prova;
+  if (prova?.text === 'a_divulgar' || prova?.state === 'a_divulgar') return 'A divulgar';
   if (prova?.text) return prova.text;
   if (prova?.uf) return prova.uf;
-  if (prova?.state === 'a_divulgar') return 'A divulgar';
   return 'Não informado';
 }
 

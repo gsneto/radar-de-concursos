@@ -26,6 +26,7 @@ import { Card } from '@/components/ui/card';
 import { Kpi, NumberTicker } from '@/components/ui/kpi';
 import { EmptyState, ErrorState, SkeletonRows } from '@/components/ui/states';
 import { api, syncProgramToStudy } from '@/lib/api';
+import { formatTitleCase } from '@/lib/domain';
 import { clock, dateTime, duration, integer, percent, shortDate } from '@/lib/format';
 import type { StudyPanel, StudySession } from '@/lib/types';
 
@@ -154,9 +155,9 @@ function Overview() {
             <BarList
               ariaLabel="Minutos estudados por disciplina"
               data={data.minutos_por_disciplina.map((item) => ({
-                label: item.nome,
+                label: formatTitleCase(item.nome),
                 value: item.minutos,
-                title: `${item.nome}: ${item.minutos} min`,
+                title: `${formatTitleCase(item.nome)}: ${item.minutos} min`,
               }))}
             />
           )}
@@ -292,9 +293,10 @@ function TimerBlock({ panel }: { panel: StudyPanel }) {
     },
   });
 
-  const disciplineName = session?.disciplina_id
+  const rawDisciplineName = session?.disciplina_id
     ? disciplines.data?.find((item) => item.id === session.disciplina_id)?.nome
     : null;
+  const disciplineName = rawDisciplineName ? formatTitleCase(rawDisciplineName) : null;
 
   return (
     <div className="flex flex-wrap items-center gap-4">
@@ -320,7 +322,7 @@ function TimerBlock({ panel }: { panel: StudyPanel }) {
             >
               <option value="">Sem disciplina</option>
               {disciplines.data?.map((item) => (
-                <option key={item.id} value={item.id}>{item.nome}</option>
+                <option key={item.id} value={item.id}>{formatTitleCase(item.nome)}</option>
               ))}
             </select>
             <Button
@@ -551,7 +553,7 @@ function SessionsTab() {
           <ul className="mt-3 divide-y divide-line">
             {disciplines.data.map((discipline) => (
               <li key={discipline.id} className="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0">
-                <span className="truncate text-xs text-fg">{discipline.nome}</span>
+                <span className="truncate text-xs text-fg">{formatTitleCase(discipline.nome)}</span>
                 <AddTopic disciplineId={discipline.id} />
               </li>
             ))}
