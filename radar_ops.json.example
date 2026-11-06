@@ -10,20 +10,43 @@
   "max_documents_per_source": 5,
   "analyze": true,
   "sources": {
-    "guajara": {"enabled": true, "min_interval_hours": 6},
-    "dou": {"enabled": true, "min_interval_hours": 6},
-    "fgv": {"enabled": true, "min_interval_hours": 6},
-    "quadrix": {"enabled": true, "min_interval_hours": 6},
-    "pci": {"enabled": true, "min_interval_hours": 6},
+    "guajara": {
+      "enabled": true,
+      "min_interval_hours": 6
+    },
+    "dou": {
+      "enabled": true,
+      "min_interval_hours": 6
+    },
+    "fgv": {
+      "enabled": true,
+      "min_interval_hours": 6
+    },
+    "quadrix": {
+      "enabled": true,
+      "min_interval_hours": 6
+    },
+    "pci": {
+      "enabled": true,
+      "min_interval_hours": 6
+    },
     "ibfc": {
-      "enabled": false,
+      "enabled": true,
       "min_interval_hours": 6,
       "download_robots_disallowed_hosts": []
+    },
+    "cebraspe": {
+      "enabled": true,
+      "min_interval_hours": 6
     }
   },
   "notifications": {
     "local": false,
-    "categories": ["prazo_isencao", "retificacao", "falha_fonte"],
+    "categories": [
+      "prazo_isencao",
+      "retificacao",
+      "falha_fonte"
+    ],
     "min_severity": "atencao",
     "max_per_cycle": 5,
     "min_interval_seconds": 30,
@@ -34,7 +57,10 @@
   "preferences": {
     "reference_municipio": "Paulo Afonso",
     "reference_uf": "BA",
-    "interest_states": ["BA", "PE"],
+    "interest_states": [
+      "BA",
+      "PE"
+    ],
     "practical_distance_km": 300,
     "priority": "equilibrado"
   }

@@ -684,3 +684,29 @@ export interface OpportunityList {
   itens: OpportunityRow[];
   limitacao: string;
 }
+
+export interface CurationResult {
+  ok: boolean;
+  dry_run: boolean;
+  started_at: string;
+  finished_at: string;
+  total_decisoes: number;
+  novas_revisoes: number;
+  novas_reconciliacoes: number;
+  novos_valores_atuais: number;
+  totais_banco: {
+    revisoes_campo: number;
+    valores_atuais: number;
+    reconciliacoes_cargo: number;
+  };
+  detalhes: {
+    nao_cargos_rejeitados: number;
+    cargos_reconciliados: number;
+    cargos_criados: number;
+    prazos_validados: number;
+    prazos_rejeitados: number;
+    vagas_validadas: number;
+    vagas_duplicatas_rejeitadas: number;
+    formacao_si_validadas: number;
+  };
+}

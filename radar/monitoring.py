@@ -35,6 +35,7 @@ def default_sources() -> list[dict]:
     from radar.dou_source import dou_source, fetch_article
     from radar.fgv_source import fgv_source
     from radar.ibfc_source import ibfc_source
+    from radar.cebraspe_source import cebraspe_source
     from radar.pci_source import pci_source
     from radar.quadrix_source import quadrix_source
     return [
@@ -52,6 +53,7 @@ def default_sources() -> list[dict]:
         # IBFC (Fase 27): banca com catálogo server-rendered; identidade por certame.
         # ``download_new_only`` evita rebaixar todo o histórico a cada ciclo.
         {**ibfc_source(), "download_new_only": True},
+        cebraspe_source(),
         # PCI: canal complementar de descoberta (agregador não oficial), via MCP.
         pci_source(),
     ]

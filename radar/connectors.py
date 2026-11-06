@@ -175,6 +175,7 @@ def connectors() -> list[Connector]:
         "fgv-conhecimento": ("descobrir", "metadados", "edital", "documento", "retificacao"),
         "quadrix": ("descobrir", "metadados", "edital", "documento", "retificacao"),
         "ibfc": ("descobrir", "metadados", "edital", "documento", "retificacao"),
+        "cebraspe": ("descobrir", "metadados", "edital", "documento", "retificacao"),
         "pci": ("descobrir", "metadados"),
     }
     content_by_id = {
@@ -183,6 +184,7 @@ def connectors() -> list[Connector]:
         "fgv-conhecimento": ("metadados", "documento"),
         "quadrix": ("metadados", "documento"),
         "ibfc": ("metadados", "documento"),
+        "cebraspe": ("metadados", "documento"),
         "pci": ("metadados", "url", "noticia"),
     }
     registry = []

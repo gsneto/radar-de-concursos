@@ -41,6 +41,7 @@ _CONFIG_TO_SOURCE_ID = {
     "quadrix": "quadrix",
     "pci": "pci",
     "ibfc": "ibfc",
+    "cebraspe": "cebraspe",
 }
 
 SEVERITY = ("info", "atencao", "critico")
@@ -640,6 +641,14 @@ def run_cycle(config, *, sources=None, transport=None, now=None, logger=None) ->
         batch = confirmation.process_batch(
             db_path, limit=int(config.get("batch_limit", 10)), now=now)
         result["confirmation"]["batch"] = batch
+
+        # 3.5) Curadoria autônoma determinística (sem necessidade de intervenção humana).
+        try:
+            from radar.autonomous_curator import run_curation_cycle
+            result["curation"] = run_curation_cycle(db_path)
+        except Exception as error:
+            result["curation"] = {"error": type(error).__name__}
+            logger.warning("run=%s curadoria autônoma: %s", run_id, type(error).__name__)
 
         # 4) Alertas persistentes do ciclo (orçamento configurável; excedente vira backlog).
         result["alerts"] = generate_alerts(

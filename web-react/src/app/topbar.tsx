@@ -1,6 +1,9 @@
-import { Menu, Search, Settings2 } from 'lucide-react';
+import { useState } from 'react';
+import { Bot, Check, Loader2, Menu, Search, Settings2 } from 'lucide-react';
 import { Link, useLocation, useMatches } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/cn';
+import { executeCuradoria } from '@/lib/api';
 
 interface TopbarProps {
   onOpenMobile: () => void;
@@ -10,6 +13,64 @@ interface TopbarProps {
 interface RouteHandle {
   title?: string;
   crumb?: string;
+}
+
+export function CuradoriaButton() {
+  const [running, setRunning] = useState(false);
+  const [resultMsg, setResultMsg] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  async function handleCurar() {
+    if (running) return;
+    setRunning(true);
+    setResultMsg(null);
+    try {
+      const res = await executeCuradoria(false);
+      const total = (res.novas_revisoes ?? 0) + (res.novas_reconciliacoes ?? 0);
+      setResultMsg(total > 0 ? `+${total} curados` : 'Base em dia');
+      await queryClient.invalidateQueries();
+    } catch {
+      setResultMsg('Falha ao curar');
+    } finally {
+      setRunning(false);
+      setTimeout(() => setResultMsg(null), 4000);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleCurar}
+      disabled={running}
+      aria-label="Executar Curadoria Autônoma"
+      title="Executar Curadoria Autônoma de Dados"
+      className={cn(
+        'flex h-8 items-center gap-1.5 rounded-sm border px-2.5 text-xs font-medium transition-all',
+        running
+          ? 'border-amber-500/40 bg-amber-500/10 text-amber-300 cursor-wait'
+          : resultMsg
+          ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+          : 'border-line hover:border-line-strong bg-surface hover:bg-surface-2 text-fg-2 hover:text-fg',
+      )}
+    >
+      {running ? (
+        <>
+          <Loader2 size={13} className="animate-spin text-amber-400" />
+          <span className="hidden sm:inline">Curando...</span>
+        </>
+      ) : resultMsg ? (
+        <>
+          <Check size={13} className="text-emerald-400" />
+          <span>{resultMsg}</span>
+        </>
+      ) : (
+        <>
+          <Bot size={13} className="text-fg-3" />
+          <span className="hidden sm:inline">Curar Dados</span>
+        </>
+      )}
+    </button>
+  );
 }
 
 export function Topbar({ onOpenMobile, onOpenPalette }: TopbarProps) {
@@ -51,6 +112,8 @@ export function Topbar({ onOpenMobile, onOpenPalette }: TopbarProps) {
       </div>
 
       <div className="ml-auto flex items-center gap-2">
+        <CuradoriaButton />
+
         <button
           type="button"
           onClick={onOpenPalette}

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, api, qs } from './api';
+import { ApiError, api, executeCuradoria, qs } from './api';
 
 function respond(status: number, body: string) {
   return vi.fn().mockResolvedValue(new Response(body, { status }));
@@ -100,6 +100,18 @@ describe('api client', () => {
     const error = (await pending) as ApiError;
     expect(captured?.aborted).toBe(true);
     expect(error.code).toBe('timeout');
+  });
+
+  it('executeCuradoria envia POST para /api/curadoria/executar', async () => {
+    const fetchMock = respond(200, '{"ok":true,"novas_revisoes":5}');
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await executeCuradoria(false);
+    expect(res).toEqual({ ok: true, novas_revisoes: 5 });
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/curadoria/executar');
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(init.method).toBe('POST');
+    expect(init.body).toBe('{"dry_run":false}');
   });
 });
 

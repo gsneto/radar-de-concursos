@@ -93,3 +93,9 @@ export function qs(params: Record<string, string | number | boolean | null | und
   const text = search.toString();
   return text ? `?${text}` : '';
 }
+
+import type { CurationResult } from './types';
+
+export function executeCuradoria(dryRun = false): Promise<CurationResult> {
+  return api.post<CurationResult>('/api/curadoria/executar', { dry_run: dryRun });
+}
