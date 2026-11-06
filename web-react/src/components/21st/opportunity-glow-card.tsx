@@ -1,7 +1,8 @@
-import { Calendar, ChevronRight, GraduationCap, MapPin, Sparkles } from 'lucide-react';
+import { Calendar, ChevronRight, GraduationCap, MapPin, Sparkles, Star } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { GlowCard, type Accent } from './glow-card';
 import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/cn';
 import {
   indigenousShort,
   indigenousTones,
@@ -15,6 +16,8 @@ import type { Opportunity } from '@/lib/types';
 
 interface OpportunityGlowCardProps {
   item: Opportunity;
+  isSelected?: boolean;
+  onToggleSelect?: () => void;
 }
 
 function urgencyTone(urgencia: string): 'risk' | 'warn' | 'neutral' {
@@ -23,13 +26,15 @@ function urgencyTone(urgencia: string): 'risk' | 'warn' | 'neutral' {
   return 'warn';
 }
 
-export function OpportunityGlowCard({ item }: OpportunityGlowCardProps) {
+export function OpportunityGlowCard({ item, isSelected = false, onToggleSelect }: OpportunityGlowCardProps) {
   const deadline = nextOperationalDeadline(item.prazos);
   const prova = item.localizacao?.prova;
   const isRegional = prova?.uf === 'BA' || prova?.uf === 'PE';
 
   let accent: Accent = 'indigo';
-  if (item.si?.estado === 'explicito' || item.si?.estado === 'categoria_inclui_curso') {
+  if (isSelected) {
+    accent = 'amber';
+  } else if (item.si?.estado === 'explicito' || item.si?.estado === 'categoria_inclui_curso') {
     accent = 'emerald';
   } else if (deadline && typeof deadline.dias_restantes === 'number' && deadline.dias_restantes <= 7) {
     accent = 'amber';
@@ -52,7 +57,7 @@ export function OpportunityGlowCard({ item }: OpportunityGlowCardProps) {
       : (prova?.text ?? prova?.uf ?? 'Não informado');
 
   return (
-    <GlowCard accent={accent} className="group flex flex-col justify-between h-full">
+    <GlowCard accent={accent} className={cn("group flex flex-col justify-between h-full", isSelected && "ring-1 ring-amber-400/40")}>
       {/* Topo do Card: Órgão e Status */}
       <div>
         <div className="flex items-start justify-between gap-3 mb-2">
@@ -67,11 +72,34 @@ export function OpportunityGlowCard({ item }: OpportunityGlowCardProps) {
               {roleTitle}
             </Link>
           </div>
-          {item.prontidao && (
-            <Badge tone={readinessTones[item.prontidao.estado] ?? 'unknown'} className="shrink-0 text-[10px]">
-              {item.prontidao.estado_label}
-            </Badge>
-          )}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {onToggleSelect && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onToggleSelect();
+                }}
+                aria-label={isSelected ? 'Remover dos Meus Concursos' : 'Adicionar aos Meus Concursos'}
+                title={isSelected ? 'Selecionado no seu Painel de Foco' : 'Adicionar aos Meus Concursos'}
+                className={cn(
+                  'p-1.5 rounded-md border transition-all text-xs flex items-center gap-1',
+                  isSelected
+                    ? 'bg-amber-400/15 border-amber-400/50 text-amber-300 shadow-xs'
+                    : 'bg-surface-2/80 border-line text-fg-3 hover:text-amber-400 hover:border-amber-400/30',
+                )}
+              >
+                <Star size={13} className={isSelected ? 'fill-amber-400 text-amber-400' : ''} />
+                <span className="text-[10px] font-medium hidden sm:inline">{isSelected ? 'Foco' : '+ Foco'}</span>
+              </button>
+            )}
+            {item.prontidao && (
+              <Badge tone={readinessTones[item.prontidao.estado] ?? 'unknown'} className="text-[10px]">
+                {item.prontidao.estado_label}
+              </Badge>
+            )}
+          </div>
         </div>
 
         {/* Localização e Distância */}

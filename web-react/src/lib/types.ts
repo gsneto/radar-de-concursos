@@ -722,3 +722,27 @@ export interface SyncProgramResult {
   error?: string;
   mensagem?: string;
 }
+
+export interface MyContest {
+  id: string;
+  contest_id: string;
+  role_id: string | null;
+  contest_label: string;
+  competition_id: string | null;
+  role_name: string | null;
+  role_specialty: string | null;
+  remuneracao: string | number | null;
+  vagas: number | null;
+  proximo_prazo: {
+    campo: string;
+    data: string;
+  } | null;
+  selected_at: string;
+  status: string;
+  notes: string | null;
+}
+
+export interface MyContestsResponse {
+  total: number;
+  itens: MyContest[];
+}

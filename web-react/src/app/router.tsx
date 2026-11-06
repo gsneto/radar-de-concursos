@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { Shell } from './shell';
+import { MyContestsPage } from '@/features/my-contests/MyContestsPage';
 import { OverviewPage } from '@/features/overview/OverviewPage';
 import { OpportunitiesPage } from '@/features/opportunities/OpportunitiesPage';
 import { DossierPage } from '@/features/dossier/DossierPage';
@@ -18,11 +19,12 @@ export const router = createBrowserRouter([
     path: '/',
     element: <Shell />,
     children: [
-      { index: true, element: <OverviewPage />, handle: { title: 'Visão geral' } },
+      { index: true, element: <MyContestsPage />, handle: { title: 'Meus Concursos' } },
+      { path: 'visao-geral', element: <OverviewPage />, handle: { title: 'Visão geral & Métricas' } },
       {
         path: 'oportunidades',
         element: <OpportunitiesPage />,
-        handle: { title: 'Oportunidades', crumb: 'Oportunidades' },
+        handle: { title: 'Radar de Oportunidades', crumb: 'Radar' },
       },
       {
         path: 'dossie/:contestId',

@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Check, Clock3, DownloadCloud, Pause, Play, Plus, RefreshCw, Sparkles, Square, X } from 'lucide-react';
+import { Check, Clock3, DownloadCloud, Pause, Play, Plus, RefreshCw, Sparkles, Square, Target, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   keys,
   useDisciplines,
@@ -41,16 +41,40 @@ const TABS = [
 export function StudiesPage() {
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const contestId = searchParams.get('concurso');
   const suffix = location.pathname.replace(/^\/estudos/, '');
   const active = TABS.find(([path]) => path === suffix)?.[0] ?? '';
 
   return (
     <>
       <PageHeader
-        eyebrow="Aprendizagem"
+        eyebrow="Aprendizagem & Foco"
         title="Estudos"
-        description="Sessões, revisões, questões e simulados registrados no servidor local. Nenhum percentual é exibido sem denominador."
+        description="Sessões, revisões, questões e simulados direcionados para os seus concursos alvo."
       />
+
+      {contestId && (
+        <div className="mb-4 flex items-center justify-between gap-3 p-3.5 rounded-lg border border-amber-400/30 bg-amber-400/5 text-xs text-fg">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Target size={16} className="text-amber-400 shrink-0" />
+            <span className="truncate">
+              Foco ativado: visualizando conteúdo e matérias para o concurso selecionado.
+            </span>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              const next = new URLSearchParams(searchParams);
+              next.delete('concurso');
+              setSearchParams(next);
+            }}
+          >
+            Ver Todas
+          </Button>
+        </div>
+      )}
 
       {/* Quebra em duas linhas no celular: antes a última aba ficava fora da tela. */}
       <div role="tablist" aria-label="Seções de estudos" className="mb-3 flex flex-wrap gap-1 border-b border-line pb-px">

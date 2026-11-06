@@ -21,11 +21,14 @@ import type {
   StudyPanel,
   StudySession,
   Timeline,
+  MyContest,
+  MyContestsResponse,
 } from '@/lib/types';
 
 /* Chaves centralizadas: invalidação previsível. */
 export const keys = {
   portfolio: (filters: Record<string, unknown>) => ['portfolio', filters] as const,
+  myContests: () => ['my-contests'] as const,
   coverage: () => ['coverage'] as const,
   timeline: () => ['timeline'] as const,
   study: () => ['study', 'panel'] as const,
@@ -424,4 +427,39 @@ export function usePreferences() {
   });
 }
 
-export type { Opportunity };
+export function useMyContests() {
+  return useQuery({
+    queryKey: keys.myContests(),
+    queryFn: () => api.get<MyContestsResponse>('/api/meus-concursos'),
+    staleTime: 30_000,
+  });
+}
+
+export interface ToggleMyContestInput {
+  contestId: string;
+  roleId?: string | null;
+  notes?: string | null;
+  isSelected: boolean;
+}
+
+export function useToggleMyContest() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ contestId, roleId, notes, isSelected }: ToggleMyContestInput) => {
+      if (isSelected) {
+        return api.del<{ ok: boolean; removed: boolean }>(`/api/meus-concursos/${encodeURIComponent(contestId)}`);
+      } else {
+        return api.post<{ ok: boolean; id: string }>('/api/meus-concursos', {
+          contest_id: contestId,
+          role_id: roleId,
+          notes,
+        });
+      }
+    },
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: keys.myContests() });
+    },
+  });
+}
+
+export type { Opportunity, MyContest, MyContestsResponse };

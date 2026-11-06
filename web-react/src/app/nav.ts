@@ -33,9 +33,10 @@ export const navGroups: NavGroup[] = [
   {
     label: 'Principal',
     items: [
-      { to: '/', label: 'Visão geral', icon: Gauge, end: true },
-      { to: '/oportunidades', label: 'Oportunidades', icon: Compass },
+      { to: '/', label: 'Meus Concursos', icon: Target, end: true },
+      { to: '/oportunidades', label: 'Radar de Concursos', icon: Compass },
       { to: '/prazos', label: 'Prazos', icon: CalendarDays },
+      { to: '/visao-geral', label: 'Visão geral', icon: Gauge },
       { to: '/revisao', label: 'Revisão', icon: ClipboardCheck },
     ],
   },

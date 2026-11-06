@@ -11,12 +11,13 @@ import {
   Search,
   SlidersHorizontal,
   Sparkles,
+  Star,
   Table2,
   X,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { usePortfolio, type PortfolioFilters } from '@/app/queries';
+import { useMyContests, usePortfolio, useToggleMyContest, type PortfolioFilters } from '@/app/queries';
 import { OpportunityGlowCard } from '@/components/21st/opportunity-glow-card';
 import { AnimatedFilterPills } from '@/components/21st/animated-filter-pills';
 import { cn } from '@/lib/cn';
@@ -101,11 +102,22 @@ export function OpportunitiesPage() {
 
   const sort = (params.get('sort') as SortKey) ?? 'prioridade';
   const query = usePortfolio(filters);
+  const myContestsQuery = useMyContests();
+  const toggleMutation = useToggleMyContest();
+  const selectedSet = useMemo(
+    () => new Set((myContestsQuery.data?.itens ?? []).map((c) => c.contest_id)),
+    [myContestsQuery.data],
+  );
+  const [onlySelected, setOnlySelected] = useState(false);
+
   const total = query.data?.total ?? 0;
   const offset = filters.offset ?? 0;
 
   const items = useMemo(() => {
-    const list = [...(query.data?.itens ?? [])];
+    let list = [...(query.data?.itens ?? [])];
+    if (onlySelected) {
+      list = list.filter((a) => selectedSet.has(a.contest_id));
+    }
     if (sort === 'prazo') {
       list.sort((a, b) => {
         const da = nextDeadline(a)?.dias_restantes ?? 9999;
@@ -118,7 +130,7 @@ export function OpportunitiesPage() {
       list.sort((a, b) => String(a.contest_label ?? '').localeCompare(String(b.contest_label ?? '')));
     }
     return list;
-  }, [query.data, sort]);
+  }, [query.data, sort, onlySelected, selectedSet]);
 
   const update = (changes: Record<string, string | undefined>, resetOffset = true) => {
     const next = new URLSearchParams(params);
@@ -177,8 +189,18 @@ export function OpportunitiesPage() {
             id: 'todos',
             label: 'Todas',
             icon: <Layers size={13} />,
-            active: !filters.si && !filters.prazo && !filters.uf && !filters.indigena,
-            onClick: clearAll,
+            active: !onlySelected && !filters.si && !filters.prazo && !filters.uf && !filters.indigena,
+            onClick: () => {
+              setOnlySelected(false);
+              clearAll();
+            },
+          },
+          {
+            id: 'meus_selecionados',
+            label: `Meus Concursos (${selectedSet.size})`,
+            icon: <Star size={13} className={selectedSet.size > 0 ? 'fill-amber-400 text-amber-400' : ''} />,
+            active: onlySelected,
+            onClick: () => setOnlySelected(!onlySelected),
           },
           {
             id: 'si',
@@ -379,7 +401,18 @@ export function OpportunitiesPage() {
           {viewMode === 'cards' ? (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {items.map((item) => (
-                <OpportunityGlowCard key={`${item.contest_id}-${item.scope}`} item={item} />
+                <OpportunityGlowCard
+                  key={`${item.contest_id}-${item.scope}`}
+                  item={item}
+                  isSelected={selectedSet.has(item.contest_id)}
+                  onToggleSelect={() =>
+                    toggleMutation.mutate({
+                      contestId: item.contest_id,
+                      roleId: item.role_id,
+                      isSelected: selectedSet.has(item.contest_id),
+                    })
+                  }
+                />
               ))}
             </div>
           ) : (
@@ -388,6 +421,7 @@ export function OpportunitiesPage() {
             <ul className="divide-y divide-line/70 md:hidden">
               {items.map((item) => {
                 const deadline = nextDeadline(item);
+                const isSelected = selectedSet.has(item.contest_id);
                 return (
                   <li key={`${item.contest_id}-${item.scope}`} className="p-3">
                     <div className="flex items-start justify-between gap-2">
@@ -402,9 +436,30 @@ export function OpportunitiesPage() {
                           {item.role_name ?? 'Cargo não reconciliado'}
                         </span>
                       </div>
-                      <LinkButton to={dossierLink(item)} variant="ghost" size="sm">
-                        Abrir
-                      </LinkButton>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            toggleMutation.mutate({
+                              contestId: item.contest_id,
+                              roleId: item.role_id,
+                              isSelected,
+                            })
+                          }
+                          aria-label={isSelected ? 'Remover dos Meus Concursos' : 'Adicionar aos Meus Concursos'}
+                          className={cn(
+                            'p-1.5 rounded-md border text-xs',
+                            isSelected
+                              ? 'bg-amber-400/15 border-amber-400/50 text-amber-300'
+                              : 'bg-surface-2 border-line text-fg-3 hover:text-amber-400',
+                          )}
+                        >
+                          <Star size={13} className={isSelected ? 'fill-amber-400 text-amber-400' : ''} />
+                        </button>
+                        <LinkButton to={dossierLink(item)} variant="ghost" size="sm">
+                          Abrir
+                        </LinkButton>
+                      </div>
                     </div>
 
                     <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-2xs">
@@ -535,9 +590,31 @@ export function OpportunitiesPage() {
                           </Badge>
                         </td>
                         <td className="px-3 py-2.5 text-right align-top">
-                          <LinkButton to={dossierLink(item)} variant="ghost" size="sm">
-                            Abrir
-                          </LinkButton>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                toggleMutation.mutate({
+                                  contestId: item.contest_id,
+                                  roleId: item.role_id,
+                                  isSelected: selectedSet.has(item.contest_id),
+                                })
+                              }
+                              aria-label={selectedSet.has(item.contest_id) ? 'Remover dos Meus Concursos' : 'Adicionar aos Meus Concursos'}
+                              title={selectedSet.has(item.contest_id) ? 'Selecionado no seu Painel de Foco' : 'Adicionar aos Meus Concursos'}
+                              className={cn(
+                                'p-1.5 rounded-md border text-xs transition-colors',
+                                selectedSet.has(item.contest_id)
+                                  ? 'bg-amber-400/15 border-amber-400/50 text-amber-300'
+                                  : 'bg-surface-2 border-line text-fg-3 hover:text-amber-400',
+                              )}
+                            >
+                              <Star size={13} className={selectedSet.has(item.contest_id) ? 'fill-amber-400 text-amber-400' : ''} />
+                            </button>
+                            <LinkButton to={dossierLink(item)} variant="ghost" size="sm">
+                              Abrir
+                            </LinkButton>
+                          </div>
                         </td>
                       </tr>
                     );

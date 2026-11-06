@@ -119,6 +119,10 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
+    def _send_json(self, payload, status=HTTPStatus.OK, headers=None):
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self._send(status, "application/json; charset=utf-8", body, headers=headers)
+
     def _serve_file(self, filename: str, *, root, cache=None):
         """Serve um arquivo dentro de ``root``, bloqueando qualquer escape.
 
@@ -632,6 +636,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         "/api/campos-decisivos": "_get_core_and_ops",
         "/api/lacunas": "_get_core_and_ops",
         "/api/preferencias": "_get_core_and_ops",
+        "/api/meus-concursos": "_get_core_and_ops",
         # Pipeline documental e aquisição
         "/api/pipeline": "_get_pipeline_and_documents",
         "/api/pipeline/continuidade": "_get_pipeline_and_documents",
@@ -922,6 +927,13 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
             else:
                 self._serve_preferences()
+        elif path == "/api/meus-concursos":
+            if parts.query:
+                self._bad_request("parâmetros inválidos")
+            else:
+                from radar import my_contests
+                items = my_contests.list_my_contests(self.server.db_path)
+                self._send_json({"total": len(items), "itens": items})
 
     def _get_pipeline_and_documents(self, path: str, parts):
         if path == "/api/pipeline":
@@ -2016,6 +2028,26 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             else:
                 self._save_preferences()
             return
+        if path == "/api/meus-concursos":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+                return
+            body = self._read_json()
+            if body is None:
+                return
+            contest_id = body.get("contest_id")
+            if not contest_id:
+                self._bad_request("contest_id é obrigatório")
+                return
+            from radar import my_contests
+            res = my_contests.add_my_contest(
+                self.server.db_path,
+                contest_id=contest_id,
+                role_id=body.get("role_id"),
+                notes=body.get("notes"),
+            )
+            self._send_json(res, status=HTTPStatus.CREATED)
+            return
         if path == "/api/estudos/disciplinas":
             if parts.query:
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
@@ -2333,6 +2365,15 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             return
         from radar import knowledge_store, practice_store
         parts = urlsplit(self.path)
+        if parts.path.startswith("/api/meus-concursos/") and not parts.query:
+            contest_id = parts.path[len("/api/meus-concursos/"):]
+            if not contest_id:
+                self._bad_request("contest_id obrigatório")
+                return
+            from radar import my_contests
+            removed = my_contests.remove_my_contest(self.server.db_path, contest_id)
+            self._send_json({"ok": True, "removed": removed})
+            return
         if parts.path.startswith("/api/estudos/flashcards/") and not parts.query:
             rest = parts.path[len("/api/estudos/flashcards/"):]
             pieces = rest.split("/")
@@ -2363,7 +2404,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
 
     def _verb_not_allowed(self):
         path = urlsplit(self.path).path
-        post_paths = ("/api/preferencias", "/api/estudos/disciplinas", "/api/estudos/topicos",
+        post_paths = ("/api/preferencias", "/api/meus-concursos", "/api/estudos/disciplinas", "/api/estudos/topicos",
                       "/api/estudos/progresso", "/api/estudos/sessoes", "/api/estudos/revisoes",
                       "/api/estudos/perfil", "/api/estudos/lacuna", "/api/estudos/importar",
                       "/api/estudos/sincronizar-edital",
@@ -2372,7 +2413,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                       "/api/reconciliacao", "/api/prazos/revalidacao",
                       "/api/prazos/verificar-documento")
         allow = "GET, POST" if path in post_paths else "GET"
-        if path == "/api/estudos/perfil":
+        if path in ("/api/estudos/perfil", "/api/meus-concursos") or path.startswith("/api/meus-concursos/"):
             allow = "GET, POST, DELETE"
         self._method_not_allowed(allow)
 
