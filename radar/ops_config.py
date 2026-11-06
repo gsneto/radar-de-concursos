@@ -19,7 +19,7 @@ DEFAULT_DB_RELATIVE = "data/radar.sqlite3"
 DEFAULT_LOGS_RELATIVE = "logs"
 
 # Fontes habilitadas por padrão (identificadores estáveis das fases anteriores).
-DEFAULT_SOURCES = ("guajara", "dou", "fgv", "quadrix", "pci", "ibfc", "cebraspe")
+DEFAULT_SOURCES = ("dou", "fgv", "quadrix", "pci", "ibfc", "cebraspe")
 
 DEFAULTS = {
     "project_root": None,          # resolvido para a raiz do repositório
@@ -54,7 +54,7 @@ DEFAULTS = {
 
 # Intervalos mínimos por fonte (evita consultas repetidas entre ciclos).
 DEFAULT_MIN_INTERVAL_HOURS = {
-    "guajara": 6, "dou": 6, "fgv": 6, "quadrix": 6, "pci": 6, "ibfc": 6, "cebraspe": 6,
+    "dou": 6, "fgv": 6, "quadrix": 6, "pci": 6, "ibfc": 6, "cebraspe": 6,
 }
 
 

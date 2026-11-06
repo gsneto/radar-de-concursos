@@ -188,7 +188,7 @@ def connectors() -> list[Connector]:
         "pci": ("metadados", "url", "noticia"),
     }
     registry = []
-    for descriptor in default_sources():
+    for descriptor in default_sources(include_pilot=True):
         source_id = descriptor.get("id") or "guajara"
         if source_id not in capabilities_by_id:
             continue

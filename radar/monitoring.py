@@ -30,20 +30,22 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def default_sources() -> list[dict]:
-    """Fontes oficiais autorizadas: Guajará-Mirim (artigo), DOU (Seção 3), FGV, Quadrix e IBFC."""
+def default_sources(*, include_pilot: bool = False) -> list[dict]:
+    """Fontes oficiais autorizadas em produção: DOU (Seção 3), FGV, Quadrix, IBFC, Cebraspe e PCI."""
     from radar.dou_source import dou_source, fetch_article
     from radar.fgv_source import fgv_source
     from radar.ibfc_source import ibfc_source
     from radar.cebraspe_source import cebraspe_source
     from radar.pci_source import pci_source
     from radar.quadrix_source import quadrix_source
-    return [
-        {
+    sources = []
+    if include_pilot:
+        sources.append({
             "source_url": SOURCE_URL,
             "fetch": fetch_official,
             "discover": lambda html, observation_id: discover_documents(html, SOURCE_URL, observation_id),
-        },
+        })
+    sources.extend([
         # DOU: enriquece cada matéria com o ato oficial completo (texto-dou).
         dou_source(article_fetcher=fetch_article),
         # FGV: catálogo de concursos, com identidade por concurso (multi-concurso).
@@ -56,7 +58,8 @@ def default_sources() -> list[dict]:
         cebraspe_source(),
         # PCI: canal complementar de descoberta (agregador não oficial), via MCP.
         pci_source(),
-    ]
+    ])
+    return sources
 
 
 def _coverage_state(conn, contest_id: str) -> str:

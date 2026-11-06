@@ -112,7 +112,7 @@ _SOURCES = [
         "confidence": "alta",
         "review_due": "2027-01-17",
         "review_owner": "operador local (CLI fontes-revisar)",
-        "notes": "Fonte base do contrato v1.",
+        "notes": "Fonte piloto do projeto (contrato v1).",
     },
     {
         "id": "dou-secao-3",
