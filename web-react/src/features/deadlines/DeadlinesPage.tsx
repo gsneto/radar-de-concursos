@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { AlertTriangle, Calendar, Clock, Flame } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useDeadlines } from '@/app/queries';
 import { PageHeader } from '@/components/layout/page-header';
@@ -115,6 +116,7 @@ export function DeadlinesPage() {
               feature
               tone="accent"
               label="Prazos futuros"
+              icon={<Flame size={16} />}
               value={
                 <NumberTicker
                   value={
@@ -128,16 +130,19 @@ export function DeadlinesPage() {
             />
             <Kpi
               label="Vencidos preservados"
+              icon={<Clock size={16} />}
               value={<NumberTicker value={urgencyCounts.vencido ?? 0} />}
               context="Histórico com evidência; não são prazo vigente"
             />
             <Kpi
               label="Sem data"
+              icon={<Calendar size={16} />}
               value={<NumberTicker value={urgencyCounts.sem_data ?? 0} />}
               context="Campo não localizado ou sem data documental"
             />
             <Kpi
               label="Com conflito"
+              icon={<AlertTriangle size={16} />}
               value={<NumberTicker value={data?.por_conflito?.conflito ?? 0} />}
               context="Documentos ou versões divergentes"
             />

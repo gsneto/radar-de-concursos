@@ -1,5 +1,6 @@
 import { ArrowRight, CalendarDays, Clock3, Compass, Layers, Target } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { RadarBento } from '@/components/21st/radar-bento';
 import {
   useCoverage,
   useDeadlines,
@@ -489,6 +490,8 @@ export function OverviewPage() {
           )}
         </Card>
       </div>
+
+      <RadarBento />
     </>
   );
 }

@@ -106,7 +106,14 @@ function OpportunityCard({ item }: { item: OpportunityRow }) {
       <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-2 text-2xs text-fg-3">
         <span>
           prioridade <span className="tabular">{integer(item.prioridade)}</span>
-          {item.motivos.length ? ` · ${truncate(item.motivos[0], 60)}` : ''}
+          {item.motivos.length ? ` · ${truncate(
+            typeof item.motivos[0] === 'object' && item.motivos[0] !== null
+              ? ((item.motivos[0] as { label?: string; code?: string }).label ??
+                 (item.motivos[0] as { code?: string }).code ??
+                 'motivo priorizado')
+              : String(item.motivos[0]),
+            60,
+          )}` : ''}
         </span>
         <Link
           to={`/dossie/${item.contest_id}${item.scope ? `?scope=${encodeURIComponent(item.scope)}` : ''}`}

@@ -1,7 +1,25 @@
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Search, SlidersHorizontal, X } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronLeft,
+  ChevronRight,
+  Compass,
+  Flame,
+  GraduationCap,
+  Layers,
+  LayoutGrid,
+  Search,
+  SlidersHorizontal,
+  Sparkles,
+  Table2,
+  X,
+} from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { usePortfolio, type PortfolioFilters } from '@/app/queries';
+import { OpportunityGlowCard } from '@/components/21st/opportunity-glow-card';
+import { AnimatedFilterPills } from '@/components/21st/animated-filter-pills';
+import { cn } from '@/lib/cn';
 import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button, LinkButton } from '@/components/ui/button';
@@ -60,6 +78,7 @@ function locationText(item: Opportunity): string {
 export function OpportunitiesPage() {
   const [params, setParams] = useSearchParams();
   const [searchDraft, setSearchDraft] = useState(params.get('q') ?? '');
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
   const [advanced, setAdvanced] = useState(
     Boolean(params.get('documental') || params.get('conflito')),
   );
@@ -152,6 +171,47 @@ export function OpportunitiesPage() {
         }
       />
 
+      <AnimatedFilterPills
+        pills={[
+          {
+            id: 'todos',
+            label: 'Todas',
+            icon: <Layers size={13} />,
+            active: !filters.si && !filters.prazo && !filters.uf && !filters.indigena,
+            onClick: clearAll,
+          },
+          {
+            id: 'si',
+            label: 'TI / Sistemas de Informação',
+            icon: <GraduationCap size={13} />,
+            active: filters.si === 'explicito' || filters.si === 'categoria_inclui_curso',
+            onClick: () => update({ si: filters.si ? undefined : 'explicito' }),
+          },
+          {
+            id: 'prazos_abertos',
+            label: 'Inscrições Abertas (≤ 30d)',
+            icon: <Flame size={13} />,
+            active: filters.prazo === 'ate_30_dias',
+            onClick: () => update({ prazo: filters.prazo === 'ate_30_dias' ? undefined : 'ate_30_dias' }),
+          },
+          {
+            id: 'proximos',
+            label: 'Bahia & Pernambuco',
+            icon: <Compass size={13} />,
+            active: filters.uf === 'BA' || filters.uf === 'PE',
+            onClick: () => update({ uf: filters.uf === 'BA' ? 'PE' : filters.uf === 'PE' ? undefined : 'BA' }),
+          },
+          {
+            id: 'indigena',
+            label: 'Cota Indígena',
+            icon: <Sparkles size={13} />,
+            active: Boolean(filters.indigena),
+            onClick: () => update({ indigena: filters.indigena ? undefined : 'cargo_imediata' }),
+          },
+        ]}
+        className="mb-4"
+      />
+
       <Card flush className="mb-3">
         <div className="border-b border-line p-3">
           <form
@@ -217,6 +277,32 @@ export function OpportunitiesPage() {
             <Button variant="ghost" size="sm" onClick={() => setAdvanced((open) => !open)} aria-expanded={advanced}>
               <SlidersHorizontal size={13} /> Avançados
             </Button>
+            <div className="flex items-center rounded-sm border border-line bg-surface-2 p-0.5">
+              <button
+                type="button"
+                onClick={() => setViewMode('cards')}
+                className={cn(
+                  'rounded-xs p-1.5 transition-colors',
+                  viewMode === 'cards' ? 'bg-surface text-accent shadow-xs' : 'text-fg-3 hover:text-fg',
+                )}
+                title="Visualização em Cards"
+                aria-label="Cards"
+              >
+                <LayoutGrid size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('table')}
+                className={cn(
+                  'rounded-xs p-1.5 transition-colors',
+                  viewMode === 'table' ? 'bg-surface text-accent shadow-xs' : 'text-fg-3 hover:text-fg',
+                )}
+                title="Visualização em Tabela"
+                aria-label="Tabela"
+              >
+                <Table2 size={14} />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -290,7 +376,14 @@ export function OpportunitiesPage() {
         </Card>
       ) : (
         <>
-          <Card flush>
+          {viewMode === 'cards' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {items.map((item) => (
+                <OpportunityGlowCard key={`${item.contest_id}-${item.scope}`} item={item} />
+              ))}
+            </div>
+          ) : (
+            <Card flush>
             {/* Abaixo de 768px a tabela vira lista de cartões (spec §9): sem rolagem lateral. */}
             <ul className="divide-y divide-line/70 md:hidden">
               {items.map((item) => {
@@ -453,6 +546,7 @@ export function OpportunitiesPage() {
               </table>
             </div>
           </Card>
+        )}
 
           <nav
             aria-label="Paginação de oportunidades"
