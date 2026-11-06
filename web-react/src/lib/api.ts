@@ -94,8 +94,12 @@ export function qs(params: Record<string, string | number | boolean | null | und
   return text ? `?${text}` : '';
 }
 
-import type { CurationResult } from './types';
+import type { CurationResult, SyncProgramResult } from './types';
 
 export function executeCuradoria(dryRun = false): Promise<CurationResult> {
   return api.post<CurationResult>('/api/curadoria/executar', { dry_run: dryRun });
+}
+
+export function syncProgramToStudy(contestId: string): Promise<SyncProgramResult> {
+  return api.post<SyncProgramResult>('/api/estudos/sincronizar-edital', { contest_id: contestId });
 }

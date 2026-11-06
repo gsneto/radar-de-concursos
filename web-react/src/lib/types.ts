@@ -710,3 +710,15 @@ export interface CurationResult {
     formacao_si_validadas: number;
   };
 }
+
+export interface SyncProgramResult {
+  ok: boolean;
+  contest_id: string;
+  disciplinas_importadas: number;
+  topicos_importados: number;
+  progresso_iniciado: number;
+  total_disciplinas?: number;
+  total_topicos?: number;
+  error?: string;
+  mensagem?: string;
+}

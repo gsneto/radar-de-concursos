@@ -278,6 +278,8 @@ _ENTRIES = [
      "Importa dados pessoais de estudo com validação e transação."),
     ("POST", "/api/estudos/lacuna", "estudos", "", "contest_id,conceito_key", True, "sim",
      "Envia lacuna de edital para a trilha de estudo."),
+    ("POST", "/api/estudos/sincronizar-edital", "estudos", "", "contest_id", True, "sim",
+     "Importa conteúdo programático do edital para disciplinas e tópicos de estudo."),
 
     # --- Estudos: flashcards ---------------------------------------------------
     ("GET", "/api/estudos/flashcards", "flashcards", "incluir_arquivados", "", False,

@@ -507,3 +507,123 @@ def study_dashboard(db_path, *, today=None) -> dict:
         "revisoes": revisoes,
         "sessao_aberta": current_session(db_path),
     }
+
+
+# --- Sincronização: Conteúdo Programático do Edital -> Gestão de Estudos ----
+
+def sync_program_to_study(db_path, contest_id: str) -> dict:
+    """Importa disciplinas e tópicos de um edital analisado para as tabelas de estudos.
+
+    Gera as disciplinas em `estudo_disciplinas` e tópicos em `estudo_topicos`, associando
+    o progresso inicial ('nao_iniciado') em `estudo_progresso` para este concurso específico.
+    Idempotente: executar múltiplas vezes não duplica registros já existentes.
+    """
+    contest_id = _clean_contest_id(contest_id)
+    if not contest_id:
+        raise ValueError("contest_id obrigatório")
+
+    from radar import knowledge_store
+    program = knowledge_store.resolve_program(db_path, contest_id)
+    disciplinas_edital = program.get("disciplinas") or []
+    topicos_edital = program.get("topicos") or []
+
+    if not disciplinas_edital and not topicos_edital:
+        return {
+            "ok": False,
+            "error": "sem_conteudo",
+            "mensagem": "Nenhum conteúdo programático localizado para este concurso.",
+            "contest_id": contest_id,
+            "disciplinas_importadas": 0,
+            "topicos_importados": 0,
+            "progresso_iniciado": 0,
+        }
+
+    now = _now()
+    disciplinas_criadas = 0
+    topicos_criados = 0
+    progresso_iniciado = 0
+
+    conn = connect_documents(db_path)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+
+        # 1. Mapa de disciplinas existentes por nome normalizado (case-insensitive)
+        disc_rows = conn.execute("SELECT id, nome FROM estudo_disciplinas").fetchall()
+        disc_map: dict[str, str] = {row[1].strip().lower(): row[0] for row in disc_rows}
+
+        for item in disciplinas_edital:
+            name = (item.get("value") or "").strip()
+            if not name:
+                continue
+            key = name.lower()
+            if key not in disc_map:
+                did = str(uuid4())
+                conn.execute(
+                    "INSERT INTO estudo_disciplinas(id, nome, created_at) VALUES(?,?,?)",
+                    (did, name[:200], now))
+                disc_map[key] = did
+                disciplinas_criadas += 1
+
+        # 2. Mapa de tópicos existentes por (disciplina_id, nome normalizado)
+        topico_rows = conn.execute("SELECT id, disciplina_id, nome FROM estudo_topicos").fetchall()
+        topico_map: dict[tuple[str, str], str] = {
+            (row[1], row[2].strip().lower()): row[0] for row in topico_rows
+        }
+
+        for item in topicos_edital:
+            disc_name = (item.get("disciplina") or "Conhecimentos Gerais").strip()
+            disc_key = disc_name.lower()
+            disc_id = disc_map.get(disc_key)
+            if not disc_id:
+                did = str(uuid4())
+                conn.execute(
+                    "INSERT INTO estudo_disciplinas(id, nome, created_at) VALUES(?,?,?)",
+                    (did, disc_name[:200], now))
+                disc_map[disc_key] = did
+                disc_id = did
+                disciplinas_criadas += 1
+
+            topic_name = (item.get("value") or "").strip()
+            if not topic_name:
+                continue
+            topic_key = (disc_id, topic_name.lower())
+            if topic_key not in topico_map:
+                tid = str(uuid4())
+                conn.execute(
+                    "INSERT INTO estudo_topicos(id, disciplina_id, parent_id, nome, created_at) "
+                    "VALUES(?,?,?,?,?)",
+                    (tid, disc_id, None, topic_name[:200], now))
+                topico_map[topic_key] = tid
+                topicos_criados += 1
+            else:
+                tid = topico_map[topic_key]
+
+            # Inicializa registro em estudo_progresso para este concurso se não existir
+            exists = conn.execute(
+                "SELECT 1 FROM estudo_progresso WHERE contest_id=? AND topico_id=?",
+                (contest_id, tid)).fetchone()
+            if not exists:
+                pid = str(uuid4())
+                conn.execute(
+                    "INSERT INTO estudo_progresso(id, contest_id, topico_id, state, data_conclusao, "
+                    "adiamentos, created_at, updated_at) VALUES(?,?,?,'nao_iniciado',NULL,0,?,?)",
+                    (pid, contest_id, tid, now, now))
+                progresso_iniciado += 1
+
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    return {
+        "ok": True,
+        "contest_id": contest_id,
+        "disciplinas_importadas": disciplinas_criadas,
+        "topicos_importados": topicos_criados,
+        "progresso_iniciado": progresso_iniciado,
+        "total_disciplinas": len(disc_map),
+        "total_topicos": len(topico_map),
+    }
+

@@ -258,6 +258,52 @@ class StudyApiTest(unittest.TestCase):
         payload = json.loads(self.request("/api/estudos/disciplinas")[1])
         self.assertEqual([d["nome"] for d in payload], ["A", "B"])
 
+    def test_sync_program_to_study_sem_conteudo(self):
+        res = study_store.sync_program_to_study(self.db, "concurso_inexistente")
+        self.assertFalse(res["ok"])
+        self.assertEqual(res["error"], "sem_conteudo")
+
+    def test_sync_program_to_study_com_conteudo(self):
+        from radar import program_content
+        from radar.document_store import ensure_observation, register_document, record_version, record_analysis
+        obs = ensure_observation(self.db, "https://exemplo.test/c99", "c99")
+        conn = connect_documents(self.db)
+        try:
+            contest_id = conn.execute("SELECT contest_id FROM observacoes_concurso WHERE id=?", (obs,)).fetchone()[0]
+        finally:
+            conn.close()
+
+        did = register_document(self.db, dict(
+            observation_id=obs, kind="edital", official_url="https://exemplo.test/c99/edital.pdf",
+            title="Edital Completo", discovery_url="https://exemplo.test/c99",
+            discovery_method="automatico", discovered_at="2026-11-06T10:00:00Z"))
+        text = ("CONTEÚDO PROGRAMÁTICO\n"
+                "LÍNGUA PORTUGUESA\n"
+                "1 Compreensão de textos\n"
+                "2 Ortografia oficial\n"
+                "DIREITO CONSTITUCIONAL\n"
+                "1 Direitos fundamentais")
+        blocks = [{"page_number": 1, "locator": "p1", "start_offset": 0, "end_offset": len(text), "text": text}]
+        proposals = program_content.extract_program_content(blocks, contest_id, label_prefix="teste: ")
+        version = record_version(self.db, did, b"%PDF-1.4 " + text.encode(), dict(
+            fetched_at="2026-11-06T10:00:00Z", fetched_url="https://exemplo.test/c99/edital.pdf",
+            content_type="application/pdf"))
+        record_analysis(self.db, version, blocks, proposals)
+
+        # Sincroniza com estudos
+        res = study_store.sync_program_to_study(self.db, contest_id)
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["disciplinas_importadas"], 2)
+        self.assertEqual(res["topicos_importados"], 3)
+        self.assertEqual(res["progresso_iniciado"], 3)
+
+        # Idempotência: rodar novamente não duplica
+        res2 = study_store.sync_program_to_study(self.db, contest_id)
+        self.assertTrue(res2["ok"])
+        self.assertEqual(res2["disciplinas_importadas"], 0)
+        self.assertEqual(res2["topicos_importados"], 0)
+        self.assertEqual(res2["progresso_iniciado"], 0)
+
     def test_revisoes_pela_api(self):
         _, body = self.request("/api/estudos/disciplinas", "POST", json.dumps({"nome": "TI"}))
         disc = json.loads(body)["id"]
@@ -279,6 +325,14 @@ class StudyApiTest(unittest.TestCase):
                                     json.dumps({"progresso_id": prog, "resultado": "ok"}))
         self.assertEqual(status, 200)
         self.assertTrue(json.loads(body)["feita"])
+
+    def test_sincronizar_edital_pela_api(self):
+        status, body = self.request("/api/estudos/sincronizar-edital", "POST",
+                                    json.dumps({"contest_id": "inexistente"}))
+        self.assertEqual(status, 200)
+        res = json.loads(body)
+        self.assertFalse(res["ok"])
+        self.assertEqual(res["error"], "sem_conteudo")
 
     def test_erro_json_com_corpo(self):
         # Regressão: 400 deve ter corpo JSON legível (o frontend faz res.json()).

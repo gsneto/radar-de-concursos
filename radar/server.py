@@ -2099,6 +2099,14 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._serve_study(knowledge_store.send_gap_to_study, body.get("contest_id"),
                                   body.get("conceito_key"))
             return
+        if path == "/api/estudos/sincronizar-edital":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+                return
+            body = self._read_json()
+            if body is not None:
+                self._serve_study(study_store.sync_program_to_study, body.get("contest_id"))
+            return
         if path == "/api/estudos/importar":
             if parts.query:
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
@@ -2358,6 +2366,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         post_paths = ("/api/preferencias", "/api/estudos/disciplinas", "/api/estudos/topicos",
                       "/api/estudos/progresso", "/api/estudos/sessoes", "/api/estudos/revisoes",
                       "/api/estudos/perfil", "/api/estudos/lacuna", "/api/estudos/importar",
+                      "/api/estudos/sincronizar-edital",
                       "/api/estudos/flashcards", "/api/estudos/questoes",
                       "/api/estudos/tentativas", "/api/estudos/simulados",
                       "/api/reconciliacao", "/api/prazos/revalidacao",

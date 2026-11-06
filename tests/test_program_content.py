@@ -308,6 +308,23 @@ class InlinePdfTest(unittest.TestCase):
                   if p["field_name"] == "conteudo_disciplina"]
         self.assertFalse(any("acertos" in v.lower() for v in values))
 
+    def test_cebraspe_objetos_de_avaliacao_e_itens_sem_ponto(self):
+        # Padrão oficial Cebraspe: "DOS OBJETOS DE AVALIAÇÃO" + "1 Compreensão... 2 Ortografia..."
+        for heading in ("DOS OBJETOS DE AVALIAÇÃO", "OBJETOS DE AVALIAÇÃO (HABILIDADES E CONHECIMENTOS)",
+                        "ANEXO III - DOS CONTEÚDOS PROGRAMÁTICOS"):
+            self.assertTrue(program_content.is_content_heading(heading), heading)
+
+        text = ("DOS OBJETOS DE AVALIAÇÃO (HABILIDADES E CONHECIMENTOS) "
+                "LÍNGUA PORTUGUESA: 1 Compreensão e interpretação de textos. "
+                "2 Domínio da ortografia oficial.")
+        proposals = program_content.extract_program_content(
+            self._blocks(text), "c1", label_prefix="")
+        fields = {p["field_name"] for p in proposals}
+        self.assertIn("conteudo_secao", fields)
+        self.assertIn("conteudo_disciplina", fields)
+        self.assertIn("conteudo_topico", fields)
+
+
 
 if __name__ == "__main__":
     unittest.main()

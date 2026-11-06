@@ -28,9 +28,12 @@ import unicodedata
 # ("DAS PROVAS", "POR CARGO", "BÁSICOS E ESPECÍFICOS") para não perder seções reais.
 _CONTENT_HEADING = re.compile(
     r"^(?:anexo\s+[ivxlcdm0-9]+\s*[-: ]?\s*)?"
-    r"(?:conteudos?\s+programaticos?"
-    r"(?:\s+(?:das?\s+provas?(?:\s+objetivas?)?|por\s+cargo|do\s+cargo))?"
+    r"(?:(?:dos?\s+)?conteudos?\s+programaticos?"
+    r"(?:\s+(?:das?\s+provas?(?:\s+objetivas?)?|por\s+cargo|do\s+cargo|e\s+bibliografia|da\s+prova))?"
+    r"|(?:dos?\s+)?objetos?\s+de\s+avaliacao(?:\s+habilidades\s+e\s+conhecimentos)?"
     r"|programa\s+(?:das?\s+provas?|de\s+provas?|de\s+disciplinas)"
+    r"|programacao\s+das?\s+provas?"
+    r"|(?:quadro\s+de\s+provas\s+e\s+)?disciplinas\s+e\s+conteudos?\s+programaticos?"
     r"|conhecimentos\s+(?:basicos|gerais|especificos|complementares)"
     r"(?:\s+e\s+(?:basicos|gerais|especificos|complementares))*"
     r"(?:\s+das?\s+provas?)?"
@@ -70,13 +73,14 @@ _MAX_SECTION_LINES = 400  # limite de segurança para não engolir o documento i
 # ficar em 0% mesmo em editais que têm o anexo completo.
 _HEADING_PHRASE = re.compile(
     r"^(?:anexo\s+[ivxlcdm0-9]+\s*[-–—:]\s*)?"
-    r"conte[uú]do\s+program[aá]tic[oa]s?"
-    r"(?:\s+(?:das?\s+provas?(?:\s+objetivas?)?|por\s+cargo|do\s+cargo))?",
+    r"(?:conte[uú]do\s+program[aá]tic[oa]s?"
+    r"|(?:dos?\s+)?objetos?\s+de\s+avalia[çc][ãa]o(?:\s*\([^)]*\))?)"
+    r"(?:\s+(?:das?\s+provas?(?:\s+objetivas?)?|por\s+cargo|do\s+cargo|e\s+bibliografia))?",
     re.I)
 _BLOCO_PHRASE = re.compile(r"^bloco\s+[ivxlcdm0-9]+\b", re.I)
-# Início de item numerado: "1. Texto", "12. Texto". O contexto anterior é validado para não
+# Início de item numerado: "1. Texto", "12. Texto", "1 Texto" (Cebraspe). O contexto anterior é validado para não
 # cortar "art. 5. O candidato" nem "nº 3. Anexo".
-_ITEM_BOUNDARY = re.compile(r"(?<!\d)(?=\d{1,3}\.\s+[A-ZÀ-ÞÁÉÍÓÚÂÊÔÃÕÇ])")
+_ITEM_BOUNDARY = re.compile(r"(?<!\d)(?=\d{1,3}[\.\)]?\s+[A-ZÀ-ÞÁÉÍÓÚÂÊÔÃÕÇ])")
 _NOT_ITEM_BEFORE = ("art", "art.", "nº", "n°", "no", "item", "inciso", "parágrafo",
                     "paragrafo", "lei", "decreto", "portaria", "resolução", "resolucao")
 
@@ -136,9 +140,10 @@ def classify_line(line: str):
     match = _DISCIPLINA_COLON.match(stripped)
     if match and _is_uppercase_title(match.group(1)) and _norm(_clean(match.group(1))) not in _NON_DISCIPLINA:
         return "conteudo_disciplina", _clean(match.group(1))
-    if (_TITLE_LINE.match(stripped) and _is_uppercase_title(stripped)
-            and _norm(_clean(stripped)) not in _NON_DISCIPLINA and not stripped.endswith(".")):
-        return "conteudo_disciplina", _clean(stripped)
+    clean_title = stripped.rstrip(":").strip()
+    if (_TITLE_LINE.match(clean_title) and _is_uppercase_title(clean_title)
+            and _norm(_clean(clean_title)) not in _NON_DISCIPLINA and not clean_title.endswith(".")):
+        return "conteudo_disciplina", _clean(clean_title)
     return None
 
 
