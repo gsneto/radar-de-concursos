@@ -1175,6 +1175,19 @@ def _cmd_ocr_executar(args: argparse.Namespace) -> None:
         apply=args.apply, timeout=args.timeout), ensure_ascii=False, default=str))
 
 
+def _cmd_curadoria_autonoma(args: argparse.Namespace) -> None:
+    from radar import autonomous_curator
+    from radar.ops_config import load_config
+    db_path = getattr(args, "db", None)
+    if not db_path:
+        cfg = load_config(getattr(args, "config", None))
+        db_path = cfg["db_path"]
+    dry_run = getattr(args, "dry_run", False)
+    limit = getattr(args, "limit", 1000)
+    out = autonomous_curator.run_curation_cycle(db_path, dry_run=dry_run, limit_per_phase=limit)
+    print(json.dumps(out, ensure_ascii=False, default=str))
+
+
 def build_parser() -> argparse.ArgumentParser:
     from radar.preferences import PRIORITIES
     parser = argparse.ArgumentParser(prog="python -m radar")
@@ -2211,6 +2224,13 @@ def build_parser() -> argparse.ArgumentParser:
                       help='host de anexo com robots.txt restritivo a tentar baixar '
                            '(ex.: anexos.cdn.selecao.net.br); opt-in, só neste conector')
     ibfc.set_defaults(func=_cmd_ibfc_piloto)
+
+    curadoria = subparsers.add_parser('curadoria-autonoma', help='executa curadoria autônoma determinística')
+    curadoria.add_argument('--db', default=None, help='caminho do banco SQLite')
+    curadoria.add_argument('--config', default=None, help='caminho do radar_ops.json')
+    curadoria.add_argument('--dry-run', action='store_true', help='apenas simula sem gravar decisões')
+    curadoria.add_argument('--limit', type=int, default=1000, help='limite de itens por fase')
+    curadoria.set_defaults(func=_cmd_curadoria_autonoma)
 
     return parser
 

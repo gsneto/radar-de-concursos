@@ -41,6 +41,10 @@ def _copy_db():
         destination = target + ".documents"
         subprocess.run(["cmd", "/c", "mklink", "/J", destination, source],
                        check=False, capture_output=True)
+    with closing(sqlite3.connect(target)) as conn, conn:
+        conn.execute("DELETE FROM revisoes_campo")
+        conn.execute("DELETE FROM valores_atuais")
+        conn.execute("DELETE FROM reconciliacoes_cargo")
     return tmp, target
 
 
@@ -125,8 +129,11 @@ class PilotSelectionTest(unittest.TestCase):
                 self.assertIn("rejeitado", acao["efeito"])
 
     def test_abrir_o_piloto_nao_cria_decisao(self):
-        self.assertEqual(_count(REAL_DB, "revisoes_campo"), 0)
-        self.assertEqual(_count(REAL_DB, "valores_atuais"), 0)
+        before_rev = _count(REAL_DB, "revisoes_campo")
+        before_val = _count(REAL_DB, "valores_atuais")
+        pilot.report(REAL_DB, contest_id=SEDUC)
+        self.assertEqual(_count(REAL_DB, "revisoes_campo"), before_rev)
+        self.assertEqual(_count(REAL_DB, "valores_atuais"), before_val)
         self.assertFalse(self.report["revisao"]["piloto_revisado"])
 
     def test_disponiveis(self):
@@ -621,10 +628,12 @@ class ApiTest(unittest.TestCase):
             self.assertEqual(status, 400, path)
 
     def test_rotas_nao_criam_decisao(self):
+        before_rev = _count(self.db, "revisoes_campo")
+        before_val = _count(self.db, "valores_atuais")
         self.get("/api/revisao/piloto?contest_id=" + SEDUC)
         self.get("/api/revisao/identidades?contest_id=" + SEDUC)
-        self.assertEqual(_count(self.db, "revisoes_campo"), 0)
-        self.assertEqual(_count(self.db, "valores_atuais"), 0)
+        self.assertEqual(_count(self.db, "revisoes_campo"), before_rev)
+        self.assertEqual(_count(self.db, "valores_atuais"), before_val)
 
 
 @requires_real_db

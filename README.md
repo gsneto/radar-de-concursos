@@ -105,6 +105,7 @@ python -m radar estudos-exportar --out estudos.json    # exporta os dados pessoa
 python -m radar estudos-flashcard fila                 # fila de flashcards para revisar
 python -m radar estudos-simulado create --nome "S1" --limit 10
 python -m radar estudos-desempenho                     # desempenho agregado
+python -m radar curadoria-autonoma                     # curadoria determinística auditável (0 cliques manuais)
 ```
 
 **Agendamento (Windows):** `pwsh -File .\scripts\install_tasks.ps1` registra a tarefa "GSN Concursos - Ciclo" (a cada 6 h, sem sobrepor execucoes, recuperando apos reinicio), usando o Python do `radar_ops.json` e a conta do usuario, **sem senha armazenada**. `verify_tasks.ps1` mostra estado/proxima execucao; `uninstall_tasks.ps1` remove as tarefas **sem apagar dados**. O servidor local (loopback) pode ser iniciado por `pwsh -File .\scripts\serve.ps1`.

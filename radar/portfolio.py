@@ -518,6 +518,9 @@ def portfolio(db_path, *, prontidao=None, prazo=None, si=None, indigena=None,
             continue
         if role_id and raw.get("role_id") != role_id:
             continue
+        role_label = raw.get("role_name") or (str(raw.get("scope") or "")[6:] if str(raw.get("scope") or "").startswith("label:") else None)
+        if role_label and role_identity.classify_label(role_label) == "nao_e_cargo":
+            continue
         view = _view(raw, dec_by.get(raw["contest_id"]), calendar_items, now_dt, pages,
                      interest)
         if prontidao and view["prontidao"]["estado"] != prontidao:

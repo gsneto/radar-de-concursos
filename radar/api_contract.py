@@ -157,6 +157,9 @@ _ENTRIES = [
     ("POST", "/api/reconciliacao", "reconciliacao", "",
      "contest_id,label,state,reviewer,reason,role_id,nature,evidence,previous_id,dry_run",
      True, "sim", "Reconcilia rótulo de cargo com identidade canônica."),
+    ("POST", "/api/curadoria/executar", "curadoria", "",
+     "dry_run,limit", True, "sim",
+     "Executa ciclo de curadoria autônoma determinística."),
 
     # --- Elegibilidade, carteira e prioridades ---------------------------------
     ("GET", "/api/elegibilidade", "elegibilidade",

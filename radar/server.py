@@ -1851,6 +1851,17 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                               expected_previous_id=body.get("previous_id"),
                               dry_run=body.get("dry_run", True) is not False)
             return
+        if path == "/api/curadoria/executar":
+            if parts.query:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import autonomous_curator
+            body = self._read_json() or {}
+            dry_run = bool(body.get("dry_run", False))
+            limit = int(body.get("limit", 1000))
+            self._serve_study(autonomous_curator.run_curation_cycle,
+                              dry_run=dry_run, limit_per_phase=limit)
+            return
         if path == "/api/prazos/verificar-documento":
             if parts.query:
                 self._bad_request("parâmetros inválidos")
