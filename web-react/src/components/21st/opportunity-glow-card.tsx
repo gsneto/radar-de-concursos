@@ -11,7 +11,7 @@ import {
   siTones,
 } from '@/lib/domain';
 import { nextOperationalDeadline } from '@/lib/deadlines';
-import { relativeDays, shortDate } from '@/lib/format';
+import { formatOpportunityRole, relativeDays, shortDate } from '@/lib/format';
 import type { Opportunity } from '@/lib/types';
 
 interface OpportunityGlowCardProps {
@@ -49,7 +49,7 @@ export function OpportunityGlowCard({ item, isSelected = false, onToggleSelect }
   params.set('from', 'oportunidades');
   const dossierHref = `/dossie/${item.contest_id}${params.size ? `?${params}` : ''}`;
 
-  const roleTitle = item.role_name ?? 'Cargo não reconciliado';
+  const roleTitle = formatOpportunityRole(item);
   const organTitle = item.contest_label ?? item.competition_id ?? 'Concurso';
   const locationText =
     (prova?.text === 'a_divulgar' || prova?.state === 'a_divulgar')
@@ -58,21 +58,21 @@ export function OpportunityGlowCard({ item, isSelected = false, onToggleSelect }
 
   return (
     <GlowCard accent={accent} className={cn("group flex flex-col justify-between h-full", isSelected && "ring-1 ring-amber-400/40")}>
-      {/* Topo do Card: Órgão e Status */}
+      {/* Topo do Card: Órgão e Cargo */}
       <div>
-        <div className="flex items-start justify-between gap-3 mb-2">
+        <div className="flex items-start justify-between gap-3 mb-2.5">
           <div className="min-w-0 flex-1">
-            <span className="text-[11px] font-medium tracking-wide text-fg-3 uppercase truncate block">
+            <span className="text-[11px] font-semibold tracking-wider text-fg-3 uppercase block leading-snug break-words">
               {organTitle}
             </span>
             <Link
               to={dossierHref}
-              className="font-display text-base font-semibold text-fg tracking-tight group-hover:text-white transition-colors line-clamp-1 mt-0.5 block"
+              className="font-display text-base font-bold text-fg tracking-tight group-hover:text-amber-500 transition-colors mt-1 block leading-snug break-words"
             >
               {roleTitle}
             </Link>
           </div>
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0 self-start pt-0.5">
             {onToggleSelect && (
               <button
                 type="button"

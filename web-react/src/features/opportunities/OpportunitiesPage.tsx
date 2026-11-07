@@ -39,7 +39,7 @@ import {
   urgencyLabels,
 } from '@/lib/domain';
 import { nextOperationalDeadline } from '@/lib/deadlines';
-import { integer, relativeDays, shortDate } from '@/lib/format';
+import { formatOpportunityRole, integer, relativeDays, shortDate } from '@/lib/format';
 import type { Deadline, Opportunity } from '@/lib/types';
 
 const PAGE_SIZE = 20;
@@ -428,12 +428,12 @@ export function OpportunitiesPage() {
                       <div className="min-w-0">
                         <Link
                           to={dossierLink(item)}
-                          className="block truncate text-[13px] font-medium text-fg hover:text-accent"
+                          className="block text-[13px] font-medium text-fg hover:text-accent break-words leading-snug"
                         >
                           {item.contest_label ?? item.competition_id ?? 'Concurso'}
                         </Link>
-                        <span className="mt-0.5 block truncate text-2xs text-fg-3">
-                          {item.role_name ?? 'Cargo não reconciliado'}
+                        <span className="mt-0.5 block text-2xs text-fg-3 break-words">
+                          {formatOpportunityRole(item)}
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
@@ -551,12 +551,12 @@ export function OpportunitiesPage() {
                         <td className="px-3 py-2.5 align-top">
                           <Link
                             to={dossierLink(item)}
-                            className="block max-w-[34ch] truncate text-[13px] font-medium text-fg hover:text-accent"
+                            className="block text-[13px] font-medium text-fg hover:text-accent break-words leading-snug"
                           >
                             {item.contest_label ?? item.competition_id ?? 'Concurso'}
                           </Link>
-                          <span className="mt-0.5 block max-w-[38ch] truncate text-2xs text-fg-3">
-                            {item.role_name ?? 'Cargo não reconciliado'}
+                          <span className="mt-0.5 block text-2xs text-fg-3 break-words">
+                            {formatOpportunityRole(item)}
                           </span>
                         </td>
                         <td className="px-3 py-2.5 align-top text-2xs text-fg-2">{locationText(item)}</td>

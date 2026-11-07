@@ -82,6 +82,7 @@ export interface Opportunity {
   contest_label: string | null;
   role_id: string | null;
   role_name: string | null;
+  role_label?: string | null;
   role_reconciliado: boolean;
   role_code: string | null;
   role_specialty: string | null;

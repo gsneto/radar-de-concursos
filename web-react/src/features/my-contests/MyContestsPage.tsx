@@ -234,7 +234,7 @@ function MyContestCard({
 
             <div className="flex items-center gap-1.5 text-xs font-semibold text-fg-2 pt-0.5">
               <Building2 size={13} className="text-fg-3 shrink-0" />
-              <span className="truncate">{organTitle}</span>
+              <span className="break-words leading-snug">{organTitle}</span>
             </div>
           </div>
 

@@ -4,6 +4,7 @@ import { ArrowRight, CornerDownLeft, Search } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { api, qs } from '@/lib/api';
+import { formatOpportunityRole } from '@/lib/format';
 import type { Portfolio } from '@/lib/types';
 import { flatNav } from './nav';
 
@@ -103,9 +104,9 @@ export function CommandPalette({
               >
                 <CornerDownLeft size={13} className="shrink-0 text-fg-3" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-fg">{item.contest_label ?? item.competition_id}</span>
-                  <span className="block truncate text-2xs text-fg-3">
-                    {item.role_name ?? 'Cargo não reconciliado'}
+                  <span className="block text-fg break-words leading-snug">{item.contest_label ?? item.competition_id}</span>
+                  <span className="block text-2xs text-fg-3 break-words">
+                    {formatOpportunityRole(item)}
                   </span>
                 </span>
               </Command.Item>

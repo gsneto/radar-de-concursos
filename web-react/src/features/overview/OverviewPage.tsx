@@ -31,7 +31,7 @@ import {
   isUpcoming,
   nextOperationalDeadline,
 } from '@/lib/deadlines';
-import { duration, integer, longToday, percent, percentOf, relativeDays, shortDate, truncate } from '@/lib/format';
+import { duration, formatOpportunityRole, integer, longToday, percent, percentOf, relativeDays, shortDate, truncate } from '@/lib/format';
 import type { Deadline, Opportunity } from '@/lib/types';
 
 const funnelLabels: Record<string, string> = {
@@ -306,12 +306,12 @@ export function OverviewPage() {
                     <div className="min-w-0 flex-1">
                       <Link
                         to={dossierLink(item)}
-                        className="block truncate text-[13px] font-medium text-fg transition-colors hover:text-accent"
+                        className="block break-words leading-snug text-[13px] font-medium text-fg transition-colors hover:text-accent"
                       >
                         {item.contest_label ?? item.competition_id ?? 'Concurso'}
                       </Link>
-                      <p className="mt-0.5 truncate text-2xs text-fg-3">
-                        {item.role_name ?? 'Cargo não reconciliado'}
+                      <p className="mt-0.5 break-words text-2xs text-fg-3">
+                        {formatOpportunityRole(item)}
                         {item.localizacao.prova.text ? ` · ${item.localizacao.prova.text}` : ''}
                       </p>
                       <div className="mt-1.5 flex flex-wrap gap-1">

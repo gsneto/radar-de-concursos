@@ -141,3 +141,47 @@ export function humanize(value: unknown): string {
   if (isMissing(value)) return '—';
   return String(value).replace(/_/g, ' ');
 }
+
+/**
+ * Resolve o título do cargo / oportunidade de forma profissional e legível.
+ * Substitui jargões internos como "Cargo não reconciliado" por descrições oficiais limpas.
+ */
+export function formatOpportunityRole(
+  itemOrRole:
+    | {
+        role_name?: string | null;
+        role_label?: string | null;
+        role_specialty?: string | null;
+        scope?: string | null;
+        si?: { estado?: string; estado_label?: string } | null;
+      }
+    | string
+    | null
+    | undefined,
+): string {
+  if (typeof itemOrRole === 'string') {
+    const trimmed = itemOrRole.trim();
+    if (trimmed && trimmed.toLowerCase() !== 'cargo não reconciliado') return trimmed;
+    return 'Cargos do Edital Oficial';
+  }
+  if (!itemOrRole) return 'Cargos do Edital Oficial';
+
+  if (itemOrRole.role_name && itemOrRole.role_name.trim() && itemOrRole.role_name.toLowerCase() !== 'cargo não reconciliado') {
+    return itemOrRole.role_name.trim();
+  }
+  if (itemOrRole.role_label && itemOrRole.role_label.trim() && itemOrRole.role_label.toLowerCase() !== 'cargo não reconciliado') {
+    return itemOrRole.role_label.trim();
+  }
+  if (itemOrRole.role_specialty && itemOrRole.role_specialty.trim()) {
+    return itemOrRole.role_specialty.trim();
+  }
+  if (itemOrRole.scope && itemOrRole.scope.startsWith('label:')) {
+    const raw = itemOrRole.scope.slice(6).trim();
+    if (raw && raw.toLowerCase() !== 'cargo não reconciliado') return raw;
+  }
+  if (itemOrRole.si?.estado === 'explicito' || itemOrRole.si?.estado === 'categoria_inclui_curso') {
+    return 'Cargos de TI & Nível Superior';
+  }
+  return 'Cargos do Edital Oficial';
+}
+

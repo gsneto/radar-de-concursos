@@ -5,6 +5,7 @@ import {
   date,
   dayMonth,
   duration,
+  formatOpportunityRole,
   humanize,
   integer,
   percent,
@@ -129,3 +130,27 @@ describe('safeUrl', () => {
     expect(safeUrl(null)).toBeNull();
   });
 });
+
+describe('formatOpportunityRole', () => {
+  it('preserva cargo real existente', () => {
+    expect(formatOpportunityRole({ role_name: 'Juiz Substituto' })).toBe('Juiz Substituto');
+    expect(formatOpportunityRole({ role_name: '404 ANALISTA DE INFORMÁTICA' })).toBe('404 ANALISTA DE INFORMÁTICA');
+  });
+
+  it('substitui Cargo não reconciliado ou null por fallback profissional de TI quando há SI explicito', () => {
+    expect(formatOpportunityRole({ role_name: null, si: { estado: 'explicito' } })).toBe('Cargos de TI & Nível Superior');
+    expect(formatOpportunityRole({ role_name: 'Cargo não reconciliado', si: { estado: 'categoria_inclui_curso' } })).toBe('Cargos de TI & Nível Superior');
+  });
+
+  it('substitui Cargo não reconciliado ou null por Cargos do Edital Oficial nos demais certames', () => {
+    expect(formatOpportunityRole({ role_name: null })).toBe('Cargos do Edital Oficial');
+    expect(formatOpportunityRole({ role_name: 'Cargo não reconciliado' })).toBe('Cargos do Edital Oficial');
+    expect(formatOpportunityRole(null)).toBe('Cargos do Edital Oficial');
+  });
+
+  it('usa role_label ou role_specialty quando presentes', () => {
+    expect(formatOpportunityRole({ role_name: null, role_label: 'Analista Judiciário' })).toBe('Analista Judiciário');
+    expect(formatOpportunityRole({ role_name: null, role_specialty: 'Tecnologia da Informação' })).toBe('Tecnologia da Informação');
+  });
+});
+
