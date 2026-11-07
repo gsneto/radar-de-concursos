@@ -71,27 +71,37 @@ function fieldStateLabel(field: FieldState | null | undefined): string {
 }
 
 function formatGap(gap: string): string {
-  if (gap.startsWith('campo ausente: ')) {
-    const rawField = gap.replace('campo ausente: ', '').trim();
+  if (!gap) return '';
+  const trimmed = gap.trim();
+  if (/^[Cc]ampo ausente:\s*/i.test(trimmed)) {
+    const rawField = trimmed.replace(/^[Cc]ampo ausente:\s*/i, '').trim();
     const translated = fieldLabels[rawField] ?? rawField.replace(/_/g, ' ');
-    return `Campo ausente: ${translated}`;
+    const capitalizedField = translated.charAt(0).toUpperCase() + translated.slice(1);
+    return `Campo ausente: ${capitalizedField}`;
   }
-  if (gap.startsWith('no concurso, vagas indígenas: ')) {
-    return `No certame, vagas indígenas: ${gap.replace('no concurso, vagas indígenas: ', '')}`;
+  if (/^[Nn]o (?:concurso|certame),\s*vagas indígenas:\s*/i.test(trimmed)) {
+    const rest = trimmed.replace(/^[Nn]o (?:concurso|certame),\s*vagas indígenas:\s*/i, '').trim();
+    return `No certame, vagas indígenas: ${rest.charAt(0).toUpperCase() + rest.slice(1)}`;
   }
-  if (gap.startsWith('vagas indígenas: ')) {
-    return `Vagas indígenas: ${gap.replace('vagas indígenas: ', '')}`;
+  if (/^[Vv]agas indígenas:\s*/i.test(trimmed)) {
+    const rest = trimmed.replace(/^[Vv]agas indígenas:\s*/i, '').trim();
+    return `Vagas indígenas: ${rest.charAt(0).toUpperCase() + rest.slice(1)}`;
   }
-  if (gap.startsWith('local de prova ')) {
-    return `Local de prova ${gap.replace('local de prova ', '')}`;
+  if (/^[Ll]ocal de prova\s*/i.test(trimmed)) {
+    const rest = trimmed.replace(/^[Ll]ocal de prova\s*/i, '').trim();
+    return `Local de prova ${rest}`;
   }
-  if (gap.startsWith('sem documento oficial')) {
+  if (trimmed.toLowerCase().startsWith('sem documento oficial')) {
     return 'Sem documento oficial';
   }
-  if (gap.startsWith('cargo não reconciliado')) {
+  if (trimmed.toLowerCase().startsWith('cargo não reconciliado')) {
     return 'Cargo não reconciliado';
   }
-  return gap.charAt(0).toUpperCase() + gap.slice(1);
+  if (trimmed.startsWith('SI:')) {
+    const rest = trimmed.replace(/^SI:\s*/, '').trim();
+    return `SI: ${rest.charAt(0).toUpperCase() + rest.slice(1)}`;
+  }
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
 
 export function DossierPage() {

@@ -29,9 +29,13 @@ import { api, syncProgramToStudy } from '@/lib/api';
 import { formatTitleCase } from '@/lib/domain';
 import { clock, dateTime, duration, integer, percent, shortDate } from '@/lib/format';
 import type { StudyPanel, StudySession } from '@/lib/types';
+import { LessonsView } from './LessonsView';
+import { BancaRadiographyView } from './BancaRadiographyView';
 
 const TABS = [
   ['', 'Visão geral'],
+  ['/aulas', 'Aulas'],
+  ['/bancas', 'Bancas'],
   ['/sessoes', 'Sessões'],
   ['/questoes', 'Questões'],
   ['/flashcards', 'Flashcards'],
@@ -98,6 +102,14 @@ export function StudiesPage() {
       </div>
 
       {active === '' && <Overview />}
+      {active === '/aulas' && <LessonsView />}
+      {active === '/bancas' && (
+        <BancaRadiographyView
+          onSelectBancaSimulado={(_banca) => {
+            navigate('/estudos/simulados');
+          }}
+        />
+      )}
       {active === '/sessoes' && <SessionsTab />}
       {active === '/questoes' && <QuestionsTab />}
       {active === '/flashcards' && <FlashcardsTab />}
@@ -755,7 +767,7 @@ function QuestionCard({ question }: { question: Question }) {
         {[question.disciplina, question.topico, question.dificuldade].filter(Boolean).join(' · ') || 'Sem classificação'}
       </p>
       <ul className="mt-2 space-y-1">
-        {question.alternativas.map((alternative) => (
+        {(question.alternativas ?? []).map((alternative) => (
           <li key={alternative.letra}>
             <label className="flex cursor-pointer items-center gap-2 rounded-xs border border-line bg-surface px-2.5 py-1.5 text-2xs text-fg-2 transition-colors hover:border-line-strong">
               <input

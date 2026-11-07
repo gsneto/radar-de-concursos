@@ -56,6 +56,14 @@ _ENTRIES = [
     ("GET", "/api/lacunas", "concursos", "limit", "", False, "n/a",
      "Lacunas de dados agrupadas por campo e motivo, sem inventar valor."),
 
+    # --- Meus Concursos (Painel de Foco Pessoal) -------------------------------
+    ("GET", "/api/meus-concursos", "meus_concursos", "limit,offset", "", False, "n/a",
+     "Lista concursos e cargos selecionados pelo candidato no painel de foco."),
+    ("POST", "/api/meus-concursos", "meus_concursos", "", "contest_id,role_id,status,notes", True, "sim",
+     "Adiciona ou atualiza concurso no painel de foco pessoal."),
+    ("DELETE", "/api/meus-concursos/{contest_id}", "meus_concursos", "", "", True, "sim",
+     "Remove concurso do painel de foco pessoal."),
+
     # --- Documentos e pipeline -------------------------------------------------
     ("GET", "/api/pipeline", "pipeline", "", "", False, "n/a",
      "Visão do pipeline documental por etapa, com contagens reais."),
@@ -280,6 +288,12 @@ _ENTRIES = [
      "Envia lacuna de edital para a trilha de estudo."),
     ("POST", "/api/estudos/sincronizar-edital", "estudos", "", "contest_id", True, "sim",
      "Importa conteúdo programático do edital para disciplinas e tópicos de estudo."),
+    ("GET", "/api/estudos/aulas", "estudos", "disciplina", "", False, "n/a",
+     "Lista de aulas estruturadas por disciplina com objetivos e questões."),
+    ("GET", "/api/estudos/aulas/{aula_id}", "estudos", "", "", False, "n/a",
+     "Detalhe de uma aula estruturada: teoria, radiografia de bancas e questões."),
+    ("GET", "/api/estudos/bancas", "estudos", "", "", False, "n/a",
+     "Radiografia analítica comparativa de bancas examinadoras (FGV, Cebraspe, Quadrix, IBFC)."),
 
     # --- Estudos: flashcards ---------------------------------------------------
     ("GET", "/api/estudos/flashcards", "flashcards", "incluir_arquivados", "", False,
@@ -358,6 +372,8 @@ _ENTRIES = [
 
 _MATCH_OVERRIDES = {
     "/api/estudos/flashcards/{flashcard_id}/imagem": "/api/estudos/flashcards/",
+    "/api/meus-concursos/{contest_id}": "/api/meus-concursos/",
+    "/api/estudos/aulas/{aula_id}": "/api/estudos/aulas/",
 }
 
 

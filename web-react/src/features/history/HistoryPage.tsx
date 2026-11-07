@@ -22,6 +22,18 @@ const sourceLabels: Record<string, string> = {
   nao_verificada: 'Não verificada',
 };
 
+const sourceErrorLabels: Record<string, string> = {
+  sem_observacao_v1: 'Sem observação de origem (v1)',
+  sem_observacao: 'Sem observação de origem',
+  timeout: 'Tempo limite esgotado',
+  conexao_recusada: 'Conexão recusada',
+  status_404: 'Página não encontrada (404)',
+  status_500: 'Erro no servidor (500)',
+  status_403: 'Acesso restrito (403)',
+  conteudo_vazio: 'Conteúdo vazio',
+  documento_sem_observacao: 'Documento sem observação rastreável',
+};
+
 export function HistoryPage() {
   const timeline = useTimeline();
 
@@ -164,7 +176,11 @@ export function HistoryPage() {
                           <Badge tone={source.state === 'falhou' ? 'risk' : source.state === 'parcial' ? 'warn' : 'ok'}>
                             {sourceLabels[source.state] ?? source.state}
                           </Badge>
-                          {source.error_code && <span className="text-fg-3">{source.error_code}</span>}
+                          {source.error_code && (
+                            <span className="text-fg-3">
+                              {sourceErrorLabels[source.error_code] ?? source.error_code.replace(/_/g, ' ')}
+                            </span>
+                          )}
                         </li>
                       ))}
                     </ul>

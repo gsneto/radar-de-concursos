@@ -24,14 +24,14 @@ const FIELD_STATES: Record<string, Tone> = {
 };
 
 const FIELD_STATE_LABELS: Record<string, string> = {
-  confirmado: 'confirmado',
-  corrigido: 'corrigido',
-  em_conflito: 'em conflito',
-  ambiguo: 'ambíguo',
-  candidato: 'candidato',
-  multiplo_por_cargo: 'múltiplo por cargo',
-  rejeitado: 'rejeitado',
-  nao_extraido: 'não extraído',
+  confirmado: 'Confirmado',
+  corrigido: 'Corrigido',
+  em_conflito: 'Em conflito',
+  ambiguo: 'Ambíguo',
+  candidato: 'Candidato',
+  multiplo_por_cargo: 'Múltiplo por cargo',
+  rejeitado: 'Rejeitado',
+  nao_extraido: 'Não extraído',
 };
 
 function formatMotivo(m: unknown): string {
@@ -43,7 +43,9 @@ function formatMotivo(m: unknown): string {
   } else {
     text = String(m).replace(/_/g, ' ');
   }
-  if (!text) return '';
+  if (!text || text === '[object Object]') return '';
+  text = text.replace(/campo decisivo:\s*([a-z_]+)/i, (_, f) => `Campo decisivo: ${fieldLabels[f] ?? f.replace(/_/g, ' ')}`);
+  text = text.replace(/formação\/elegibilidade:\s*([a-z_]+)/i, (_, f) => `Formação/elegibilidade: ${fieldLabels[f] ?? f.replace(/_/g, ' ')}`);
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 

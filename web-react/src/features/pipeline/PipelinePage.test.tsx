@@ -137,7 +137,7 @@ describe('página de Pipeline', () => {
     // A trilha mostra a etapa que falta: o segundo documento parou em "baixado".
     const trails = screen.getAllByRole('list', { name: /etapas do documento/i });
     expect(trails).toHaveLength(2);
-    expect(trails[1]).toHaveTextContent('extraido');
+    expect(trails[1]).toHaveTextContent(/extraído/i);
   });
 
   it('mostra a distribuição de bloqueios', async () => {

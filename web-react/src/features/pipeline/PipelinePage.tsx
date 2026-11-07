@@ -12,6 +12,14 @@ import type { PipelineDocument } from '@/lib/types';
 
 const STAGES = ['descoberto', 'baixado', 'validado', 'classificado', 'extraido'] as const;
 
+const STAGE_LABELS: Record<string, string> = {
+  descoberto: 'Descoberto',
+  baixado: 'Baixado',
+  validado: 'Validado',
+  classificado: 'Classificado',
+  extraido: 'Extraído',
+};
+
 const BLOCKER_LABELS: Record<string, string> = {
   sem_versao: 'Sem versão baixada',
   nao_iniciada: 'Extração não iniciada',
@@ -51,11 +59,11 @@ function StageTrail({ stages }: { stages: string[] }) {
             {index > 0 && <span aria-hidden className="text-fg-3">›</span>}
             <span
               className={
-                'rounded-xs px-1.5 py-0.5 text-[10px] capitalize ' +
+                'rounded-xs px-1.5 py-0.5 text-[10px] ' +
                 (done ? 'bg-ok-soft text-ok' : 'bg-white/[0.04] text-fg-3')
               }
             >
-              {stage}
+              {STAGE_LABELS[stage] ?? stage}
             </span>
           </li>
         );
@@ -65,10 +73,10 @@ function StageTrail({ stages }: { stages: string[] }) {
 }
 
 function DocumentCard({ document }: { document: PipelineDocument }) {
+  const rawType = document.tipo_documental || document.kind;
   const typeLabel =
-    (document.tipo_documental && documentTypes[document.tipo_documental]) ??
-    (document.tipo_documental ? document.tipo_documental.replace(/_/g, ' ') : null) ??
-    document.kind ??
+    (rawType && documentTypes[rawType]) ??
+    (rawType ? rawType.replace(/_/g, ' ') : null) ??
     'Tipo não classificado';
   const formattedType = typeLabel.charAt(0).toUpperCase() + typeLabel.slice(1);
 

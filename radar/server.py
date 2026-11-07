@@ -699,6 +699,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         "/api/estudos/pacotes": "_get_studies_and_practice",
         "/api/estudos/pacotes/exportar": "_get_studies_and_practice",
         "/api/estudos/simulados": "_get_studies_and_practice",
+        "/api/estudos/aulas": "_get_studies_and_practice",
+        "/api/estudos/bancas": "_get_studies_and_practice",
     }
 
     def do_GET(self):
@@ -1653,6 +1655,14 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
             else:
                 self._serve_study(practice_store.list_exams, limit=limit)
+        elif path == "/api/estudos/aulas":
+            from radar import lesson_plan
+            query = parse_qs(parts.query)
+            disciplina = query.get("disciplina", [None])[0]
+            self._send_json({"aulas": lesson_plan.list_lessons(disciplina)})
+        elif path == "/api/estudos/bancas":
+            from radar import lesson_plan
+            self._send_json({"bancas": lesson_plan.get_banca_profiles()})
 
     def _get_dynamic_routes(self, path: str, parts) -> bool:
         from radar import practice_store
@@ -1740,6 +1750,18 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                     return True
                 from radar import review
                 self._serve_study(review.batch_status, remainder)
+            return True
+        if path.startswith("/api/estudos/aulas/"):
+            lesson_id = path[len("/api/estudos/aulas/"):]
+            if "/" not in lesson_id and not parts.query:
+                from radar import lesson_plan
+                lesson = lesson_plan.get_lesson(lesson_id)
+                if not lesson:
+                    self._send_no_content(HTTPStatus.NOT_FOUND)
+                    return True
+                self._send_json({"aula": lesson})
+                return True
+            self._bad_request("aula inválida")
             return True
         if path.startswith("/api/estudos/simulados/"):
             if parts.query:

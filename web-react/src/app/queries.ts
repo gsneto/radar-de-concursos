@@ -23,6 +23,9 @@ import type {
   Timeline,
   MyContest,
   MyContestsResponse,
+  LessonSummary,
+  LessonDetail,
+  BancaProfile,
 } from '@/lib/types';
 
 /* Chaves centralizadas: invalidação previsível. */
@@ -40,6 +43,9 @@ export const keys = {
   flashQueue: () => ['study', 'flashcards', 'queue'] as const,
   questions: () => ['study', 'questions'] as const,
   exams: () => ['study', 'exams'] as const,
+  lessons: (disciplina?: string) => ['study', 'lessons', disciplina] as const,
+  lesson: (id: string) => ['study', 'lesson', id] as const,
+  bancas: () => ['study', 'bancas'] as const,
   deadlines: (filters: Record<string, unknown>) => ['deadlines', filters] as const,
   dossier: (contestId: string, scope: string | null) => ['dossier', contestId, scope] as const,
   details: (contestId: string) => ['contest', contestId] as const,
@@ -173,11 +179,43 @@ export function useQuestions() {
   });
 }
 
+export function useLessons(disciplina?: string) {
+  return useQuery({
+    queryKey: keys.lessons(disciplina),
+    queryFn: () =>
+      api.get<{ aulas: LessonSummary[] }>(
+        `/api/estudos/aulas${disciplina ? `?disciplina=${encodeURIComponent(disciplina)}` : ''}`
+      ),
+    staleTime: 60_000,
+  });
+}
+
+export function useLesson(lessonId: string | null | undefined) {
+  return useQuery({
+    queryKey: keys.lesson(lessonId ?? ''),
+    queryFn: () => api.get<{ aula: LessonDetail }>(`/api/estudos/aulas/${encodeURIComponent(lessonId!)}`),
+    enabled: Boolean(lessonId),
+    staleTime: 60_000,
+  });
+}
+
+export function useBancas() {
+  return useQuery({
+    queryKey: keys.bancas(),
+    queryFn: () => api.get<{ bancas: Record<string, BancaProfile> }>('/api/estudos/bancas'),
+    staleTime: 5 * 60_000,
+  });
+}
+
 export interface Question {
   id: string;
   enunciado: string;
-  alternativas: { letra: string; texto: string }[];
+  tipo?: 'escolha_unica' | 'verdadeiro_falso' | string;
+  opcoes?: Record<string, string>;
+  alternativas?: { letra: string; texto: string }[];
   gabarito?: string;
+  comentario?: string;
+  tags?: string[];
   disciplina: string | null;
   topico: string | null;
   dificuldade: string | null;

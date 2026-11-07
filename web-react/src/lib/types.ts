@@ -746,3 +746,33 @@ export interface MyContestsResponse {
   total: number;
   itens: MyContest[];
 }
+
+export interface LessonSummary {
+  id: string;
+  disciplina: string;
+  titulo: string;
+  objetivos: string[];
+  questoes_count: number;
+}
+
+export interface LessonDetail {
+  id: string;
+  disciplina: string;
+  titulo: string;
+  objetivos: string[];
+  teoria_resumida: string;
+  radiografia_bancas: Record<string, string>;
+  pontos_criticos: string[];
+  questoes_ids: string[];
+}
+
+export interface BancaProfile {
+  id: string;
+  nome: string;
+  estilo_predominante: string;
+  regras_pontuacao: string;
+  caracteristicas: string[];
+  dicas_ti: string[];
+  dicas_gerais: string[];
+  palavras_chave_alerta: string[];
+}

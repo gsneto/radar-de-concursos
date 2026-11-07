@@ -56,6 +56,11 @@ def _cmd_collect(args: argparse.Namespace) -> None:
 
 
 def _cmd_serve(args: argparse.Namespace) -> None:
+    try:
+        from radar.real_exam_questions import seed_real_questions
+        seed_real_questions(args.db)
+    except Exception:
+        pass
     server = create_server(args.db, host=args.host, port=args.port)
     server.serve_forever()
 

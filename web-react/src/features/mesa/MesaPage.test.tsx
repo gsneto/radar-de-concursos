@@ -107,9 +107,9 @@ describe('página da Mesa', () => {
     // "Campos candidatos" também é opção do filtro; procura dentro do cartão.
     const card = screen.getByRole('article');
     expect(card).toHaveTextContent('Campos candidatos');
-    expect(screen.getByText('em conflito')).toBeInTheDocument();
-    expect(screen.getByText('ambíguo')).toBeInTheDocument();
-    expect(screen.getByText('confirmado')).toBeInTheDocument();
+    expect(card).toHaveTextContent('Em conflito');
+    expect(card).toHaveTextContent('Ambíguo');
+    expect(card).toHaveTextContent('Confirmado');
     expect(screen.getByText(/1 conflito/)).toBeInTheDocument();
   });
 
