@@ -41,11 +41,11 @@ export const navGroups: NavGroup[] = [
     ],
   },
   {
-    label: 'Trabalho',
+    label: 'Curadoria & Auditoria',
     items: [
-      { to: '/mesa', label: 'Mesa', icon: LayoutGrid },
-      { to: '/identidades', label: 'Identidades', icon: GitMerge },
-      { to: '/pipeline', label: 'Pipeline', icon: Workflow },
+      { to: '/mesa', label: 'Mesa de Validação', icon: LayoutGrid },
+      { to: '/identidades', label: 'Padronização de Cargos', icon: GitMerge },
+      { to: '/pipeline', label: 'Esteira de Editais', icon: Workflow },
     ],
   },
   {

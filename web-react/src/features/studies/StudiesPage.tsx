@@ -4,6 +4,8 @@ import {
   BookOpen,
   Check,
   CheckSquare,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Clock3,
   DownloadCloud,
@@ -13,12 +15,15 @@ import {
   Play,
   Plus,
   RefreshCw,
+  RotateCcw,
   Sparkles,
   Square,
   Target,
+  Trophy,
   X,
+  Zap,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   keys,
@@ -33,7 +38,6 @@ import {
   useSessions,
   useStudyPanel,
   type Exam,
-  type Flashcard,
   type Question,
 } from '@/app/queries';
 import { AreaChart, BarList, DataTableFallback, Meter } from '@/components/charts';
@@ -857,91 +861,302 @@ function QuestionCard({ question }: { question: Question }) {
 /* ------------------------------------------------------------------ */
 
 function FlashcardsTab() {
+  const queryClient = useQueryClient();
   const stats = useFlashStats();
   const queue = useFlashQueue();
 
-  if (stats.isLoading || queue.isLoading) return <SkeletonRows rows={4} />;
-
-  const cards = [...(queue.data?.novos ?? []), ...(queue.data?.vencidos ?? [])];
-
-  return (
-    <div className="space-y-3">
-      <section aria-label="Indicadores de flashcards" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <Kpi feature tone="accent" label="Cartões ativos" value={<NumberTicker value={stats.data?.ativos ?? 0} />} context={`${integer(stats.data?.novos ?? 0)} novos · ${integer(stats.data?.pendentes ?? 0)} pendentes`} />
-        <Kpi label="Revisões registradas" value={<NumberTicker value={stats.data?.revisoes ?? 0} />} context={stats.data?.basis ?? '—'} />
-        <Kpi label="Arquivados" value={<NumberTicker value={stats.data?.arquivados ?? 0} />} context="Fora da fila de revisão" />
-      </section>
-
-      <Card title="Fila de revisão" subtitle="Novos e vencidos, na ordem do servidor.">
-        {!cards.length ? (
-          <EmptyState
-            title="Nenhum cartão pendente"
-            description={
-              (queue.data?.futuros.length ?? 0) > 0
-                ? `${queue.data!.futuros.length} cartão(ões) agendado(s) para o futuro.`
-                : 'Crie flashcards na Operação para iniciar a revisão espaçada.'
-            }
-          />
-        ) : (
-          <div className="space-y-2.5">
-            {cards.slice(0, 6).map((card) => (
-              <FlashcardCard key={card.id} card={card} />
-            ))}
-          </div>
-        )}
-      </Card>
-    </div>
-  );
-}
-
-function FlashcardCard({ card }: { card: Flashcard }) {
-  const queryClient = useQueryClient();
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+  const [newFront, setNewFront] = useState('');
+  const [newBack, setNewBack] = useState('');
+  const [newTags, setNewTags] = useState('');
+
+  const cards = useMemo(() => {
+    return queue.data ? [...(queue.data.novos ?? []), ...(queue.data.vencidos ?? [])] : [];
+  }, [queue.data]);
+
+  const totalCards = cards.length;
+  const currentCard = cards[currentIndex] ?? cards[0];
+
   const review = useMutation({
     mutationFn: (qualidade: number) =>
-      api.post('/api/estudos/flashcards', { action: 'review', id: card.id, qualidade }),
+      api.post('/api/estudos/flashcards', { action: 'review', id: currentCard.id, qualidade }),
     onSuccess: () => {
+      setRevealed(false);
+      if (currentIndex >= cards.length - 1) {
+        setCurrentIndex(0);
+      }
       void queryClient.invalidateQueries({ queryKey: keys.flashQueue() });
       void queryClient.invalidateQueries({ queryKey: keys.flashStats() });
     },
   });
 
-  const qualities: [number, string][] = [
-    [1, 'Errei'],
-    [2, 'Difícil'],
-    [3, 'Ok'],
-    [4, 'Bom'],
-    [5, 'Fácil'],
-  ];
+  const createCard = useMutation({
+    mutationFn: (body: { action: string; frente: string; verso: string; tags: string[] }) =>
+      api.post('/api/estudos/flashcards', body),
+    onSuccess: () => {
+      setShowCreate(false);
+      setNewFront('');
+      setNewBack('');
+      setNewTags('');
+      void queryClient.invalidateQueries({ queryKey: keys.flashQueue() });
+      void queryClient.invalidateQueries({ queryKey: keys.flashStats() });
+    },
+  });
+
+  if (stats.isLoading || queue.isLoading) return <SkeletonRows rows={4} />;
 
   return (
-    <div className="rounded-sm border border-line bg-surface-2 p-3">
-      <p className="text-xs font-medium text-fg">{card.frente}</p>
-      {revealed ? (
-        <p className="mt-1.5 text-2xs leading-relaxed text-fg-2">{card.verso}</p>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setRevealed(true)}
-          className="mt-1.5 text-2xs font-medium text-accent hover:underline"
+    <div className="space-y-4">
+      {/* Indicadores de Estudo com Flashcards */}
+      <section aria-label="Indicadores de flashcards" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <Kpi
+          feature
+          tone="accent"
+          label="Cartões ativos"
+          value={<NumberTicker value={stats.data?.ativos ?? 0} />}
+          context={`${integer(stats.data?.novos ?? 0)} novos · ${integer(stats.data?.pendentes ?? 0)} para hoje`}
+        />
+        <Kpi
+          label="Revisões registradas"
+          value={<NumberTicker value={stats.data?.revisoes ?? 0} />}
+          context={stats.data?.basis ?? 'Algoritmo SM-2-lite ativo'}
+        />
+        <Kpi
+          label="Arquivados"
+          value={<NumberTicker value={stats.data?.arquivados ?? 0} />}
+          context="Fora da fila de repetição"
+        />
+      </section>
+
+      {/* Barra de Ações: Criar Flashcard */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="flex size-6 items-center justify-center rounded-lg bg-amber-400/15 text-amber-400">
+            <Zap size={14} />
+          </span>
+          <span className="text-xs font-bold text-fg">
+            Sessão de Revisão Espaçada (SM-2)
+          </span>
+        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => setShowCreate(!showCreate)}
+          className="gap-1.5"
         >
-          Mostrar resposta
-        </button>
-      )}
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {qualities.map(([value, text]) => (
-          <Button
-            key={value}
-            size="sm"
-            variant="ghost"
-            disabled={!revealed || review.isPending}
-            onClick={() => review.mutate(value)}
-          >
-            {text}
-          </Button>
-        ))}
+          <Plus size={14} /> Novo Flashcard
+        </Button>
       </div>
-      {review.isError && <p className="mt-1.5 text-2xs text-risk">{(review.error as Error).message}</p>}
+
+      {/* Formulário de Criação (Drawer/Card) */}
+      {showCreate && (
+        <Card title="Criar Novo Flashcard" subtitle="Adicione uma pergunta ou conceito para memorização ativa.">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!newFront.trim() || !newBack.trim()) return;
+              createCard.mutate({
+                action: 'create',
+                frente: newFront.trim(),
+                verso: newBack.trim(),
+                tags: newTags.split(',').map((t) => t.trim()).filter(Boolean),
+              });
+            }}
+            className="space-y-3"
+          >
+            <div>
+              <label className="text-2xs font-semibold uppercase tracking-wider text-fg-3">Frente (Pergunta / Conceito)</label>
+              <textarea
+                value={newFront}
+                onChange={(e) => setNewFront(e.target.value)}
+                placeholder="Ex: O que é o Teorema CAP em bancos NoSQL?"
+                required
+                className="mt-1 w-full rounded-xl border border-line bg-surface-2 p-3 text-xs text-fg placeholder:text-fg-3/60 focus:border-amber-400 focus:outline-none"
+                rows={2}
+              />
+            </div>
+            <div>
+              <label className="text-2xs font-semibold uppercase tracking-wider text-fg-3">Verso (Resposta / Explicação)</label>
+              <textarea
+                value={newBack}
+                onChange={(e) => setNewBack(e.target.value)}
+                placeholder="Ex: Em sistemas distribuídos, só é possível garantir 2 de 3 propriedades: Consistência, Disponibilidade e Tolerância a Partições."
+                required
+                className="mt-1 w-full rounded-xl border border-line bg-surface-2 p-3 text-xs text-fg placeholder:text-fg-3/60 focus:border-amber-400 focus:outline-none"
+                rows={3}
+              />
+            </div>
+            <div>
+              <label className="text-2xs font-semibold uppercase tracking-wider text-fg-3">Tags (separadas por vírgula)</label>
+              <input
+                type="text"
+                value={newTags}
+                onChange={(e) => setNewTags(e.target.value)}
+                placeholder="banco-de-dados, nosql, ti"
+                className="mt-1 w-full rounded-xl border border-line bg-surface-2 px-3 py-2 text-xs text-fg placeholder:text-fg-3/60 focus:border-amber-400 focus:outline-none"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="ghost" size="sm" onClick={() => setShowCreate(false)}>Cancelar</Button>
+              <Button variant="primary" size="sm" type="submit" disabled={createCard.isPending}>
+                Salvar Flashcard
+              </Button>
+            </div>
+          </form>
+        </Card>
+      )}
+
+      {/* Arena de Revisão Ativa / Fila */}
+      {!cards.length ? (
+        <Card>
+          <div className="py-10 text-center space-y-3">
+            <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <Trophy size={24} />
+            </div>
+            <h3 className="text-sm font-bold text-fg">Fila de Flashcards Zerada!</h3>
+            <p className="text-xs text-fg-3 max-w-md mx-auto">
+              {(queue.data?.futuros.length ?? 0) > 0
+                ? `${queue.data!.futuros.length} cartão(ões) agendado(s) para os próximos ciclos de repetição espaçada.`
+                : 'Você revisou todos os cartões disponíveis. Continue estudando nas Aulas e Questões ou crie novos cartões.'}
+            </p>
+          </div>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {/* Cartão de Estudo em Destaque (Flip Card) */}
+          <div className="relative overflow-hidden rounded-2xl border border-line bg-surface shadow-md">
+            {/* Topbar do Flashcard */}
+            <div className="flex items-center justify-between border-b border-line px-5 py-3 text-xs bg-surface-2/40">
+              <span className="font-mono text-2xs font-semibold text-fg-3">
+                Cartão {currentIndex + 1} de {totalCards} na fila
+              </span>
+              <div className="flex items-center gap-1.5">
+                {((currentCard.tags ?? []) as string[]).slice(0, 3).map((tag: string) => (
+                  <Badge key={tag} tone="neutral" className="text-[10px]">
+                    {tag.toUpperCase()}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+
+            {/* Conteúdo do Cartão */}
+            <div
+              onClick={() => setRevealed(!revealed)}
+              className="p-6 sm:p-8 cursor-pointer select-none transition-colors hover:bg-surface-2/30 min-h-[200px] flex flex-col justify-between"
+            >
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400">
+                  {revealed ? 'Resposta (Verso)' : 'Pergunta (Frente)'}
+                </span>
+                <p className="mt-3 text-base sm:text-lg font-bold text-fg leading-relaxed">
+                  {currentCard.frente}
+                </p>
+
+                {revealed && (
+                  <div className="mt-5 border-t border-line/80 pt-4 text-sm text-fg-2 leading-relaxed whitespace-pre-line font-medium">
+                    {currentCard.verso}
+                  </div>
+                )}
+              </div>
+
+              {!revealed && (
+                <p className="mt-6 text-2xs text-fg-3 flex items-center gap-1.5">
+                  <RotateCcw size={12} className="text-amber-400" />
+                  Clique em qualquer lugar do cartão para virar e conferir a resposta
+                </p>
+              )}
+            </div>
+
+            {/* Avaliação SM-2 */}
+            <div className="border-t border-line bg-surface-2/60 p-4">
+              {!revealed ? (
+                <div className="flex justify-center">
+                  <Button
+                    variant="primary"
+                    size="md"
+                    onClick={() => setRevealed(true)}
+                    className="w-full sm:w-auto px-8 gap-2 font-bold"
+                  >
+                    Mostrar Resposta
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-center text-2xs font-semibold text-fg-3 uppercase tracking-wider">
+                    Como foi a sua recordação? (Algoritmo SM-2)
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 max-w-xl mx-auto">
+                    <button
+                      type="button"
+                      disabled={review.isPending}
+                      onClick={() => review.mutate(1)}
+                      className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-2.5 text-center text-xs font-bold text-rose-300 hover:bg-rose-500/20 transition-all"
+                    >
+                      <span className="block text-2xs text-rose-400 font-normal">1 dia</span>
+                      Errei (1)
+                    </button>
+                    <button
+                      type="button"
+                      disabled={review.isPending}
+                      onClick={() => review.mutate(2)}
+                      className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 text-center text-xs font-bold text-amber-300 hover:bg-amber-500/20 transition-all"
+                    >
+                      <span className="block text-2xs text-amber-400 font-normal">Difícil</span>
+                      Difícil (2)
+                    </button>
+                    <button
+                      type="button"
+                      disabled={review.isPending}
+                      onClick={() => review.mutate(3)}
+                      className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-2.5 text-center text-xs font-bold text-cyan-300 hover:bg-cyan-500/20 transition-all"
+                    >
+                      <span className="block text-2xs text-cyan-400 font-normal">Normal</span>
+                      Bom (3)
+                    </button>
+                    <button
+                      type="button"
+                      disabled={review.isPending}
+                      onClick={() => review.mutate(5)}
+                      className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-2.5 text-center text-xs font-bold text-emerald-300 hover:bg-emerald-500/20 transition-all"
+                    >
+                      <span className="block text-2xs text-emerald-400 font-normal">Fácil</span>
+                      Fácil (5)
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Navegação entre cartões */}
+          <div className="flex items-center justify-between text-xs text-fg-3 px-1">
+            <button
+              type="button"
+              disabled={currentIndex <= 0}
+              onClick={() => {
+                setRevealed(false);
+                setCurrentIndex((i) => Math.max(0, i - 1));
+              }}
+              className="flex items-center gap-1 hover:text-fg disabled:opacity-30 disabled:pointer-events-none"
+            >
+              <ChevronLeft size={14} /> Cartão Anterior
+            </button>
+            <button
+              type="button"
+              disabled={currentIndex >= totalCards - 1}
+              onClick={() => {
+                setRevealed(false);
+                setCurrentIndex((i) => Math.min(totalCards - 1, i + 1));
+              }}
+              className="flex items-center gap-1 hover:text-fg disabled:opacity-30 disabled:pointer-events-none"
+            >
+              Próximo Cartão <ChevronRight size={14} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

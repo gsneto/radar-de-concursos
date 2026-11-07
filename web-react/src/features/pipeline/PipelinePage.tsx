@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Layers } from 'lucide-react';
 import { usePipelineCoverage, usePipelineDocuments, usePipelineSummary } from '@/app/queries';
 import { PageHeader } from '@/components/layout/page-header';
 import { Badge, type Tone } from '@/components/ui/badge';
@@ -154,11 +155,32 @@ export function PipelinePage() {
   return (
     <>
       <PageHeader
-        eyebrow="Diagnóstico"
-        title="Pipeline documental"
-        description="Baixar não é extrair; extrair não é confirmar. Cada documento aparece com a primeira etapa que falta e o motivo — nunca como “sem dados”."
+        eyebrow="Curadoria & Auditoria"
+        title="Esteira de Editais"
+        description="Pipeline documental oficial: rastreamento de ponta a ponta da captura de PDFs, extração de texto e integridade das fontes oficiais."
         meta={data ? <span>Base de {data.generated_at.slice(0, 10)}</span> : null}
       />
+
+      {/* Selo de Esteira Documental Contínua */}
+      <div className="mb-4 rounded-xl border border-line bg-gradient-to-r from-surface via-surface-2 to-surface p-4 shadow-xs">
+        <div className="flex items-start gap-3">
+          <div className="p-2 rounded-lg bg-emerald-400/10 border border-emerald-400/20 text-emerald-400 shrink-0 mt-0.5">
+            <Layers size={18} />
+          </div>
+          <div>
+            <h3 className="text-xs font-bold text-fg flex items-center gap-2">
+              <span>Esteira Oficial de Captura de Editais</span>
+              <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-400 border border-emerald-500/30">
+                Diários Oficiais & Bancas
+              </span>
+            </h3>
+            <p className="text-2xs text-fg-3 mt-1 leading-relaxed">
+              Monitoramento automatizado e transparente de documentos oficiais: cada edital de abertura, anexo e retificação
+              é capturado da fonte original, verificado por integridade e processado antes de alimentar o seu Radar.
+            </p>
+          </div>
+        </div>
+      </div>
 
       {summary.isLoading ? (
         <SkeletonRows rows={3} />

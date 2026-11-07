@@ -169,6 +169,9 @@ export interface Flashcard {
   intervalo: number;
   repeticoes: number;
   proxima_revisao: string | null;
+  tags?: string[];
+  disciplina_id?: string | null;
+  topico_id?: string | null;
 }
 
 export function useQuestions() {

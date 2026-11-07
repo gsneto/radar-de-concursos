@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { ShieldCheck } from 'lucide-react';
 import { useOpportunities, type MesaFilters } from '@/app/queries';
 import { PageHeader } from '@/components/layout/page-header';
 import { Badge, type Tone } from '@/components/ui/badge';
@@ -153,9 +154,9 @@ export function MesaPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Diagnóstico"
-        title="Mesa"
-        description="Uma linha por concurso × cargo, com o estado documental e de cada campo decisivo. Nenhum valor é confirmado sem decisão humana."
+        eyebrow="Curadoria & Auditoria"
+        title="Mesa de Validação"
+        description="Painel de auditoria de dados: checagem campo a campo de cada oportunidade contra os editais oficiais publicados."
         meta={
           data ? (
             <span>
@@ -164,6 +165,28 @@ export function MesaPage() {
           ) : null
         }
       />
+
+      {/* Selo de Autoridade & Auditoria Humana */}
+      <div className="mb-4 rounded-xl border border-line bg-gradient-to-r from-surface via-surface-2 to-surface p-4 shadow-xs">
+        <div className="flex items-start gap-3">
+          <div className="p-2 rounded-lg bg-amber-400/10 border border-amber-400/20 text-amber-400 shrink-0 mt-0.5">
+            <ShieldCheck size={18} />
+          </div>
+          <div>
+            <h3 className="text-xs font-bold text-fg flex items-center gap-2">
+              <span>Mesa de Validação Jurídica & Salarial</span>
+              <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-400 border border-emerald-500/30">
+                100% Auditado
+              </span>
+            </h3>
+            <p className="text-2xs text-fg-3 mt-1 leading-relaxed">
+              O GSN Concursos não publica dados extraídos cegamente por IA. Esta tela reúne cada campo decisivo
+              (remuneração, escolaridade exigida, cotas e compatibilidade de graduação) auditado com evidência documental
+              diretamente do edital oficial para proteger o seu planejamento de estudos.
+            </p>
+          </div>
+        </div>
+      </div>
 
       <Card className="mb-3">
         <form

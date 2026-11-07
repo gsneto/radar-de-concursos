@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Sparkles } from 'lucide-react';
 import {
   useConflicts,
   useDecideReconciliation,
@@ -289,9 +290,9 @@ export function IdentityPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Trabalho"
-        title="Identidades"
-        description="Reconciliação de cargo é decisão humana e append-only. Conflito entre propostas não escolhe vencedor: a causa é declarada e os valores ficam visíveis."
+        eyebrow="Curadoria & Auditoria"
+        title="Padronização de Cargos"
+        description="Reconciliação e mapeamento de cargos: normaliza nomes complexos e códigos de editais para garantir busca precisa e compatibilidade de formação."
         meta={
           reconciliation.data ? (
             <span>
@@ -301,6 +302,28 @@ export function IdentityPage() {
           ) : null
         }
       />
+
+      {/* Selo de Padronização Inteligente de Cargos */}
+      <div className="mb-4 rounded-xl border border-line bg-gradient-to-r from-surface via-surface-2 to-surface p-4 shadow-xs">
+        <div className="flex items-start gap-3">
+          <div className="p-2 rounded-lg bg-cyan-400/10 border border-cyan-400/20 text-cyan-400 shrink-0 mt-0.5">
+            <Sparkles size={18} />
+          </div>
+          <div>
+            <h3 className="text-xs font-bold text-fg flex items-center gap-2">
+              <span>Padronização e Mapeamento Canônico de Cargos</span>
+              <span className="rounded-full bg-cyan-500/15 px-2 py-0.5 text-[10px] font-semibold text-cyan-400 border border-cyan-500/30">
+                Alinhamento Preciso
+              </span>
+            </h3>
+            <p className="text-2xs text-fg-3 mt-1 leading-relaxed">
+              Editais oficiais usam nomenclaturas caóticas (ex: códigos internos como <em>"406 PAS"</em> ou abreviações).
+              O motor de identidades normaliza os cargos sob nomenclaturas reconhecidas para que você encontre todas
+              as vagas abertas para a sua área, sem que nada fique escondido em editais retificados.
+            </p>
+          </div>
+        </div>
+      </div>
 
       <Card className="mb-3">
         <div className="flex flex-wrap items-end gap-3">
