@@ -1,5 +1,23 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Check, Clock3, DownloadCloud, Pause, Play, Plus, RefreshCw, Sparkles, Square, Target, X } from 'lucide-react';
+import {
+  Award,
+  BookOpen,
+  Check,
+  CheckSquare,
+  Clock,
+  Clock3,
+  DownloadCloud,
+  Layers,
+  LayoutDashboard,
+  Pause,
+  Play,
+  Plus,
+  RefreshCw,
+  Sparkles,
+  Square,
+  Target,
+  X,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -33,13 +51,13 @@ import { LessonsView } from './LessonsView';
 import { BancaRadiographyView } from './BancaRadiographyView';
 
 const TABS = [
-  ['', 'Visão geral'],
-  ['/aulas', 'Aulas'],
-  ['/bancas', 'Bancas'],
-  ['/sessoes', 'Sessões'],
-  ['/questoes', 'Questões'],
-  ['/flashcards', 'Flashcards'],
-  ['/simulados', 'Simulados'],
+  { path: '', label: 'Visão geral', icon: LayoutDashboard, badge: null },
+  { path: '/aulas', label: 'Aulas', icon: BookOpen, badge: 'Trilha' },
+  { path: '/bancas', label: 'Bancas', icon: Award, badge: '16' },
+  { path: '/sessoes', label: 'Sessões', icon: Clock, badge: null },
+  { path: '/questoes', label: 'Questões', icon: CheckSquare, badge: null },
+  { path: '/flashcards', label: 'Flashcards', icon: Layers, badge: 'Revisão' },
+  { path: '/simulados', label: 'Simulados', icon: Target, badge: 'Rankings' },
 ] as const;
 
 export function StudiesPage() {
@@ -48,7 +66,7 @@ export function StudiesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const contestId = searchParams.get('concurso');
   const suffix = location.pathname.replace(/^\/estudos/, '');
-  const active = TABS.find(([path]) => path === suffix)?.[0] ?? '';
+  const active = TABS.find((tab) => tab.path === suffix)?.path ?? '';
 
   return (
     <>
@@ -80,25 +98,55 @@ export function StudiesPage() {
         </div>
       )}
 
-      {/* Quebra em duas linhas no celular: antes a última aba ficava fora da tela. */}
-      <div role="tablist" aria-label="Seções de estudos" className="mb-3 flex flex-wrap gap-1 border-b border-line pb-px">
-        {TABS.map(([path, text]) => (
-          <button
-            key={path}
-            type="button"
-            role="tab"
-            aria-selected={active === path}
-            onClick={() => navigate(`/estudos${path}`)}
-            className={
-              'relative shrink-0 rounded-t-xs px-3 py-2 text-xs font-medium whitespace-nowrap transition-colors ' +
-              (active === path
-                ? 'text-accent after:absolute after:inset-x-2 after:-bottom-px after:h-0.5 after:rounded-full after:bg-accent'
-                : 'text-fg-3 hover:bg-white/[0.04] hover:text-fg-2')
-            }
-          >
-            {text}
-          </button>
-        ))}
+      {/* Menu Horizontal Premium Estilo Segmented Control / Dock */}
+      <div className="mb-6 rounded-2xl border border-line/80 bg-surface-2/70 p-1.5 shadow-md backdrop-blur-md">
+        <div
+          role="tablist"
+          aria-label="Seções de estudos"
+          className="flex items-center gap-1.5 overflow-x-auto scrollbar-none"
+        >
+          {TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isSelected = active === tab.path;
+            const queryParams = contestId ? `?concurso=${encodeURIComponent(contestId)}` : '';
+            return (
+              <button
+                key={tab.path}
+                type="button"
+                role="tab"
+                aria-selected={isSelected}
+                onClick={() => navigate(`/estudos${tab.path}${queryParams}`)}
+                className={`group relative flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold whitespace-nowrap transition-all duration-200 ${
+                  isSelected
+                    ? 'bg-surface text-fg shadow-sm border border-line ring-1 ring-accent/30'
+                    : 'text-fg-3 hover:bg-surface/50 hover:text-fg'
+                }`}
+              >
+                <Icon
+                  size={15}
+                  className={`shrink-0 transition-colors ${
+                    isSelected ? 'text-amber-400' : 'text-fg-3 group-hover:text-fg-2'
+                  }`}
+                />
+                <span>{tab.label}</span>
+                {tab.badge && (
+                  <span
+                    className={`ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                      isSelected
+                        ? 'bg-amber-400/20 text-amber-300 border border-amber-400/30'
+                        : 'bg-surface-2 text-fg-3 border border-line/60 group-hover:text-fg-2'
+                    }`}
+                  >
+                    {tab.badge}
+                  </span>
+                )}
+                {isSelected && (
+                  <span className="absolute -bottom-1.5 left-3 right-3 h-0.5 rounded-full bg-accent shadow-xs shadow-accent" />
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {active === '' && <Overview />}
