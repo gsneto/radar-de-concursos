@@ -5,6 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#07090d" />
+    <script>
+      (function() {
+        try {
+          var t = localStorage.getItem('radar_theme');
+          if (t === 'light') {
+            document.documentElement.classList.remove('dark');
+            document.documentElement.classList.add('light');
+            document.documentElement.setAttribute('data-theme', 'light');
+            var metaCs = document.querySelector('meta[name="color-scheme"]');
+            if (metaCs) metaCs.setAttribute('content', 'light');
+            var metaTc = document.querySelector('meta[name="theme-color"]');
+            if (metaTc) metaTc.setAttribute('content', '#f8fafc');
+          }
+        } catch (e) {}
+      })();
+    </script>
     <title>GSN Concursos</title>
     <meta
       name="description"

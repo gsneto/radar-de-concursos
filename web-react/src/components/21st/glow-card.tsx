@@ -13,7 +13,7 @@ export const ACCENTS: Record<Accent, string> = {
 };
 
 const GRID_IMAGE =
-  'linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.08) 1px, transparent 1px)';
+  'linear-gradient(rgba(128,128,128,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(128,128,128,0.06) 1px, transparent 1px)';
 
 export function GlowCard({
   accent = 'indigo',
@@ -61,7 +61,7 @@ export function GlowCard({
       className={cn('relative rounded-2xl transition-all', className)}
     >
       {/* Camada 1: borda sutil translúcida */}
-      <div aria-hidden="true" className="absolute inset-0 rounded-2xl bg-white/[0.08]" />
+      <div aria-hidden="true" className="absolute inset-0 rounded-2xl bg-line" />
 
       {/* Camada 2: borda viva que segue o cursor */}
       <div
@@ -76,7 +76,7 @@ export function GlowCard({
       />
 
       {/* Camada 3: corpo do card com spotlight e grid */}
-      <div aria-hidden="true" className="absolute inset-px overflow-hidden rounded-[15px] bg-[#0b0e17]">
+      <div aria-hidden="true" className="absolute inset-px overflow-hidden rounded-[15px] bg-surface">
         <div
           className={cn(
             'absolute inset-0 transition-opacity duration-500',

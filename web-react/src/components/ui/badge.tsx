@@ -4,7 +4,7 @@ import { cn } from '@/lib/cn';
 export type Tone = 'neutral' | 'accent' | 'verified' | 'ok' | 'warn' | 'risk' | 'unknown';
 
 const tones: Record<Tone, string> = {
-  neutral: 'bg-white/[0.06] text-fg-2 border-line',
+  neutral: 'bg-surface-2 text-fg-2 border-line',
   accent: 'bg-accent-soft text-accent border-accent/25',
   verified: 'bg-verified-soft text-verified border-verified/25',
   ok: 'bg-ok-soft text-ok border-ok/25',

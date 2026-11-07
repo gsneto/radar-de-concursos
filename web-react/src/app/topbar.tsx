@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Bot, Check, Loader2, Menu, Search, Settings2 } from 'lucide-react';
+import { Bot, Check, Loader2, Menu, Moon, Search, Settings2, Sun } from 'lucide-react';
 import { Link, useLocation, useMatches } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/cn';
 import { executeCuradoria } from '@/lib/api';
+import { useTheme } from '@/lib/theme';
 
 interface TopbarProps {
   onOpenMobile: () => void;
@@ -73,6 +74,51 @@ export function CuradoriaButton() {
   );
 }
 
+export function ThemeToggle() {
+  const { theme, toggleTheme } = useTheme();
+  const isLight = theme === 'light';
+
+  return (
+    <button
+      type="button"
+      onClick={toggleTheme}
+      aria-label={isLight ? 'Alternar para tema escuro (Lua)' : 'Alternar para tema claro (Sol)'}
+      title={isLight ? 'Mudar para Tema Escuro (Lua)' : 'Mudar para Tema Claro (Sol)'}
+      className={cn(
+        'group relative flex h-8 w-[62px] items-center rounded-full border border-line bg-surface p-1 transition-all',
+        'hover:border-line-strong hover:bg-surface-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent shadow-xs',
+      )}
+    >
+      {/* Ícone fixo da Lua à esquerda */}
+      <span className="flex size-5 items-center justify-center text-fg-3">
+        <Moon size={12} className={cn('transition-colors', !isLight ? 'text-amber-400' : 'text-fg-3/40')} />
+      </span>
+
+      {/* Ícone fixo do Sol à direita */}
+      <span className="flex size-5 items-center justify-center text-fg-3 ml-auto">
+        <Sun size={12} className={cn('transition-colors', isLight ? 'text-amber-500' : 'text-fg-3/40')} />
+      </span>
+
+      {/* Indicador deslizante ativo */}
+      <span
+        aria-hidden="true"
+        className={cn(
+          'absolute top-1 left-1 flex size-6 items-center justify-center rounded-full transition-all duration-300 ease-out shadow-xs',
+          isLight
+            ? 'translate-x-[30px] bg-amber-500/20 text-amber-600 border border-amber-500/30'
+            : 'translate-x-0 bg-amber-400/20 text-amber-300 border border-amber-400/30',
+        )}
+      >
+        {isLight ? (
+          <Sun size={13} className="text-amber-600" />
+        ) : (
+          <Moon size={13} className="text-amber-300" />
+        )}
+      </span>
+    </button>
+  );
+}
+
 export function Topbar({ onOpenMobile, onOpenPalette }: TopbarProps) {
   const matches = useMatches();
   const location = useLocation();
@@ -113,6 +159,7 @@ export function Topbar({ onOpenMobile, onOpenPalette }: TopbarProps) {
 
       <div className="ml-auto flex items-center gap-2">
         <CuradoriaButton />
+        <ThemeToggle />
 
         <button
           type="button"
@@ -132,7 +179,7 @@ export function Topbar({ onOpenMobile, onOpenPalette }: TopbarProps) {
 
         <Link
           to="/configuracoes"
-          className="grid size-9 place-items-center rounded-sm text-fg-2 transition-colors hover:bg-white/[0.06] hover:text-fg"
+          className="grid size-9 place-items-center rounded-sm text-fg-2 transition-colors hover:bg-surface-2 hover:text-fg"
           aria-label="Abrir configurações"
         >
           <Settings2 size={16} />

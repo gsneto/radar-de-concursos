@@ -57,7 +57,7 @@ export function Sidebar({
           type="button"
           onClick={onToggle}
           className={cn(
-            'ml-auto hidden size-7 place-items-center rounded-xs text-fg-3 transition-colors hover:bg-white/[0.06] hover:text-fg lg:grid',
+            'ml-auto hidden size-7 place-items-center rounded-xs text-fg-3 transition-colors hover:bg-surface-2 hover:text-fg lg:grid',
             collapsed && 'lg:hidden',
           )}
           aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'}
@@ -71,7 +71,7 @@ export function Sidebar({
         <button
           type="button"
           onClick={onCloseMobile}
-          className="ml-auto grid size-8 place-items-center rounded-xs text-fg-3 hover:bg-white/[0.06] hover:text-fg lg:hidden"
+          className="ml-auto grid size-8 place-items-center rounded-xs text-fg-3 hover:bg-surface-2 hover:text-fg lg:hidden"
           aria-label="Fechar menu"
         >
           <X size={17} />
@@ -102,7 +102,7 @@ export function Sidebar({
                       className={({ isActive }) =>
                         cn(
                           'group relative flex h-9 items-center gap-2.5 rounded-sm px-2 text-[13px] transition-colors',
-                          'text-fg-2 hover:bg-white/[0.055] hover:text-fg',
+                          'text-fg-2 hover:bg-surface-2 hover:text-fg',
                           collapsed && 'lg:justify-center lg:px-0',
                           isActive &&
                             'bg-accent-soft text-fg before:absolute before:top-2 before:-left-2 before:bottom-2 before:w-[2px] before:rounded-r before:bg-accent',
@@ -135,7 +135,7 @@ export function Sidebar({
           type="button"
           onClick={onToggle}
           className={cn(
-            'hidden h-8 w-full items-center gap-2 rounded-sm px-2 text-[11px] text-fg-3 transition-colors hover:bg-white/[0.06] hover:text-fg lg:flex',
+            'hidden h-8 w-full items-center gap-2 rounded-sm px-2 text-[11px] text-fg-3 transition-colors hover:bg-surface-2 hover:text-fg lg:flex',
             collapsed && 'lg:justify-center lg:px-0',
           )}
           aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'}

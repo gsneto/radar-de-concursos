@@ -9,8 +9,8 @@ const variants: Record<Variant, string> = {
   primary:
     'bg-accent text-fg-inverse hover:bg-accent-hover font-semibold shadow-[0_1px_0_rgb(255_255_255/0.2)_inset,0_8px_20px_-12px_rgb(245_165_36/0.7)]',
   secondary:
-    'bg-surface-2 text-fg border border-line-strong hover:bg-surface-3 hover:border-white/20 font-medium',
-  ghost: 'bg-transparent text-fg-2 hover:bg-white/[0.06] hover:text-fg font-medium',
+    'bg-surface-2 text-fg border border-line-strong hover:bg-surface-3 hover:border-line-strong font-medium',
+  ghost: 'bg-transparent text-fg-2 hover:bg-surface-2 hover:text-fg font-medium',
   danger: 'bg-risk-soft text-risk border border-risk/30 hover:bg-risk/20 font-semibold',
 };
 
