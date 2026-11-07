@@ -450,10 +450,179 @@ _BANCAS: dict[str, dict[str, Any]] = {
     },
 }
 
+_BANCA_METRICS: dict[str, dict[str, Any]] = {
+    "fgv": {
+        "dificuldade": 9.5,
+        "indice_pegadinhas": 92,
+        "perfil_cobranca": {"interpretacao": 70, "doutrina_jurisprudencia": 20, "lei_seca": 10},
+        "tempo_medio_questao": "3 min (Textos Longos)",
+        "fator_chute": "Livre (Sem penalidade)",
+        "categoria": "federal",
+        "categoria_label": "Federal & Nacional",
+        "top_disciplinas_ti": ["Microsserviços", "SQL Analítico & ACID", "Padrões GoF", "Engenharia de Software"],
+    },
+    "cebraspe": {
+        "dificuldade": 9.6,
+        "indice_pegadinhas": 96,
+        "perfil_cobranca": {"interpretacao": 45, "doutrina_jurisprudencia": 40, "lei_seca": 15},
+        "tempo_medio_questao": "1m30s (Itens C/E)",
+        "fator_chute": "Crítico: 1 Erro Anula 1 Acerto",
+        "categoria": "federal",
+        "categoria_label": "Federal & Nacional",
+        "top_disciplinas_ti": ["Segurança (ISO 27001)", "Redes (BGP/OSPF/TCP)", "Governança (ITIL/COBIT)", "DevOps & Cloud"],
+    },
+    "fcc": {
+        "dificuldade": 9.0,
+        "indice_pegadinhas": 65,
+        "perfil_cobranca": {"interpretacao": 30, "doutrina_jurisprudencia": 45, "lei_seca": 25},
+        "tempo_medio_questao": "2m15s (Equilibrado)",
+        "fator_chute": "Livre (Sem penalidade)",
+        "categoria": "tribunais",
+        "categoria_label": "Tribunais & Carreiras",
+        "top_disciplinas_ti": ["Java & Spring", "Modelagem Relacional", "Governança (ITIL/PMBOK)", "Estruturas de Dados"],
+    },
+    "cesgranrio": {
+        "dificuldade": 8.5,
+        "indice_pegadinhas": 55,
+        "perfil_cobranca": {"interpretacao": 50, "doutrina_jurisprudencia": 25, "lei_seca": 25},
+        "tempo_medio_questao": "2 min (Direto)",
+        "fator_chute": "Livre (Sem penalidade)",
+        "categoria": "federal",
+        "categoria_label": "Federal & Estatais",
+        "top_disciplinas_ti": ["Ciência de Dados (Python)", "DevOps & Docker", "SQL & NoSQL", "Engenharia de Requisitos"],
+    },
+    "esaf": {
+        "dificuldade": 9.4,
+        "indice_pegadinhas": 85,
+        "perfil_cobranca": {"interpretacao": 40, "doutrina_jurisprudencia": 40, "lei_seca": 20},
+        "tempo_medio_questao": "3 min (Denso)",
+        "fator_chute": "Mínimo Eliminatório por Matéria",
+        "categoria": "federal",
+        "categoria_label": "Federal & Fiscais",
+        "top_disciplinas_ti": ["Governança Setor Público", "Auditoria de TI", "Contratações Públicas (TCU)", "Gestão de Riscos"],
+    },
+    "vunesp": {
+        "dificuldade": 7.8,
+        "indice_pegadinhas": 45,
+        "perfil_cobranca": {"interpretacao": 20, "doutrina_jurisprudencia": 10, "lei_seca": 70},
+        "tempo_medio_questao": "1m45s (Objetivo)",
+        "fator_chute": "Livre (Sem penalidade)",
+        "categoria": "tribunais",
+        "categoria_label": "Estadual & Tribunais",
+        "top_disciplinas_ti": ["Comandos SO (Linux/Win)", "Redes & Sub-redes", "Hardware & Periféricos", "SQL Básico/Médio"],
+    },
+    "fundatec": {
+        "dificuldade": 7.2,
+        "indice_pegadinhas": 40,
+        "perfil_cobranca": {"interpretacao": 25, "doutrina_jurisprudencia": 15, "lei_seca": 60},
+        "tempo_medio_questao": "1m45s (Direto)",
+        "fator_chute": "Livre (Sem penalidade)",
+        "categoria": "regional",
+        "categoria_label": "Regional & Sul",
+        "top_disciplinas_ti": ["Cabeamento & Redes", "Segurança & Malwares", "Suporte & Hardware", "SQL Básico"],
+    },
+    "comissao_propria": {
+        "dificuldade": 8.0,
+        "indice_pegadinhas": 50,
+        "perfil_cobranca": {"interpretacao": 30, "doutrina_jurisprudencia": 30, "lei_seca": 40},
+        "tempo_medio_questao": "2m30s (Específico)",
+        "fator_chute": "Conforme Edital",
+        "categoria": "tribunais",
+        "categoria_label": "Órgão Próprio",
+        "top_disciplinas_ti": ["Stack Tecnológica do Órgão", "Regimento Interno", "PDTI Local", "Sistemas Legados"],
+    },
+    "ibam": {
+        "dificuldade": 6.5,
+        "indice_pegadinhas": 35,
+        "perfil_cobranca": {"interpretacao": 25, "doutrina_jurisprudencia": 10, "lei_seca": 65},
+        "tempo_medio_questao": "1m30s (4 Alternativas)",
+        "fator_chute": "Livre (Sem penalidade)",
+        "categoria": "regional",
+        "categoria_label": "Municipal & Regional",
+        "top_disciplinas_ti": ["Office & LibreOffice", "Microinformática", "Redes Locais", "Leis Municipais"],
+    },
+    "quadrix": {
+        "dificuldade": 8.2,
+        "indice_pegadinhas": 78,
+        "perfil_cobranca": {"interpretacao": 35, "doutrina_jurisprudencia": 25, "lei_seca": 40},
+        "tempo_medio_questao": "1m40s (Itens C/E)",
+        "fator_chute": "Penalidade Parcial ou Total",
+        "categoria": "conselhos",
+        "categoria_label": "Conselhos & Autarquias",
+        "top_disciplinas_ti": ["Comandos Linux (bash)", "SQL & Joins", "Redes Locais", "Regimento dos Conselhos"],
+    },
+    "consesp": {
+        "dificuldade": 6.2,
+        "indice_pegadinhas": 30,
+        "perfil_cobranca": {"interpretacao": 15, "doutrina_jurisprudencia": 5, "lei_seca": 80},
+        "tempo_medio_questao": "1m20s (Rápido)",
+        "fator_chute": "Livre (Sem penalidade)",
+        "categoria": "regional",
+        "categoria_label": "Municipal & Interior",
+        "top_disciplinas_ti": ["Hardware & Memórias", "Atalhos do Windows", "Prompt de Comando", "Pacote Office"],
+    },
+    "idib": {
+        "dificuldade": 7.5,
+        "indice_pegadinhas": 55,
+        "perfil_cobranca": {"interpretacao": 40, "doutrina_jurisprudencia": 20, "lei_seca": 40},
+        "tempo_medio_questao": "1m50s (Intermediário)",
+        "fator_chute": "Livre (Sem penalidade)",
+        "categoria": "conselhos",
+        "categoria_label": "Conselhos & Médias",
+        "top_disciplinas_ti": ["Diagramas UML 2.5", "Banco Relacional (DDL/DML)", "Noções de Nuvem (SaaS)", "Segurança Básica"],
+    },
+    "fepese": {
+        "dificuldade": 8.8,
+        "indice_pegadinhas": 60,
+        "perfil_cobranca": {"interpretacao": 40, "doutrina_jurisprudencia": 30, "lei_seca": 30},
+        "tempo_medio_questao": "2m30s (Acadêmico)",
+        "fator_chute": "Livre (Sem penalidade)",
+        "categoria": "tribunais",
+        "categoria_label": "Estadual de Elite (SC)",
+        "top_disciplinas_ti": ["Estruturas de Dados (BST/Grafos)", "Otimização de Consultas SQL", "Protocolo TCP a Fundo", "Álgebra Relacional"],
+    },
+    "legalle": {
+        "dificuldade": 6.8,
+        "indice_pegadinhas": 35,
+        "perfil_cobranca": {"interpretacao": 20, "doutrina_jurisprudencia": 10, "lei_seca": 70},
+        "tempo_medio_questao": "1m30s (Direto)",
+        "fator_chute": "Livre (Sem penalidade)",
+        "categoria": "regional",
+        "categoria_label": "Municipal & Sul",
+        "top_disciplinas_ti": ["Manutenção & Suporte", "Active Directory & Windows", "Políticas de Backup", "Normas de Segurança"],
+    },
+    "consulpam": {
+        "dificuldade": 6.4,
+        "indice_pegadinhas": 32,
+        "perfil_cobranca": {"interpretacao": 20, "doutrina_jurisprudencia": 10, "lei_seca": 70},
+        "tempo_medio_questao": "1m25s (Direto)",
+        "fator_chute": "Livre (Sem penalidade)",
+        "categoria": "regional",
+        "categoria_label": "Municipal & Nordeste",
+        "top_disciplinas_ti": ["Microinformática", "Protocolos TCP/IP", "Memórias & Periféricos", "Antivírus & Firewall"],
+    },
+    "ibfc": {
+        "dificuldade": 7.4,
+        "indice_pegadinhas": 45,
+        "perfil_cobranca": {"interpretacao": 25, "doutrina_jurisprudencia": 15, "lei_seca": 60},
+        "tempo_medio_questao": "1m40s (Objetivo)",
+        "fator_chute": "Livre (Sem penalidade)",
+        "categoria": "conselhos",
+        "categoria_label": "Autarquias & Estados",
+        "top_disciplinas_ti": ["Portas & Protocolos Padrão", "Modelos de Ciclo de Vida", "Scrum & RUP", "Consultas SQL Simples"],
+    },
+}
+
 
 def get_banca_profiles() -> dict[str, dict[str, Any]]:
-    """Retorna os perfis analíticos comparativos de estilo de exame de cada banca."""
-    return _BANCAS
+    """Retorna os perfis analíticos comparativos de estilo de exame de cada banca enriquecidos com métricas."""
+    result: dict[str, dict[str, Any]] = {}
+    for bid, bdata in _BANCAS.items():
+        copy_data = dict(bdata)
+        metrics = _BANCA_METRICS.get(bid, {})
+        copy_data.update(metrics)
+        result[bid] = copy_data
+    return result
 
 
 # ==============================================================================

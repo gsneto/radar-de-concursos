@@ -780,4 +780,16 @@ export interface BancaProfile {
   dicas_ti: string[];
   dicas_gerais: string[];
   palavras_chave_alerta: string[];
+  dificuldade?: number;
+  indice_pegadinhas?: number;
+  perfil_cobranca?: {
+    interpretacao: number;
+    doutrina_jurisprudencia: number;
+    lei_seca: number;
+  };
+  tempo_medio_questao?: string;
+  fator_chute?: string;
+  categoria?: string;
+  categoria_label?: string;
+  top_disciplinas_ti?: string[];
 }
