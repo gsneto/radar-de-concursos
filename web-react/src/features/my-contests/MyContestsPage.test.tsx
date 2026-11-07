@@ -58,12 +58,15 @@ describe('MyContestsPage', () => {
                 contest_id: 'contest-abdi',
                 role_id: 'role-ti',
                 contest_label: 'Processo Seletivo ABDI 2026',
+                orgao: 'Agência Brasileira de Desenvolvimento Industrial – ABDI',
+                banca: 'FGV Conhecimento',
+                si_compativel: true,
                 competition_id: 'psabdi',
                 role_name: 'Analista de Produtividade e Inovação (TI)',
                 role_specialty: 'Engenharia de Software',
                 remuneracao: 'R$ 16.034,70',
                 vagas: 5,
-                proximo_prazo: { campo: 'inscricao_inicio', data: '2026-12-03' },
+                proximo_prazo: { campo: 'inscricao_inicio', label: 'Início das Inscrições', data: '2026-12-03' },
                 selected_at: '2026-11-06T12:00:00Z',
                 status: 'ativo',
                 notes: 'Foco principal de TI',
@@ -80,7 +83,9 @@ describe('MyContestsPage', () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText('Processo Seletivo ABDI 2026')).toBeInTheDocument();
+      expect(screen.getByText('Agência Brasileira de Desenvolvimento Industrial – ABDI')).toBeInTheDocument();
+      expect(screen.getByText('FGV Conhecimento')).toBeInTheDocument();
+      expect(screen.getByText('Bacharelado em SI Compatível')).toBeInTheDocument();
       expect(screen.getByText('Analista de Produtividade e Inovação (TI)')).toBeInTheDocument();
       expect(screen.getByText('R$ 16.034,70')).toBeInTheDocument();
       expect(screen.getByText('5 vaga(s)')).toBeInTheDocument();

@@ -56,6 +56,8 @@ class TestMyContests(unittest.TestCase):
         item = my_list[0]
         self.assertEqual(item["contest_id"], "contest-1")
         self.assertEqual(item["role_name"], "Analista de TI")
+        self.assertEqual(item["banca"], "FGV Conhecimento")
+        self.assertIsNotNone(item["orgao"])
         self.assertEqual(item["notes"], "Meu concurso foco")
         self.assertEqual(item["status"], "ativo")
 

@@ -107,7 +107,9 @@ def remove_my_contest(db_path: str, contest_id: str) -> bool:
 
 
 def list_my_contests(db_path: str, *, status: str = "ativo") -> list[dict[str, Any]]:
-    """Lista todos os concursos no painel pessoal, enriquecidos com dados de cargo e prazos."""
+    """Lista todos os concursos no painel pessoal, enriquecidos com dados de cargo, banca e instituição."""
+    import re
+
     conn = sqlite3.connect(db_path)
     init_my_contests(conn)
     conn.row_factory = sqlite3.Row
@@ -136,23 +138,65 @@ def list_my_contests(db_path: str, *, status: str = "ativo") -> list[dict[str, A
         rows = cur.execute(query, (status,)).fetchall()
         for r in rows:
             cid = r["contest_id"]
-            # Buscar títulos e documentos associados
+
+            # 1. Buscar banca organizadora
+            banca_row = cur.execute(
+                """
+                SELECT issuer FROM documentos
+                WHERE contest_id = ? AND issuer IS NOT NULL AND length(trim(issuer)) > 1
+                ORDER BY CASE 
+                    WHEN tipo_documental = 'pagina_concurso' THEN 0 
+                    WHEN tipo_documental = 'edital_abertura' THEN 1 
+                    ELSE 2 
+                END, length(issuer) DESC LIMIT 1
+                """,
+                (cid,),
+            ).fetchone()
+            banca = banca_row["issuer"].strip() if banca_row and banca_row["issuer"] else None
+            if not banca:
+                src = r["source_url"] or ""
+                if "fgv.br" in src:
+                    banca = "FGV Conhecimento"
+                elif "cebraspe.org.br" in src:
+                    banca = "Cebraspe"
+                elif "quadrix.org.br" in src:
+                    banca = "Instituto Quadrix"
+                elif "ibfc.org.br" in src:
+                    banca = "IBFC"
+                else:
+                    banca = "Banca Oficial do Certame"
+
+            # 2. Buscar título oficial do concurso e órgão/instituição
             doc_row = cur.execute(
                 """
-                SELECT title, official_url, published_at
+                SELECT title, official_url, published_at, tipo_documental
                 FROM documentos
-                WHERE contest_id = ?
-                ORDER BY published_at DESC LIMIT 1
+                WHERE contest_id = ? AND title IS NOT NULL
+                ORDER BY CASE 
+                    WHEN tipo_documental = 'pagina_concurso' THEN 0
+                    WHEN tipo_documental = 'edital_abertura' THEN 1
+                    WHEN kind = 'edital' THEN 2
+                    ELSE 3
+                END, length(title) DESC LIMIT 1
                 """,
                 (cid,),
             ).fetchone()
 
-            contest_label = r["competition_id"] or "Concurso"
-            if doc_row and doc_row["title"]:
-                contest_label = doc_row["title"]
+            raw_title = doc_row["title"] if doc_row and doc_row["title"] else (r["competition_id"] or "Concurso Oficial")
 
-            # Se role_name ainda for nulo, tenta o primeiro cargo do certame
+            # Extrair órgão de padrões como "Concurso Público para o/a [Órgão]"
+            orgao = raw_title
+            m = re.search(r'(?:para\s+(?:o|a|os|as)?\s*)(.+)', raw_title, re.IGNORECASE)
+            if m:
+                orgao = m.group(1).strip()
+
+            contest_label = raw_title
+
+            # 3. Cargo, especialidade e requisitos
             role_name = r["role_name"]
+            role_specialty = r["role_specialty"]
+            cargos_destaque = []
+
             if not role_name:
                 first_role = cur.execute(
                     "SELECT name, specialty FROM cargos_identidade WHERE contest_id = ? LIMIT 1",
@@ -160,8 +204,64 @@ def list_my_contests(db_path: str, *, status: str = "ativo") -> list[dict[str, A
                 ).fetchone()
                 if first_role:
                     role_name = first_role["name"]
+                    role_specialty = role_specialty or first_role["specialty"]
 
-            # Verificar se há valores consolidados de remuneração ou vagas em valores_atuais
+            # Buscar propostas de formação/área para enriquecer
+            edu_rows = cur.execute(
+                """
+                SELECT p.value_json, p.ambiguity_reason
+                FROM propostas_campo p
+                WHERE p.contest_id = ? AND p.field_name IN ('education', 'accepted_courses') AND p.value_json IS NOT NULL
+                LIMIT 5
+                """,
+                (cid,),
+            ).fetchall()
+
+            has_ti = False
+            for er in edu_rows:
+                v = str(er["value_json"]).strip('"')
+                if any(k in v for k in ("Ciência da Computação", "Sistemas de Informação", "Ciência de Dados", "Software")):
+                    has_ti = True
+                    cargos_destaque.append("Tecnologia da Informação & Dados")
+                    break
+
+            if not role_name:
+                if has_ti:
+                    role_name = "Analista de Tecnologia da Informação (TI / SI)"
+                else:
+                    role_name = "Cargos de Nível Superior & Técnico"
+
+            # 4. Compatibilidade com Sistemas de Informação
+            si_row = cur.execute(
+                """
+                SELECT p.value_json 
+                FROM propostas_campo p
+                WHERE p.contest_id = ? AND p.field_name = 'si_compatibility'
+                ORDER BY CASE 
+                    WHEN p.value_json LIKE '%aceito_expressamente%' THEN 0
+                    WHEN p.value_json LIKE '%abrangido%' THEN 1
+                    WHEN p.value_json LIKE '%nivel_minimo%' THEN 2
+                    ELSE 3
+                END
+                LIMIT 1
+                """,
+                (cid,),
+            ).fetchone()
+            si_compativel = bool(si_row and any(k in str(si_row["value_json"]).lower() for k in ("aceito", "abrangido", "nivel_minimo")))
+
+            # 5. Localidade / Prova
+            loc_row = cur.execute(
+                """
+                SELECT p.value_json
+                FROM propostas_campo p
+                WHERE p.contest_id = ? AND p.field_name IN ('exam_location', 'work_location')
+                LIMIT 1
+                """,
+                (cid,),
+            ).fetchone()
+            localidade = str(loc_row["value_json"]).strip('"') if loc_row else None
+
+            # 6. Remuneração e Vagas consolidadas
             val_rows = cur.execute(
                 """
                 SELECT v.field_name, p.value_json
@@ -171,7 +271,7 @@ def list_my_contests(db_path: str, *, status: str = "ativo") -> list[dict[str, A
                 """,
                 (cid,),
             ).fetchall()
-            
+
             remuneracao = None
             vagas = None
             for vr in val_rows:
@@ -185,22 +285,32 @@ def list_my_contests(db_path: str, *, status: str = "ativo") -> list[dict[str, A
                     except (ValueError, TypeError):
                         pass
 
-            # Buscar próximo prazo ativo
+            # 7. Buscar próximo prazo ativo com rótulo
             prazo_row = cur.execute(
                 """
-                SELECT p.field_name, p.value_json, e.quote
+                SELECT p.field_name, p.value_json
                 FROM propostas_campo p
-                JOIN evidencias e ON e.id = p.evidence_id
-                WHERE p.contest_id = ? AND p.field_name IN ('registration_end', 'exam_date', 'inscricao_fim', 'prova_data')
-                ORDER BY p.value_json ASC LIMIT 1
+                WHERE p.contest_id = ? AND p.field_name IN ('registration_end', 'exam_date', 'inscricao_fim', 'prova_data', 'registration_start')
+                ORDER BY CASE 
+                    WHEN p.field_name = 'registration_end' THEN 0 
+                    WHEN p.field_name = 'exam_date' THEN 1 
+                    ELSE 2 
+                END, p.value_json ASC LIMIT 1
                 """,
                 (cid,),
             ).fetchone()
 
             proximo_prazo = None
             if prazo_row:
+                fname = prazo_row["field_name"]
+                prazo_label = (
+                    "Fim das Inscrições" if "registration_end" in fname or "inscricao_fim" in fname
+                    else "Data da Prova" if "exam_date" in fname or "prova_data" in fname
+                    else "Início das Inscrições"
+                )
                 proximo_prazo = {
-                    "campo": prazo_row["field_name"],
+                    "campo": fname,
+                    "label": prazo_label,
                     "data": str(prazo_row["value_json"]).strip('"'),
                 }
 
@@ -210,9 +320,13 @@ def list_my_contests(db_path: str, *, status: str = "ativo") -> list[dict[str, A
                     "contest_id": cid,
                     "role_id": r["role_id"],
                     "contest_label": contest_label,
+                    "orgao": orgao,
+                    "banca": banca,
                     "competition_id": r["competition_id"],
                     "role_name": role_name,
-                    "role_specialty": r["role_specialty"],
+                    "role_specialty": role_specialty,
+                    "si_compativel": si_compativel,
+                    "localidade": localidade,
                     "remuneracao": remuneracao,
                     "vagas": vagas,
                     "proximo_prazo": proximo_prazo,

@@ -1,6 +1,9 @@
 import {
+  Award,
   BookOpen,
+  Building2,
   Calendar,
+  CheckCircle2,
   Compass,
   DollarSign,
   Target,
@@ -167,26 +170,35 @@ function MyContestCard({
   item: MyContest;
   onRemove: () => void;
 }) {
-  const organTitle = item.contest_label || item.competition_id || 'Concurso Oficial';
-  const roleTitle = item.role_name || 'Cargo em Aberto';
+  const organTitle = item.orgao || item.contest_label || item.competition_id || 'Concurso Oficial';
+  const boardName = item.banca || 'Banca Oficial';
+  const roleTitle = item.role_name || 'Cargos de Nível Superior & Técnico';
   const studyHref = `/estudos?concurso=${encodeURIComponent(item.contest_id)}`;
   const dossierHref = `/dossie/${encodeURIComponent(item.contest_id)}`;
 
   return (
     <GlowCard accent="amber" className="flex flex-col justify-between h-full group p-5">
       <div>
-        {/* Cabeçalho do Card */}
-        <div className="flex items-start justify-between gap-3 mb-2.5">
-          <div className="min-w-0 flex-1">
-            <span className="text-[11px] font-medium tracking-wide text-fg-3 uppercase truncate block">
-              {organTitle}
-            </span>
-            <Link
-              to={dossierHref}
-              className="font-display text-lg font-bold text-fg tracking-tight group-hover:text-amber-300 transition-colors line-clamp-1 mt-0.5 block"
-            >
-              {roleTitle}
-            </Link>
+        {/* Cabeçalho do Card: Instituição e Banca */}
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-400/10 text-amber-400 border border-amber-400/20">
+                <Award size={12} />
+                {boardName}
+              </span>
+              {item.si_compativel && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <CheckCircle2 size={12} />
+                  Bacharelado em SI Compatível
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-fg-2 pt-0.5">
+              <Building2 size={13} className="text-fg-3 shrink-0" />
+              <span className="truncate">{organTitle}</span>
+            </div>
           </div>
 
           <button
@@ -200,19 +212,27 @@ function MyContestCard({
           </button>
         </div>
 
-        {/* Especialidade ou Notas */}
-        {item.role_specialty && (
-          <p className="text-xs text-fg-3 mb-3">
-            Especialidade: <span className="text-fg-2">{item.role_specialty}</span>
-          </p>
-        )}
+        {/* Cargo e Especialidade em destaque */}
+        <div className="mt-2 mb-3">
+          <Link
+            to={dossierHref}
+            className="font-display text-lg font-bold text-fg tracking-tight group-hover:text-amber-300 transition-colors line-clamp-1 block"
+          >
+            {roleTitle}
+          </Link>
+          {item.role_specialty && (
+            <p className="text-xs text-fg-3 mt-0.5">
+              Área: <span className="text-fg-2 font-medium">{item.role_specialty}</span>
+            </p>
+          )}
+        </div>
 
         {/* Informações de Oportunidade: Salário, Vagas, Prazos */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 my-3.5 p-3 rounded-lg bg-surface-2/40 border border-line/60 text-xs">
           <div>
             <span className="text-fg-3 block text-2xs uppercase tracking-wider">Remuneração</span>
             <span className="font-semibold text-emerald-400 text-sm">
-              {item.remuneracao ? String(item.remuneracao).replace(/^"|"$/g, '') : 'A confirmar'}
+              {item.remuneracao ? String(item.remuneracao).replace(/^"|"$/g, '') : 'Edital Oficial'}
             </span>
           </div>
 
@@ -224,7 +244,9 @@ function MyContestCard({
           </div>
 
           <div className="col-span-2 sm:col-span-1">
-            <span className="text-fg-3 block text-2xs uppercase tracking-wider">Próximo Prazo</span>
+            <span className="text-fg-3 block text-2xs uppercase tracking-wider">
+              {item.proximo_prazo?.label || 'Próximo Prazo'}
+            </span>
             <span className="font-medium text-amber-300">
               {item.proximo_prazo?.data ? shortDate(item.proximo_prazo.data) : 'Edital aberto'}
             </span>
@@ -238,7 +260,7 @@ function MyContestCard({
           to={dossierHref}
           className="text-xs font-medium text-fg-3 hover:text-fg transition-colors"
         >
-          Ver Dossiê Oficial
+          Ver Dossiê Completo
         </Link>
 
         <LinkButton

@@ -728,13 +728,18 @@ export interface MyContest {
   contest_id: string;
   role_id: string | null;
   contest_label: string;
+  orgao?: string | null;
+  banca?: string | null;
   competition_id: string | null;
   role_name: string | null;
   role_specialty: string | null;
+  si_compativel?: boolean;
+  localidade?: string | null;
   remuneracao: string | number | null;
   vagas: number | null;
   proximo_prazo: {
     campo: string;
+    label?: string;
     data: string;
   } | null;
   selected_at: string;
