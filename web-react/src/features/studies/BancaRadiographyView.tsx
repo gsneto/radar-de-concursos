@@ -3,39 +3,62 @@ import { useBancas } from '@/app/queries';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { SkeletonRows } from '@/components/ui/states';
-import { AlertTriangle, BookOpen, CheckCircle, ShieldAlert, Sparkles } from 'lucide-react';
+import { AlertTriangle, BookOpen, CheckCircle, Search, ShieldAlert, Sparkles } from 'lucide-react';
 
 export function BancaRadiographyView({ onSelectBancaSimulado }: { onSelectBancaSimulado?: (banca: string) => void }) {
   const { data, isLoading } = useBancas();
   const [activeBancaId, setActiveBancaId] = useState<string>('fgv');
+  const [searchTerm, setSearchTerm] = useState<string>('');
 
   if (isLoading) {
     return <SkeletonRows rows={4} />;
   }
 
   const bancas = data?.bancas ?? {};
-  const activeBanca = bancas[activeBancaId] ?? Object.values(bancas)[0];
+  const bancaList = Object.values(bancas);
+  const filteredBancas = bancaList.filter((b) =>
+    b.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    b.id.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+  const activeBanca = bancas[activeBancaId] ?? filteredBancas[0] ?? bancaList[0];
 
   return (
     <div className="space-y-4">
       <Card
         title="Radiografia Comparativa de Bancas Examinadoras"
-        subtitle="Entenda como FGV, Cebraspe, Quadrix e IBFC estruturam suas provas, formulam pegadinhas e penalizam chutes."
+        subtitle="Entenda o estilo de prova, penalidades por chute e padrões de cobrança de 16 grandes organizadoras brasileiras."
       >
+        {/* Barra de Pesquisa e Filtro de Bancas */}
+        <div className="mb-3 flex items-center gap-2">
+          <div className="relative flex-1 max-w-xs">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-3" />
+            <input
+              type="text"
+              placeholder="Filtrar banca..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full rounded-md border border-line bg-surface-2 pl-8 pr-3 py-1 text-xs text-fg placeholder:text-fg-3 focus:border-accent focus:outline-none"
+            />
+          </div>
+          <span className="text-2xs text-fg-3">
+            Exibindo <strong>{filteredBancas.length}</strong> de {bancaList.length} bancas
+          </span>
+        </div>
+
         {/* Banca Selector Pills */}
-        <div className="flex flex-wrap gap-2 border-b border-line pb-3">
-          {Object.values(bancas).map((banca) => (
+        <div className="flex flex-wrap gap-1.5 border-b border-line pb-3 max-h-36 overflow-y-auto">
+          {filteredBancas.map((banca) => (
             <button
               key={banca.id}
               type="button"
               onClick={() => setActiveBancaId(banca.id)}
-              className={`rounded-md px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition-colors ${
+              className={`rounded-md px-2.5 py-1 text-2xs font-semibold uppercase tracking-wider transition-colors ${
                 activeBanca?.id === banca.id
                   ? 'bg-accent text-white shadow-sm'
                   : 'bg-surface-2 text-fg-3 border border-line hover:text-fg hover:border-line-strong'
               }`}
             >
-              {banca.id.toUpperCase()} · {banca.nome.split('(')[0].trim()}
+              {banca.id.replace('_', ' ').toUpperCase()} · {banca.nome.split('(')[0].trim()}
             </button>
           ))}
         </div>
