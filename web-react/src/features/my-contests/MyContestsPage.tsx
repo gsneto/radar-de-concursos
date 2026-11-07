@@ -134,7 +134,44 @@ export function MyContestsPage() {
         </div>
       ) : (
         /* Lista de Concursos Foco Selecionados */
-        <div className="space-y-4">
+        <div className="space-y-5">
+          {/* Cockpit de Foco do Concurseiro */}
+          <div className="rounded-2xl border border-line bg-gradient-to-r from-surface via-surface-2 to-surface p-4 sm:p-5 shadow-sm">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="space-y-0.5">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-fg-3">Concursos em Foco</span>
+                <p className="font-display text-xl font-bold text-fg sm:text-2xl">{items.length}</p>
+                <p className="text-2xs text-amber-400 font-medium">Meta ativa selecionada</p>
+              </div>
+              <div className="space-y-0.5">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-fg-3">Bancas Alvo</span>
+                <p className="font-display text-xl font-bold text-fg sm:text-2xl">
+                  {new Set(items.map((i) => i.banca).filter(Boolean)).size || 1}
+                </p>
+                <p className="text-2xs text-fg-3">Examinadoras mapeadas</p>
+              </div>
+              <div className="space-y-0.5">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-fg-3">Próximo Prazo</span>
+                <p className="font-display text-base font-bold text-amber-300 sm:text-lg truncate">
+                  {items[0]?.proximo_prazo?.data ? shortDate(items[0].proximo_prazo.data) : 'Em aberto'}
+                </p>
+                <p className="text-2xs text-fg-3 truncate">{items[0]?.proximo_prazo?.label || 'Inscrições'}</p>
+              </div>
+              <div className="space-y-0.5">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-fg-3">Ação Recomendada</span>
+                <div>
+                  <Link
+                    to={`/estudos?concurso=${encodeURIComponent(items[0]?.contest_id ?? '')}`}
+                    className="inline-flex items-center gap-1 text-xs font-bold text-amber-400 hover:text-amber-300 transition-colors"
+                  >
+                    <BookOpen size={13} /> Iniciar Aulas ›
+                  </Link>
+                </div>
+                <p className="text-2xs text-fg-3">Edital Verticalizado</p>
+              </div>
+            </div>
+          </div>
+
           <div className="flex items-center justify-between text-xs text-fg-3 px-1">
             <span>
               Acompanhando <strong className="text-fg font-medium">{items.length}</strong>{' '}
@@ -251,6 +288,28 @@ function MyContestCard({
               {item.proximo_prazo?.data ? shortDate(item.proximo_prazo.data) : 'Edital aberto'}
             </span>
           </div>
+        </div>
+
+        {/* Atalhos Rápidos para Ferramentas de Estudo */}
+        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+          <Link
+            to={studyHref}
+            className="rounded-lg border border-line bg-surface-2 px-2 py-1 text-[11px] font-semibold text-fg-3 hover:text-amber-400 hover:border-amber-400/40 transition-colors"
+          >
+            Trilha de Aulas
+          </Link>
+          <Link
+            to="/estudos/bancas"
+            className="rounded-lg border border-line bg-surface-2 px-2 py-1 text-[11px] font-semibold text-fg-3 hover:text-amber-400 hover:border-amber-400/40 transition-colors"
+          >
+            DNA da Banca
+          </Link>
+          <Link
+            to="/estudos/simulados"
+            className="rounded-lg border border-line bg-surface-2 px-2 py-1 text-[11px] font-semibold text-fg-3 hover:text-amber-400 hover:border-amber-400/40 transition-colors"
+          >
+            Simulados
+          </Link>
         </div>
       </div>
 
