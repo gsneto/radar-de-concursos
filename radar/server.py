@@ -2249,6 +2249,21 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             else:
                 self._bad_request("ação de questão inválida")
             return
+        if path == "/api/estudos/aulas":
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+                return
+            body = self._read_json(max_len=65536)
+            if body is None:
+                return
+            from radar import lesson_plan
+            try:
+                created = lesson_plan.create_lesson(body)
+            except ValueError as err:
+                self._bad_request(str(err))
+                return
+            self._send_json({"ok": True, "aula": created}, status=HTTPStatus.CREATED)
+            return
         if path == "/api/estudos/tentativas":
             if parts.query:
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
@@ -2256,7 +2271,26 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             body = self._read_json(max_len=32768)
             if body is None:
                 return
-            self._serve_study(practice_store.answer_question, body.get("questao_id"),
+            qid = body.get("questao_id")
+            if isinstance(qid, str) and qid.startswith("q-"):
+                # Resolve id_ref de questão da aula para o UUID real no banco
+                from radar.document_store import connect_documents
+                conn = connect_documents(self.server.db_path)
+                try:
+                    row = conn.execute("SELECT id FROM pratica_questoes WHERE procedencia=?", (qid,)).fetchone()
+                finally:
+                    conn.close()
+                if not row:
+                    from radar.real_exam_questions import seed_real_questions
+                    seed_real_questions(self.server.db_path)
+                    conn = connect_documents(self.server.db_path)
+                    try:
+                        row = conn.execute("SELECT id FROM pratica_questoes WHERE procedencia=?", (qid,)).fetchone()
+                    finally:
+                        conn.close()
+                if row:
+                    qid = row[0]
+            self._serve_study(practice_store.answer_question, qid,
                               body.get("resposta"),
                               duracao_segundos=body.get("duracao_segundos"),
                               origem="pratica")

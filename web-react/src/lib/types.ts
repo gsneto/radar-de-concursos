@@ -756,9 +756,44 @@ export interface MyContestsResponse {
 export interface LessonSummary {
   id: string;
   disciplina: string;
+  modulo?: string;
+  assunto?: string;
+  nivel?: string;
+  tempo_estimado_min?: number;
+  xp_recompensa?: number;
   titulo: string;
   objetivos: string[];
   questoes_count: number;
+  total_questoes?: number;
+  videoaulas_count?: number;
+  flashcards_count?: number;
+}
+
+export interface VideoChapter {
+  id: string;
+  titulo: string;
+  tempo_seg: number;
+  tempo_label: string;
+  resumo: string;
+}
+
+export interface VideoCheckpointQuestion {
+  id: string;
+  momento_seg: number;
+  momento_label: string;
+  capitulo_ref?: string;
+  pergunta: string;
+  alternativas: string[];
+  correta_idx: number;
+  explicacao: string;
+}
+
+export interface VideoGuidedSlide {
+  ordem: number;
+  tag: string;
+  titulo: string;
+  conteudo: string;
+  destaque?: string;
 }
 
 export interface LessonVideo {
@@ -767,14 +802,32 @@ export interface LessonVideo {
   duracao: string;
   youtube_id: string;
   descricao?: string;
+  capitulos?: VideoChapter[];
+  perguntas_video?: VideoCheckpointQuestion[];
+  slides_guiados?: VideoGuidedSlide[];
 }
 
 export interface LessonFlashcard {
   id: string;
+  tipo?:
+    | 'pergunta_resposta'
+    | 'conceito_definicao'
+    | 'verdadeiro_falso'
+    | 'complete_lacuna'
+    | 'identifique_erro'
+    | 'comparacao'
+    | 'exemplo_pratico'
+    | string;
   frente: string;
   verso: string;
   mnemonico?: string;
   tag: string;
+  dificuldade_sugerida?: 'facil' | 'media' | 'dificil' | string;
+  resposta_vf?: 'V' | 'F';
+  lacuna_correta?: string;
+  lacuna_opcoes?: string[];
+  erro_trecho?: string;
+  correcao?: string;
 }
 
 export interface LessonSummaryTable {
@@ -783,19 +836,135 @@ export interface LessonSummaryTable {
   linhas: string[][];
 }
 
+export interface VisualBoardRelation {
+  id: string;
+  categoria: string;
+  cor: string;
+  regra_ouro: string;
+  conectivos: string[];
+  fluxo_visual: string;
+  exemplo_destacado: string;
+  armadilha_banca: string;
+}
+
+export interface VisualBoardStep {
+  passo: number;
+  titulo: string;
+  detalhe: string;
+  destaque_codigo: string;
+}
+
+export interface LessonVisualBoard {
+  titulo: string;
+  subtitulo: string;
+  relacoes_conceituais: VisualBoardRelation[];
+  passos_animados: VisualBoardStep[];
+}
+
+export interface MindMapSubNode {
+  id: string;
+  label: string;
+}
+
+export interface MindMapNode {
+  id: string;
+  titulo: string;
+  categoria: string;
+  cor: string;
+  descricao: string;
+  exemplo: string;
+  dica_banca: string;
+  subnos: MindMapSubNode[];
+}
+
+export interface LessonMindMap {
+  no_central: string;
+  disciplina: string;
+  nos: MindMapNode[];
+}
+
+export interface FormattedQuestionOption {
+  letra: string;
+  texto: string;
+  correta: boolean;
+  justificativa: string;
+}
+
+export interface LessonQuestionDetail {
+  id: string;
+  id_ref?: string;
+  tipo: 'escolha_unica' | 'verdadeiro_falso' | string;
+  disciplina: string;
+  topico: string;
+  subtopico?: string;
+  dificuldade: string;
+  fonte: string;
+  banca_sigla?: string;
+  enunciado: string;
+  alternativas?: string[];
+  alternativas_formatadas?: FormattedQuestionOption[];
+  gabarito: string;
+  comentario: string;
+  tags?: string[];
+}
+
+export interface LessonInteractiveExercise {
+  id: string;
+  tipo: 'associacao_conceitos' | 'complete_lacuna' | 'ordenacao_etapas' | string;
+  titulo: string;
+  enunciado: string;
+  pares?: { id: string; conceito: string; definicao: string }[];
+  opcoes?: string[];
+  resposta_correta?: string;
+  etapas_corretas?: string[];
+  explicacao: string;
+}
+
+export interface LessonTutorContextual {
+  explicar_simples: string;
+  exemplo_pratico: string;
+  comparar_conceitos: string;
+  resumo_1_minuto: string;
+}
+
+export interface LessonBancaStats {
+  total_questoes_acervo_disciplina: number;
+  total_questoes_aula: number;
+  por_banca: Record<
+    string,
+    {
+      questoes_registradas: number;
+      formatos_verificados: string[];
+    }
+  >;
+}
+
 export interface LessonDetail {
   id: string;
   disciplina: string;
+  modulo?: string;
+  assunto?: string;
+  nivel?: string;
+  tempo_estimado_min?: number;
+  xp_recompensa?: number;
+  competencias?: string[];
   titulo: string;
   objetivos: string[];
   teoria_resumida: string;
   tabela_resumo?: LessonSummaryTable;
+  quadro_visual?: LessonVisualBoard;
+  mapa_mental?: LessonMindMap;
   videoaulas?: LessonVideo[];
   flashcards?: LessonFlashcard[];
   radiografia_bancas: Record<string, string>;
+  estatisticas_bancas_verificaveis?: LessonBancaStats;
   pontos_criticos: string[];
   questoes_ids: string[];
+  questoes_detalhadas?: LessonQuestionDetail[];
+  exercicios_interativos?: LessonInteractiveExercise[];
+  tutor_contextual?: LessonTutorContextual;
   questoes_count?: number;
+  total_questoes?: number;
 }
 
 export interface BancaProfile {

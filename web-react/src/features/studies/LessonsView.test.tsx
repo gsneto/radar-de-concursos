@@ -135,8 +135,11 @@ describe('LessonsView', () => {
     expect(await screen.findByText('Aula 01: Modelagem Conceitual e Formas Normais')).toBeInTheDocument();
     expect(await screen.findByText('Comparativo de Formas Normais')).toBeInTheDocument();
     expect(screen.getByText('Valores atômicos')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Videoaula/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Flashcards/i })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Quadro Digital & Mapa Mental/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: /Videoaula Recomendada/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: /Flashcards Visuais/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: /Avaliação de Domínio/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: /Professor Virtual/i }).length).toBeGreaterThan(0);
   });
 });
 

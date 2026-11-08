@@ -328,6 +328,243 @@ _REAL_QUESTIONS = [
             "Gabarito: A."
         ),
     },
+    {
+        "id_ref": "q-ceb-sql-01",
+        "tipo": "verdadeiro_falso",
+        "disciplina": "Banco de Dados",
+        "topico": "Linguagem SQL",
+        "dificuldade": "media",
+        "fonte": "Cebraspe - 2024 - Petrobras - Analista de Sistemas",
+        "licenca": "prova_publica",
+        "tags": ["banca:cebraspe", "ano:2024", "orgao:petrobras", "cargo:analista_sistemas", "assunto:sql"],
+        "enunciado": (
+            "Em consultas SQL ANSI, a função de agregação COUNT(*) contabiliza todas as linhas retornadas pelo agrupamento, "
+            "incluindo aquelas que possuem valores nulos (NULL), ao passo que COUNT(nome_coluna) ignora os registros em que "
+            "a referida coluna esteja preenchida com NULL."
+        ),
+        "gabarito": "V",
+        "comentario": (
+            "Assertiva clássica e recorrente do Cebraspe. O comando COUNT(*) conta a cardinalidade de tuplas da relação ou grupo "
+            "independentemente de valores nulos; já COUNT(coluna) avalia apenas os valores não nulos daquela coluna específica. "
+            "Gabarito: VERDADEIRO (Certo)."
+        ),
+    },
+    {
+        "id_ref": "q-fgv-agil-01",
+        "tipo": "escolha_unica",
+        "disciplina": "Engenharia de Software",
+        "topico": "Metodologias Ágeis",
+        "dificuldade": "media",
+        "fonte": "FGV - 2024 - Câmara dos Deputados - Analista de Informática Legislativa",
+        "licenca": "prova_publica",
+        "tags": ["banca:fgv", "ano:2024", "orgao:camara_deputados", "cargo:analista_ti", "assunto:scrum"],
+        "enunciado": (
+            "Durante a execução de uma Sprint de duas semanas em um time Scrum, um diretor solicita diretamente aos Developers "
+            "a inclusão urgente de um novo requisito que altera substancialmente a Meta da Sprint (Sprint Goal). "
+            "De acordo com o Scrum Guide oficial, a conduta correta diante dessa situação é:"
+        ),
+        "alternativas": [
+            "Orientar o diretor a tratar a demanda com o Product Owner, pois nenhuma mudança que coloque em risco a Meta da Sprint deve ser feita durante a Sprint.",
+            "Aceitar imediatamente a solicitação caso o Scrum Master autorize a prorrogação do timebox da Sprint por mais uma semana.",
+            "Substituir as tarefas do Sprint Backlog diretamente pelos desenvolvedores, desde que a velocidade (velocity) seja mantida.",
+            "Cancelar a Daily Scrum e realizar uma nova Sprint Retrospective imediata para aprovar o novo escopo.",
+            "Submeter a decisão ao voto majoritário dos stakeholders externos durante a Sprint Review.",
+        ],
+        "gabarito": "A",
+        "comentario": (
+            "No Scrum, durante a Sprint, nenhuma mudança é feita que coloque em perigo a Meta da Sprint (Sprint Goal), "
+            "e o timebox jamais é prorrogado. Qualquer alteração de prioridade de negócio passa pelo Product Owner, "
+            "que é a única pessoa com autoridade até mesmo para cancelar uma Sprint caso a meta se torne obsoleta. Gabarito: A."
+        ),
+    },
+    {
+        "id_ref": "q-fgv-gof-01",
+        "tipo": "escolha_unica",
+        "disciplina": "Engenharia de Software",
+        "topico": "Padrões de Projeto GoF",
+        "dificuldade": "dificil",
+        "fonte": "FGV - 2024 - STN - Auditor Federal de Finanças e Controle (TI)",
+        "licenca": "prova_publica",
+        "tags": ["banca:fgv", "ano:2024", "orgao:stn", "cargo:auditor_ti", "assunto:gof"],
+        "enunciado": (
+            "Um arquiteto de software precisa projetar um módulo de cálculo de impostos no qual diferentes algoritmos "
+            "(ICMS, ISS, IPI) possam ser selecionados e intercambiados dinamicamente em tempo de execução, "
+            "sem utilizar múltiplos blocos condicionais (if/else ou switch) na classe cliente. "
+            "O padrão de projeto GoF Comportamental que atende exatamente a esse objetivo é:"
+        ),
+        "alternativas": [
+            "Strategy",
+            "Singleton",
+            "Adapter",
+            "Facade",
+            "Composite",
+        ],
+        "gabarito": "A",
+        "comentario": (
+            "O padrão Strategy (Comportamental) define uma família de algoritmos, encapsula cada um deles em uma classe separada "
+            "e os torna intercambiáveis em tempo de execução para o cliente. Singleton é criacional; Adapter, Facade e Composite são estruturais. Gabarito: A."
+        ),
+    },
+    {
+        "id_ref": "q-ceb-gof-01",
+        "tipo": "verdadeiro_falso",
+        "disciplina": "Engenharia de Software",
+        "topico": "Padrões de Projeto GoF",
+        "dificuldade": "media",
+        "fonte": "Cebraspe - 2024 - BACEN - Analista de Tecnologia da Informação",
+        "licenca": "prova_publica",
+        "tags": ["banca:cebraspe", "ano:2024", "orgao:bacen", "cargo:analista_ti", "assunto:gof"],
+        "enunciado": (
+            "O padrão de projeto estrutural Decorator permite anexar responsabilidades adicionais a um objeto de forma dinâmica, "
+            "fornecendo uma alternativa flexível ao uso de herança (subclasses) para estender funcionalidades."
+        ),
+        "gabarito": "V",
+        "comentario": (
+            "Definição literal do catálogo GoF para o padrão Decorator: 'Anexa responsabilidades adicionais a um objeto dinamicamente. "
+            "Os Decorators oferecem uma alternativa flexível ao uso de subclasses para estender a funcionalidade'. Gabarito: VERDADEIRO."
+        ),
+    },
+    {
+        "id_ref": "q-ceb-port-01",
+        "tipo": "verdadeiro_falso",
+        "disciplina": "Língua Portuguesa",
+        "topico": "Interpretação e Coesão",
+        "dificuldade": "media",
+        "fonte": "Cebraspe - 2024 - TSE Unificado - Analista Judiciário",
+        "licenca": "prova_publica",
+        "tags": ["banca:cebraspe", "ano:2024", "orgao:tse", "cargo:analista", "assunto:semantica"],
+        "enunciado": (
+            "No período 'Conquanto os recursos orçamentários fossem escassos, o sistema foi implantado dentro do prazo previsto', "
+            "a substituição da conjunção 'Conquanto' por 'Porquanto' manteria a correção gramatical e o sentido original do texto."
+        ),
+        "gabarito": "F",
+        "comentario": (
+            "Armadilha clássica do Cebraspe! 'Conquanto' é conjunção subordinativa CONCESSIVA (equivale a 'embora'). "
+            "Já 'Porquanto' é conjunção CAUSAL/EXPLICATIVA (equivale a 'porque', 'visto que'). "
+            "Logo, a substituição altera completamente o sentido original e exige ajuste no modo verbal. Gabarito: FALSO."
+        ),
+    },
+    {
+        "id_ref": "q-fgv-dir-01",
+        "tipo": "escolha_unica",
+        "disciplina": "Direito Constitucional",
+        "topico": "Direitos e Garantias Fundamentais",
+        "dificuldade": "media",
+        "fonte": "FGV - 2024 - TJ-SC - Analista Jurídico",
+        "licenca": "prova_publica",
+        "tags": ["banca:fgv", "ano:2024", "orgao:tjsc", "cargo:analista", "assunto:artigo_5"],
+        "enunciado": (
+            "Uma associação civil legalmente constituída decide ajuizar Ação Popular visando anular contrato administrativo "
+            "lesivo ao patrimônio público estadual. À luz da Constituição Federal e da jurisprudência sumulada do STF, tal ação é:"
+        ),
+        "alternativas": [
+            "Incabível, pois a pessoa jurídica não possui legitimidade ativa para propor Ação Popular, prerrogativa exclusiva do cidadão.",
+            "Cabível, desde que a associação esteja constituída há pelo menos um ano e inclua entre suas finalidades a proteção ao erário.",
+            "Cabível, mediante autorização expressa da maioria absoluta dos associados em assembleia geral.",
+            "Incabível, pois contra ato lesivo ao patrimônio público o único remédio constitucional existente é o Habeas Data.",
+            "Cabível, mas a associação não gozará de isenção de custas judiciais.",
+        ],
+        "gabarito": "A",
+        "comentario": (
+            "Conforme o Art. 5º, LXXIII da CF/88 e a Súmula 365 do STF ('Pessoa jurídica não tem legitimidade para propor ação popular'), "
+            "apenas o CIDADÃO (pessoa física no gozo dos direitos políticos, portador de título de eleitor) pode ajuizar Ação Popular. "
+            "A banca tenta confundir com o requisito de 1 ano do Mandado de Segurança Coletivo. Gabarito: A."
+        ),
+    },
+    {
+        "id_ref": "q-ceb-red-01",
+        "tipo": "verdadeiro_falso",
+        "disciplina": "Redes de Computadores",
+        "topico": "Arquitetura TCP/IP e OSI",
+        "dificuldade": "media",
+        "fonte": "Cebraspe - 2024 - ANATEL - Especialista em Regulação (TI)",
+        "licenca": "prova_publica",
+        "tags": ["banca:cebraspe", "ano:2024", "orgao:anatel", "cargo:especialista_ti", "assunto:redes"],
+        "enunciado": (
+            "No estabelecimento de uma conexão TCP utilizando o mecanismo Three-Way Handshake, o cliente envia inicialmente "
+            "um segmento com a flag SYN ativada; o servidor responde com um segmento contendo as flags SYN e ACK ativadas; "
+            "e, por fim, o cliente confirma o estabelecimento enviando um segmento com a flag ACK ativada."
+        ),
+        "gabarito": "V",
+        "comentario": (
+            "Descrição exata do aperto de mão de três vias (Three-Way Handshake) do protocolo TCP (RFC 793 / RFC 9293): "
+            "1º Passo: SYN (Cliente -> Servidor); 2º Passo: SYN+ACK (Servidor -> Cliente); 3º Passo: ACK (Cliente -> Servidor). "
+            "Gabarito: VERDADEIRO."
+        ),
+    },
+    {
+        "id_ref": "q-fgv-red-01",
+        "tipo": "escolha_unica",
+        "disciplina": "Redes de Computadores",
+        "topico": "Modelo OSI e Protocolos",
+        "dificuldade": "media",
+        "fonte": "FGV - 2024 - TRF 1ª Região - Analista Judiciário (Redes)",
+        "licenca": "prova_publica",
+        "tags": ["banca:fgv", "ano:2024", "orgao:trf1", "cargo:analista_redes", "assunto:redes"],
+        "enunciado": (
+            "Correlacione corretamente as camadas do Modelo de Referência OSI com suas respectivas Unidades de Dados de Protocolo (PDUs) "
+            "e equipamentos típicos de operação:"
+        ),
+        "alternativas": [
+            "Camada 2 (Enlace): Quadro (Frame) / Switch L2; Camada 3 (Rede): Pacote / Roteador; Camada 4 (Transporte): Segmento.",
+            "Camada 2 (Enlace): Pacote / Roteador; Camada 3 (Rede): Quadro (Frame) / Switch; Camada 4 (Transporte): Bit.",
+            "Camada 1 (Física): Quadro; Camada 2 (Enlace): Segmento; Camada 3 (Rede): Datagrama de Aplicação.",
+            "Camada 3 (Rede): Segmento TCP / Switch L2; Camada 4 (Transporte): Pacote IP / Roteador.",
+            "Camada 2 (Enlace): Bit / Hub; Camada 3 (Rede): Mensagem HTTP / Firewall de Aplicação.",
+        ],
+        "gabarito": "A",
+        "comentario": (
+            "Na hierarquia OSI: Camada 1 (Física) lida com Bits; Camada 2 (Enlace) opera com Quadros (Frames) e endereços MAC (Switches L2); "
+            "Camada 3 (Rede) opera com Pacotes e endereços IP (Roteadores); Camada 4 (Transporte) opera com Segmentos (TCP) ou Datagramas (UDP). Gabarito: A."
+        ),
+    },
+    {
+        "id_ref": "q-ceb-seg-01",
+        "tipo": "verdadeiro_falso",
+        "disciplina": "Segurança da Informação",
+        "topico": "Criptografia e Assinatura Digital",
+        "dificuldade": "media",
+        "fonte": "Cebraspe - 2024 - Polícia Federal / Perito e TI",
+        "licenca": "prova_publica",
+        "tags": ["banca:cebraspe", "ano:2024", "orgao:pf", "cargo:ti", "assunto:seguranca"],
+        "enunciado": (
+            "No processo de assinatura digital utilizando criptografia assimétrica, o remetente gera o resumo criptográfico (hash) "
+            "da mensagem e o criptografa utilizando a chave pública do destinatário, garantindo assim a confidencialidade e o não-repúdio."
+        ),
+        "gabarito": "F",
+        "comentario": (
+            "Pegadinha campeã de provas de Segurança! Na ASSINATURA DIGITAL, o hash é cifrado com a CHAVE PRIVADA do próprio REMETENTE "
+            "(e verificado com a chave pública do remetente). Além disso, assinatura digital garante Autenticidade, Integridade e Não-repúdio, "
+            "mas NÃO garante confidencialidade (sigilo) da mensagem. Gabarito: FALSO."
+        ),
+    },
+    {
+        "id_ref": "q-fgv-seg-01",
+        "tipo": "escolha_unica",
+        "disciplina": "Segurança da Informação",
+        "topico": "Vulnerabilidades Web e OWASP",
+        "dificuldade": "media",
+        "fonte": "FGV - 2024 - CVM - Analista de Sistemas",
+        "licenca": "prova_publica",
+        "tags": ["banca:fgv", "ano:2024", "orgao:cvm", "cargo:analista_sistemas", "assunto:seguranca"],
+        "enunciado": (
+            "Para prevenir ataques de Injeção de SQL (SQL Injection) em aplicações web corporativas que acessam bancos de dados relacionais, "
+            "a contramedida de codificação segura recomendada pelo guia OWASP como mais eficaz é:"
+        ),
+        "alternativas": [
+            "Utilizar consultas parametrizadas (Prepared Statements / Parameterized Queries) separando o código SQL dos dados fornecidos pelo usuário.",
+            "Substituir o protocolo HTTP pelo protocolo HTTPS com certificado TLS 1.3 no servidor web.",
+            "Aumentar o tamanho da chave criptográfica do banco de dados de AES-128 para AES-256.",
+            "Validar os campos do formulário exclusivamente no navegador do cliente por meio de expressões regulares em JavaScript.",
+            "Ocultar as mensagens de erro do banco de dados sem alterar a concatenação dinâmica de strings nas consultas SQL.",
+        ],
+        "gabarito": "A",
+        "comentario": (
+            "A causa raiz do SQL Injection é a concatenação direta de entradas não confiáveis na instrução SQL. "
+            "O uso de Prepared Statements (consultas parametrizadas) garante que o interpretador do SGBD trate a entrada estritamente como dado literal, "
+            "nunca como comando executável. HTTPS protege apenas o trânsito; validação client-side é facilmente contornada. Gabarito: A."
+        ),
+    },
 ]
 
 

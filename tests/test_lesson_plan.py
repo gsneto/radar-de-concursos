@@ -46,6 +46,18 @@ class TestLessonPlan(unittest.TestCase):
         self.assertIn("cebraspe", lesson["radiografia_bancas"])
         self.assertTrue(len(lesson["pontos_criticos"]) > 0)
 
+        # Check enriched interactive learning modules
+        self.assertIn("quadro_visual", lesson)
+        self.assertTrue(len(lesson["quadro_visual"]["relacoes_conceituais"]) > 0)
+        self.assertIn("mapa_mental", lesson)
+        self.assertTrue(len(lesson["mapa_mental"]["nos"]) > 0)
+        self.assertIn("questoes_detalhadas", lesson)
+        self.assertTrue(len(lesson["questoes_detalhadas"]) >= 3)
+        self.assertIn("exercicios_interativos", lesson)
+        self.assertTrue(len(lesson["exercicios_interativos"]) > 0)
+        self.assertIn("tutor_contextual", lesson)
+        self.assertIn("estatisticas_bancas_verificaveis", lesson)
+
         # Non-existent
         none_lesson = get_lesson("non-existent")
         self.assertIsNone(none_lesson)

@@ -1314,35 +1314,15 @@ A Segurança da Informação apoia-se nos pilares CIDAN:
 
 
 def list_lessons(disciplina: str | None = None) -> list[dict[str, Any]]:
-    """Lista as aulas cadastradas, com sumário e objetivos."""
-    if not disciplina:
-        return [
-            {
-                "id": l["id"],
-                "disciplina": l["disciplina"],
-                "titulo": l["titulo"],
-                "objetivos": l["objetivos"],
-                "total_questoes": len(l.get("questoes_ids", [])),
-            }
-            for l in _LESSONS
-        ]
-    disc_norm = disciplina.strip().lower()
-    return [
-        {
-            "id": l["id"],
-            "disciplina": l["disciplina"],
-            "titulo": l["titulo"],
-            "objetivos": l["objetivos"],
-            "total_questoes": len(l.get("questoes_ids", [])),
-        }
-        for l in _LESSONS
-        if l["disciplina"].strip().lower() == disc_norm
-    ]
+    from radar.lesson_enrichment import list_lessons_enriched
+    return list_lessons_enriched(_LESSONS, disciplina)
 
 
 def get_lesson(lesson_id: str) -> dict[str, Any] | None:
-    """Retorna os detalhes completos de uma aula."""
-    for l in _LESSONS:
-        if l["id"] == lesson_id:
-            return l
-    return None
+    from radar.lesson_enrichment import get_lesson_enriched
+    return get_lesson_enriched(_LESSONS, lesson_id)
+
+
+def create_lesson(payload: dict[str, Any]) -> dict[str, Any]:
+    from radar.lesson_enrichment import create_custom_lesson
+    return create_custom_lesson(_LESSONS, payload)
