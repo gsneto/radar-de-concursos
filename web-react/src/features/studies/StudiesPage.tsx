@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Clock,
   Clock3,
+  Compass,
   DownloadCloud,
   Layers,
   LayoutDashboard,
@@ -53,9 +54,11 @@ import { clock, dateTime, duration, integer, percent, shortDate } from '@/lib/fo
 import type { StudyPanel, StudySession } from '@/lib/types';
 import { LessonsView } from './LessonsView';
 import { BancaRadiographyView } from './BancaRadiographyView';
+import { StudyScheduleView } from './StudyScheduleView';
 
 const TABS = [
   { path: '', label: 'Visão geral', icon: LayoutDashboard, badge: null },
+  { path: '/cronograma', label: 'Ciclo Semanal', icon: Compass, badge: 'IA' },
   { path: '/aulas', label: 'Aulas', icon: BookOpen, badge: 'Trilha' },
   { path: '/bancas', label: 'Bancas', icon: Award, badge: '16' },
   { path: '/sessoes', label: 'Sessões', icon: Clock, badge: null },
@@ -154,6 +157,7 @@ export function StudiesPage() {
       </div>
 
       {active === '' && <Overview />}
+      {active === '/cronograma' && <StudyScheduleView />}
       {active === '/aulas' && <LessonsView />}
       {active === '/bancas' && (
         <BancaRadiographyView
@@ -173,6 +177,7 @@ export function StudiesPage() {
 /* ------------------------------------------------------------------ */
 
 function Overview() {
+  const navigate = useNavigate();
   const panel = useStudyPanel();
   const sessions = useSessions();
   const revisions = useRevisions();
@@ -227,6 +232,35 @@ function Overview() {
           }
         />
       </section>
+
+      {/* Banner Ciclo Semanal Inteligente */}
+      <div className="rounded-xl border border-amber-400/30 bg-gradient-to-r from-amber-400/10 via-surface to-surface-2 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-xl bg-amber-400/15 border border-amber-400/30 flex items-center justify-center text-amber-400 shrink-0">
+            <Compass size={20} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-fg">Ciclo Semanal de Estudos Ativo</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-amber-400/20 text-amber-300 border border-amber-400/30 uppercase">
+                Recomendado pela IA
+              </span>
+            </div>
+            <p className="text-2xs text-fg-3 mt-0.5">
+              Grade intercalada de alta retenção calibrada para a banca do seu concurso foco.
+            </p>
+          </div>
+        </div>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => navigate('/estudos/cronograma')}
+          className="gap-1.5 shrink-0 text-xs font-semibold"
+        >
+          <span>Abrir Ciclo Completo</span>
+          <ChevronRight size={13} />
+        </Button>
+      </div>
 
       <div className="grid gap-3 xl:grid-cols-[1.3fr_1fr]">
         <Card title="Sessão de estudo" subtitle="O cronômetro roda no servidor; fechar a aba não apaga a sessão.">

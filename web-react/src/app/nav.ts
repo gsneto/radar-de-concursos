@@ -52,6 +52,7 @@ export const navGroups: NavGroup[] = [
     label: 'Estudos',
     items: [
       { to: '/estudos', label: 'Visão geral', icon: BookOpen, end: true },
+      { to: '/estudos/cronograma', label: 'Ciclo Semanal', icon: Compass },
       { to: '/estudos/sessoes', label: 'Sessões', icon: ClipboardList },
       { to: '/estudos/questoes', label: 'Questões', icon: ListChecks },
       { to: '/estudos/flashcards', label: 'Flashcards', icon: Layers },
