@@ -25,6 +25,7 @@ import type {
   MyContestsResponse,
   LessonSummary,
   LessonDetail,
+  LessonFlashcard,
   BancaProfile,
 } from '@/lib/types';
 
@@ -41,6 +42,7 @@ export const keys = {
   performance: () => ['study', 'performance'] as const,
   flashStats: () => ['study', 'flashcards', 'stats'] as const,
   flashQueue: () => ['study', 'flashcards', 'queue'] as const,
+  visualFlashcards: (disciplina?: string) => ['study', 'flashcards', 'visuais', disciplina] as const,
   questions: () => ['study', 'questions'] as const,
   exams: () => ['study', 'exams'] as const,
   lessons: (disciplina?: string) => ['study', 'lessons', disciplina] as const,
@@ -158,6 +160,17 @@ export function useFlashQueue() {
         '/api/estudos/flashcards/fila?limit=20',
       ),
     staleTime: 30_000,
+  });
+}
+
+export function useVisualFlashcards(disciplina?: string) {
+  return useQuery({
+    queryKey: keys.visualFlashcards(disciplina),
+    queryFn: () =>
+      api.get<{ flashcards: LessonFlashcard[] }>(
+        `/api/estudos/flashcards/visuais${disciplina ? `?disciplina=${encodeURIComponent(disciplina)}` : ''}`,
+      ),
+    staleTime: 60_000,
   });
 }
 

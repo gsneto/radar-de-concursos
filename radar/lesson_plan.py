@@ -671,18 +671,18 @@ As Formas Normais (FN) visam evitar anomalias de inserção, exclusão e modific
         },
         "videoaulas": [
             {
-                "titulo": "Modelagem de Dados e Formas Normais (1FN, 2FN e 3FN) para Concursos",
-                "canal": "Curso em Vídeo",
-                "duracao": "26 min",
-                "youtube_id": "Ofktsne-utM",
+                "titulo": "Normalização de Dados em Bancos de Dados (1FN, 2FN e 3FN)",
+                "canal": "DesCOMPlica, Oliba!",
+                "duracao": "18 min",
+                "youtube_id": "TOFZQ5wm1UI",
                 "descricao": "Aula didática passo a passo explicando como transformar tabelas não normalizadas em 1FN, 2FN e 3FN sem perda de dados."
             },
             {
-                "titulo": "Banco de Dados para FGV e Cebraspe - Questões Comentadas de Normalização",
-                "canal": "Gran Concursos TI",
-                "duracao": "34 min",
-                "youtube_id": "K_Qkxv_C34k",
-                "descricao": "Resolução de questões de alto nível focando nas armadilhas de dependência parcial e transitiva."
+                "titulo": "O que são as Formas Normais em Bancos de Dados? (1FN, 2FN, 3FN)",
+                "canal": "Hashtag Programação",
+                "duracao": "22 min",
+                "youtube_id": "Cj84bb04tio",
+                "descricao": "Explicação prática com exemplos visuais de tabelas para eliminar redundâncias e dependências parciais/transitivas."
             }
         ],
         "flashcards": [
@@ -762,18 +762,18 @@ A linguagem SQL (Structured Query Language) opera sobre conjuntos relacionais:
         },
         "videoaulas": [
             {
-                "titulo": "SQL do Zero ao Avançado para Concursos de TI",
-                "canal": "Prof. Concursos TI",
-                "duracao": "38 min",
-                "youtube_id": "8H6Qk8gU0L0",
-                "descricao": "Ordem lógica de execução das cláusulas SQL (FROM, WHERE, GROUP BY, HAVING, SELECT, ORDER BY) e tipos de JOIN."
+                "titulo": "Curso SQL #11 - Comando SELECT, Filtros e Ordenação",
+                "canal": "Curso em Vídeo (Gustavo Guanabara)",
+                "duracao": "31 min",
+                "youtube_id": "GaOlyL3Uv9M",
+                "descricao": "Ordem lógica de execução das cláusulas SQL (FROM, WHERE, GROUP BY, HAVING, SELECT, ORDER BY) na prática."
             },
             {
-                "titulo": "Subconsultas e Funções de Janela (Window Functions) na FGV",
-                "canal": "Estratégia Concursos",
+                "titulo": "Curso SQL #16 - INNER JOIN e Junções com Várias Tabelas",
+                "canal": "Curso em Vídeo (Gustavo Guanabara)",
                 "duracao": "29 min",
-                "youtube_id": "3pvdc_GkH88",
-                "descricao": "Dominando ROW_NUMBER(), RANK(), DENSE_RANK() e subqueries correlacionadas que mais caem em TI."
+                "youtube_id": "jx2ne8iZMOA",
+                "descricao": "Dominando INNER JOIN, LEFT JOIN, chaves estrangeiras e consultas relacionais que mais caem em provas."
             }
         ],
         "flashcards": [
@@ -843,18 +843,18 @@ O Manifesto Ágil prioriza: indivíduos e interações sobre processos e ferrame
         },
         "videoaulas": [
             {
-                "titulo": "Scrum Guide Completo para Concursos Públicos",
-                "canal": "Gabaritando TI",
-                "duracao": "31 min",
-                "youtube_id": "2gA9WqFv_0s",
-                "descricao": "Papéis, eventos e artefatos atualizados do Scrum Guide oficial com dicas de como as bancas tentam confundir."
+                "titulo": "Scrum: Papéis, Cerimônias e Artefatos Explicados",
+                "canal": "Código Fonte TV",
+                "duracao": "15 min",
+                "youtube_id": "3aCww_1RnL0",
+                "descricao": "Papéis (PO, Scrum Master, Dev Team), eventos e artefatos do Scrum Guide de forma direta e visual."
             },
             {
-                "titulo": "Kanban e Práticas de DevOps (CI/CD) Explicados",
-                "canal": "Prof. Fernando Pedrosa",
-                "duracao": "24 min",
-                "youtube_id": "W1vL6v1MsqA",
-                "descricao": "Fluxo puxado, limites de WIP, Lead Time vs Cycle Time e automação de pipelines com Docker e Git."
+                "titulo": "XP (Extreme Programming) e Práticas Ágeis de Engenharia",
+                "canal": "Código Fonte TV",
+                "duracao": "14 min",
+                "youtube_id": "GmZhlZaonFY",
+                "descricao": "TDD, Programação em Par, Integração Contínua e refatoração comparados ao Scrum e Kanban."
             }
         ],
         "flashcards": [
@@ -926,18 +926,18 @@ O Manifesto Ágil prioriza: indivíduos e interações sobre processos e ferrame
         },
         "videoaulas": [
             {
-                "titulo": "Padrões de Projeto GoF Descomplicados para Concursos",
-                "canal": "Fábio Araújo - Concursos TI",
-                "duracao": "36 min",
-                "youtube_id": "3pvdc_GkH88",
-                "descricao": "Diferença prática entre Strategy vs State, Adapter vs Facade e Decorator vs Proxy com diagramas UML."
+                "titulo": "Design Patterns (Padrões de Projeto GoF) Descomplicados",
+                "canal": "Código Fonte TV",
+                "duracao": "16 min",
+                "youtube_id": "J-lHpiu-Twk",
+                "descricao": "Diferença prática entre os padrões Criacionais, Estruturais e Comportamentais com exemplos claros."
             },
             {
-                "titulo": "Princípios SOLID com Exemplos Práticos de Código",
+                "titulo": "SOLID: Os 5 Princípios para Programar Melhor",
                 "canal": "Código Fonte TV",
-                "duracao": "27 min",
-                "youtube_id": "6SfrO3mMvKU",
-                "descricao": "Cada uma das 5 letras do SOLID explicada com código claro e violações comuns que caem em provas."
+                "duracao": "18 min",
+                "youtube_id": "mkx0CdWiPRA",
+                "descricao": "Cada uma das 5 letras do SOLID explicada com código claro e exemplos que caem em provas de TI."
             }
         ],
         "flashcards": [
@@ -1007,17 +1007,17 @@ A interpretação textual em concursos de alto nível não mede sua opinião pes
         },
         "videoaulas": [
             {
-                "titulo": "Interpretação e Semântica de Texto para FGV e Cebraspe",
-                "canal": "Português com Letícia",
-                "duracao": "32 min",
-                "youtube_id": "W1vL6v1MsqA",
-                "descricao": "Como não cair nas pegadinhas de extrapolação e contradição em enunciados longos e densos."
+                "titulo": "Conjunções e Conectivos que Mais Caem em Concursos",
+                "canal": "Prof. Álvaro Ferreira",
+                "duracao": "24 min",
+                "youtube_id": "tKJkDQSMdh0",
+                "descricao": "Como não cair nas pegadinhas de substituição de conectivos em provas da FGV e Cebraspe."
             },
             {
-                "titulo": "Conjunções e Relações Semânticas que Mais Caem",
-                "canal": "Prof. Noslen",
-                "duracao": "25 min",
-                "youtube_id": "Y07Z2Y9s_iI",
+                "titulo": "Conjunções Coordenativas e Subordinativas Sem Enrolação",
+                "canal": "Português sem Enrolação - Profª Lis",
+                "duracao": "20 min",
+                "youtube_id": "C1MjafABdS4",
                 "descricao": "Diferença definitiva entre conjunções concessivas, adversativas, causais e consecutivas."
             }
         ],
@@ -1094,18 +1094,18 @@ O Art. 5º da CF/88 consagra os direitos fundamentais individuais e coletivos pa
         },
         "videoaulas": [
             {
-                "titulo": "Remédios Constitucionais Esquematizados (Art. 5º da CF)",
-                "canal": "Estratégia Concursos",
+                "titulo": "Remédios Constitucionais (Art. 5º da CF) - Aula Completa 01",
+                "canal": "Prof. Evaldo Rodrigues",
                 "duracao": "33 min",
-                "youtube_id": "Y07Z2Y9s_iI",
-                "descricao": "Quadro mnemônico dos remédios constitucionais com jurisprudência atualizada do STF e STJ."
+                "youtube_id": "IysfB2vHByE",
+                "descricao": "Quadro mnemônico de Habeas Corpus, Habeas Data e Mandado de Segurança com jurisprudência do STF."
             },
             {
-                "titulo": "Inviolabilidade de Domicílio e Sigilos no STF",
-                "canal": "Gran Cursos Online",
+                "titulo": "Remédios Constitucionais (Mandado de Injunção e Ação Popular) - Aula 02",
+                "canal": "Prof. Evaldo Rodrigues",
                 "duracao": "28 min",
-                "youtube_id": "Ofktsne-utM",
-                "descricao": "As 4 exceções da entrada forçada em domicílio (Art. 5º, XI) e a tese de repercussão geral do STF."
+                "youtube_id": "bjB6Kv_YauI",
+                "descricao": "Legitimidade ativa, gratuidade, Súmula 365 do STF e diferenças práticas para gabaritar em prova."
             }
         ],
         "flashcards": [
@@ -1171,18 +1171,18 @@ A arquitetura prática TCP/IP simplifica para 4 camadas: Acesso à Rede (Física
         },
         "videoaulas": [
             {
-                "titulo": "Modelo OSI e TCP/IP na Prática para Concursos de TI",
-                "canal": "Prof. Concursos TI",
-                "duracao": "35 min",
-                "youtube_id": "Vcb5F4P7eFw",
+                "titulo": "Modelo OSI e Arquitetura TCP/IP para Concursos Públicos",
+                "canal": "Prof. Léo Matos",
+                "duracao": "30 min",
+                "youtube_id": "KOrWZnGbx7s",
                 "descricao": "Mnemônico infalível das 7 camadas do modelo OSI e fluxo de encapsulamento e desencapsulamento."
             },
             {
-                "titulo": "TCP vs UDP e Three-Way Handshake Explicados",
-                "canal": "Gabaritando TI",
-                "duracao": "22 min",
-                "youtube_id": "K_Qkxv_C34k",
-                "descricao": "Como o handshake SYN / SYN-ACK / ACK funciona e como o Cebraspe tenta enganar o candidato."
+                "titulo": "OSI x TCP/IP: Comparativo Completo das Camadas e Protocolos",
+                "canal": "Professora Nattane",
+                "duracao": "19 min",
+                "youtube_id": "c5vfwNBbl4g",
+                "descricao": "Como funcionam Segmento, Pacote, Quadro (PDU) e os protocolos TCP vs UDP na prática."
             }
         ],
         "flashcards": [
@@ -1260,18 +1260,18 @@ A Segurança da Informação apoia-se nos pilares CIDAN:
         },
         "videoaulas": [
             {
-                "titulo": "Criptografia Simétrica e Assimétrica para Concursos Públicos",
-                "canal": "Gran Concursos TI",
-                "duracao": "32 min",
-                "youtube_id": "8Z8m_2W5qF8",
+                "titulo": "Criptografia Assimétrica, Chave Pública/Privada e Assinatura Digital",
+                "canal": "Dicionário de Informática",
+                "duracao": "14 min",
+                "youtube_id": "GeSnN8Tt04U",
                 "descricao": "Como funciona o par de chaves pública/privada e o segredo da assinatura digital explicado sem mistérios."
             },
             {
-                "titulo": "OWASP Top 10 e Ataques Web (SQL Injection, XSS, CSRF)",
-                "canal": "Prof. Fernando Pedrosa",
-                "duracao": "26 min",
-                "youtube_id": "Ofktsne-utM",
-                "descricao": "Principais vulnerabilidades web cobradas pela FGV e Cebraspe em cargos de Analista de TI."
+                "titulo": "Criptografia Simétrica (AES, DES) e Confidencialidade",
+                "canal": "Dicionário de Informática",
+                "duracao": "12 min",
+                "youtube_id": "Yf4T91Kk1Gs",
+                "descricao": "Funcionamento da chave secreta única, vantagens de velocidade e diferenças cobradas em provas de TI."
             }
         ],
         "flashcards": [
@@ -1326,3 +1326,9 @@ def get_lesson(lesson_id: str) -> dict[str, Any] | None:
 def create_lesson(payload: dict[str, Any]) -> dict[str, Any]:
     from radar.lesson_enrichment import create_custom_lesson
     return create_custom_lesson(_LESSONS, payload)
+
+
+def list_visual_flashcards(disciplina: str | None = None) -> list[dict[str, Any]]:
+    from radar.lesson_enrichment import list_all_visual_flashcards
+    return list_all_visual_flashcards(_LESSONS, disciplina)
+

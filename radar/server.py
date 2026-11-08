@@ -693,6 +693,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         "/api/estudos/flashcards": "_get_studies_and_practice",
         "/api/estudos/flashcards/fila": "_get_studies_and_practice",
         "/api/estudos/flashcards/estatisticas": "_get_studies_and_practice",
+        "/api/estudos/flashcards/visuais": "_get_studies_and_practice",
         "/api/estudos/questoes": "_get_studies_and_practice",
         "/api/estudos/tentativas": "_get_studies_and_practice",
         "/api/estudos/desempenho": "_get_studies_and_practice",
@@ -1591,6 +1592,11 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
             else:
                 self._serve_study(practice_store.flashcard_stats)
+        elif path == "/api/estudos/flashcards/visuais":
+            from radar import lesson_plan
+            query = parse_qs(parts.query)
+            disciplina = query.get("disciplina", [None])[0]
+            self._send_json({"flashcards": lesson_plan.list_visual_flashcards(disciplina)})
         elif path == "/api/estudos/questoes":
             query = parse_qs(parts.query)
             if set(query) - {"incluir_arquivadas", "disciplina", "topico"}:

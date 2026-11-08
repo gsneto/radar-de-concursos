@@ -63,6 +63,24 @@ class TestServerLessons(unittest.TestCase):
         self.assertIn("ibfc", bancas_dict)
         self.assertIn("nome", bancas_dict["fgv"])
 
+    def test_get_visual_flashcards(self):
+        status, data = self._get("/api/estudos/flashcards/visuais")
+        self.assertEqual(status, 200)
+        self.assertIn("flashcards", data)
+        self.assertTrue(len(data["flashcards"]) >= 20)
+        first_card = data["flashcards"][0]
+        self.assertIn("esquema_jotta", first_card)
+        self.assertIn("colunas", first_card["esquema_jotta"])
+        self.assertIn("regra_rodape", first_card["esquema_jotta"])
+
+        status_port, data_port = self._get(
+            "/api/estudos/flashcards/visuais?disciplina=L%C3%ADngua%20Portuguesa"
+        )
+        self.assertEqual(status_port, 200)
+        self.assertTrue(
+            all(fc["disciplina"] == "Língua Portuguesa" for fc in data_port["flashcards"])
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

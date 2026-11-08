@@ -807,6 +807,22 @@ export interface LessonVideo {
   slides_guiados?: VideoGuidedSlide[];
 }
 
+export interface JottaColumn {
+  termo: string;
+  destaque_letra: string;
+  gatilho: string;
+  explicacao: string;
+  cor: 'amber' | 'sky' | 'emerald' | 'rose' | string;
+}
+
+export interface JottaVisualSchema {
+  selo: string;
+  titulo: string;
+  subtitulo: string;
+  colunas: JottaColumn[];
+  regra_rodape: string;
+}
+
 export interface LessonFlashcard {
   id: string;
   tipo?:
@@ -822,12 +838,16 @@ export interface LessonFlashcard {
   verso: string;
   mnemonico?: string;
   tag: string;
+  aula_id?: string;
+  aula_titulo?: string;
+  disciplina?: string;
   dificuldade_sugerida?: 'facil' | 'media' | 'dificil' | string;
   resposta_vf?: 'V' | 'F';
   lacuna_correta?: string;
   lacuna_opcoes?: string[];
   erro_trecho?: string;
   correcao?: string;
+  esquema_jotta?: JottaVisualSchema;
 }
 
 export interface LessonSummaryTable {

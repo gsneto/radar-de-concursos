@@ -2,10 +2,10 @@
 
 Fornece:
 1. Hierarquia Curricular (Disciplina -> Módulo -> Assunto -> Aula, nível, tempo estimado, XP).
-2. Videoaulas com Capítulos clicáveis, Checkpoints de Perguntas no meio do vídeo e Slides Animados de Contingência.
-3. Quadros Digitais e Explicações Visuais Interativas (estilo Brilliant).
+2. Videoaulas verificadas com Capítulos clicáveis, Checkpoints de Perguntas e Slides Guiados.
+3. Quadros Digitais e Explicações Visuais Interativas (sem repetição de texto).
 4. Mapas Mentais Interativos com nós clicáveis e expansíveis.
-5. Flashcards Multiformato (Pergunta/Resposta, Conceito/Definição, V/F, Complete a Lacuna, Identifique o Erro, Comparação, Caso Prático).
+5. Flashcards Visuais Estilo Jotta (Mapas Visuais de Bolso com gatilhos de letras, contrastes lado a lado e regras de ouro) + integração SM-2.
 6. Laboratório de Questões Interativas + Resolução detalhada alternativa por alternativa.
 7. Professor Virtual Contextual fundamentado estritamente no conteúdo validado da aula.
 8. Estatísticas verificáveis de bancas a partir do banco de questões reais.
@@ -13,6 +13,7 @@ Fornece:
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 LESSON_CURRICULUM_META: dict[str, dict[str, Any]] = {
@@ -66,14 +67,14 @@ LESSON_CURRICULUM_META: dict[str, dict[str, Any]] = {
     },
     "port-01": {
         "modulo": "Módulo 1: Semântica, Coesão e Estrutura Textual",
-        "assunto": "Interpretação, Conectivos e Relações Lógico-Discursivas",
+        "assunto": "Interpretação, Conectivos, Pontuação e Homônimos",
         "nivel": "Essencial",
         "tempo_estimado_min": 50,
         "xp_recompensa": 140,
         "competencias": [
             "Compreensão Explícita vs Inferência Textual",
             "Relações Semânticas (Concessão, Causa, Consequência, Oposição)",
-            "Coesão Referencial Anafórica, Catafórica e Pronomes Relativos",
+            "Ortografia Oficial, Homônimos (Sessão/Cessão/Seção) e Aposto Explicativo",
         ],
     },
     "dir-01": {
@@ -116,129 +117,689 @@ LESSON_CURRICULUM_META: dict[str, dict[str, Any]] = {
 
 
 # ==============================================================================
-# Quadros Visuais Interativos (Estilo Brilliant) + Mapas Mentais
+# Flashcards Visuais Estilo Jotta (Mapas Visuais Esquematizados de Alta Retenção)
+# ==============================================================================
+
+JOTTA_VISUAL_CARDS: dict[str, list[dict[str, Any]]] = {
+    "port-01": [
+        {
+            "id": "fc-port-jotta-01",
+            "tipo": "comparacao",
+            "tag": "Português · Ortografia",
+            "dificuldade_sugerida": "facil",
+            "frente": "Como nunca mais confundir SESSÃO, CESSÃO e SEÇÃO na prova?",
+            "verso": "SESSÃO (SS) = Reunião / Tempo (Cinema, Câmara). CESSÃO (C) = Ato de Ceder / Doar. SEÇÃO (Ç) = Separar / Repartição / Setor.",
+            "mnemonico": "SS = Sentar na Reunião | C = Ceder | Ç = Cortar/Repartir",
+            "esquema_jotta": {
+                "selo": "DICA DO GSN · #01",
+                "titulo": "SESSÃO x CESSÃO x SEÇÃO",
+                "subtitulo": "Olhe para as letras do meio: elas entregam o significado na hora!",
+                "colunas": [
+                    {
+                        "termo": "SESSÃO",
+                        "destaque_letra": "S + SS",
+                        "gatilho": 'REUNIÃO DE "S, S, S"',
+                        "explicacao": "Vamos à SESSÃO (reunião) das nove e meia no cinema ou plenário.",
+                        "cor": "amber",
+                    },
+                    {
+                        "termo": "CESSÃO",
+                        "destaque_letra": "C inicial",
+                        "gatilho": '"C" DE "CEDER"',
+                        "explicacao": "Vamos fazer uma CESSÃO de direitos (ceder bens ou servidor).",
+                        "cor": "sky",
+                    },
+                    {
+                        "termo": "SEÇÃO",
+                        "destaque_letra": "S + Ç",
+                        "gatilho": 'SEPARAR / REPARTIR',
+                        "explicacao": "Qual é a sua SEÇÃO (repartição / departamento) eleitoral?",
+                        "cor": "emerald",
+                    },
+                ],
+                "regra_rodape": "VIU 'CEDER'? USE CESSÃO. VIU 'REPARTIÇÃO/SETOR'? USE SEÇÃO. VIU 'REUNIÃO'? USE SESSÃO!",
+            },
+        },
+        {
+            "id": "fc-port-jotta-02",
+            "tipo": "exemplo_pratico",
+            "tag": "Português · Vírgula",
+            "dificuldade_sugerida": "facil",
+            "frente": "Você sabia que 'POR EXEMPLO', 'ISTO É' e 'OU SEJA' exigem vírgula obrigatória?",
+            "verso": "Expressões explicativas ou retificativas funcionam como aposto/termo explicativo e devem ficar SEMPRE isoladas por vírgula (ou travessões), em qualquer posição da frase.",
+            "mnemonico": "Não importa a posição na frase: tem que ficar separado por vírgula!",
+            "esquema_jotta": {
+                "selo": "DICA DO GSN · #02",
+                "titulo": 'VOCÊ SABIA QUE "POR EXEMPLO" É TERMO EXPLICATIVO?',
+                "subtitulo": "Veja como a pontuação se comporta nas 3 posições possíveis da frase:",
+                "colunas": [
+                    {
+                        "termo": "NO MEIO DA FRASE",
+                        "destaque_letra": ", por exemplo,",
+                        "gatilho": "ENTRE DUAS VÍRGULAS",
+                        "explicacao": "O candidato, POR EXEMPLO, revisou todas as aulas antes do edital.",
+                        "cor": "amber",
+                    },
+                    {
+                        "termo": "NO INÍCIO DA FRASE",
+                        "destaque_letra": "Por exemplo,",
+                        "gatilho": "VÍRGULA LOGO APÓS",
+                        "explicacao": "POR EXEMPLO, o candidato revisou todas as aulas antes do edital.",
+                        "cor": "emerald",
+                    },
+                    {
+                        "termo": "NO FINAL DA FRASE",
+                        "destaque_letra": ", por exemplo.",
+                        "gatilho": "VÍRGULA ANTES",
+                        "explicacao": "O candidato revisou todas as aulas antes do edital, POR EXEMPLO.",
+                        "cor": "sky",
+                    },
+                ],
+                "regra_rodape": "NÃO IMPORTA EM QUE POSIÇÃO ESTEJA NA FRASE: TEM QUE FICAR SEPARADO POR VÍRGULA!",
+            },
+        },
+        {
+            "id": "fc-port-01",
+            "tipo": "comparacao",
+            "tag": "Português · Conectivos",
+            "dificuldade_sugerida": "media",
+            "frente": "Qual a diferença entre CONQUANTO e PORQUANTO nas provas da FGV e Cebraspe?",
+            "verso": "'Conquanto' = CONCESSÃO (equivale a 'embora'). 'Porquanto' = CAUSA / EXPLICAÇÃO (equivale a 'porque').",
+            "mnemonico": "CONquanto = CONcessão (Embora) | PORquanto = PORque (Causa)",
+            "esquema_jotta": {
+                "selo": "DICA DO GSN · #03",
+                "titulo": "CONQUANTO x PORQUANTO",
+                "subtitulo": "A troca mais cobrada pelo Cebraspe e pela FGV em reescrita de frases:",
+                "colunas": [
+                    {
+                        "termo": "CONQUANTO",
+                        "destaque_letra": "CON-",
+                        "gatilho": '"CON" DE CONCESSÃO',
+                        "explicacao": "Equivale a EMBORA, AINDA QUE, POSTO QUE. Exige verbo no subjuntivo!",
+                        "cor": "amber",
+                    },
+                    {
+                        "termo": "PORQUANTO",
+                        "destaque_letra": "POR-",
+                        "gatilho": '"POR" DE PORQUE',
+                        "explicacao": "Equivale a PORQUE, VISTO QUE, JÁ QUE. Indica Causa ou Explicação!",
+                        "cor": "emerald",
+                    },
+                ],
+                "regra_rodape": "JAMAIS ACEITE TROCAR 'CONQUANTO' POR 'PORQUANTO': ALTERA TOTALMENTE O SENTIDO!",
+            },
+        },
+        {
+            "id": "fc-port-02",
+            "tipo": "conceito_definicao",
+            "tag": "Português · Coesão",
+            "dificuldade_sugerida": "media",
+            "frente": "Quando usar ONDE, AONDE e EM QUE segundo a norma culta?",
+            "verso": "ONDE = Lugar físico fixo (quem está, está EM). AONDE = Lugar físico com movimento (quem vai, vai A). EM QUE = Situações abstratas (tempo, processos, ideias).",
+            "mnemonico": "Onde = Fixo físico | Aonde = Movimento (Ir A) | Em que = Abstrato",
+            "esquema_jotta": {
+                "selo": "DICA DO GSN · #04",
+                "titulo": "ONDE x AONDE x EM QUE",
+                "subtitulo": "Teste o verbo e verifique se o referente é lugar físico concreto:",
+                "colunas": [
+                    {
+                        "termo": "ONDE",
+                        "destaque_letra": "FIXO FÍSICO",
+                        "gatilho": "LUGAR SEM MOVIMENTO",
+                        "explicacao": '"A sala ONDE fiz a prova era silenciosa." (Estar EM algum lugar).',
+                        "cor": "sky",
+                    },
+                    {
+                        "termo": "AONDE",
+                        "destaque_letra": "A + ONDE",
+                        "gatilho": 'VERBO PEDE "A" (MOVIMENTO)',
+                        "explicacao": '"O tribunal AONDE você irá trabalhar." (Ir A algum lugar).',
+                        "cor": "amber",
+                    },
+                    {
+                        "termo": "EM QUE",
+                        "destaque_letra": "ABSTRATO",
+                        "gatilho": "NÃO É LUGAR FÍSICO",
+                        "explicacao": '"O edital EM QUE passei." (Proibido usar ONDE para edital, fase ou época!).',
+                        "cor": "rose",
+                    },
+                ],
+                "regra_rodape": "SÓ USE 'ONDE' SE VOCÊ PUDER PISAR NO LUGAR! CASO CONTRÁRIO, USE 'EM QUE' / 'NO QUAL'.",
+            },
+        },
+    ],
+    "bd-01": [
+        {
+            "id": "fc-bd-01",
+            "tipo": "comparacao",
+            "tag": "Banco de Dados · Normalização",
+            "dificuldade_sugerida": "facil",
+            "frente": "Como memorizar 1FN, 2FN e 3FN em 10 segundos para a prova?",
+            "verso": "1FN = Elimina multivalorados (exige átomos). 2FN = Elimina dependência PARCIAL da PK composta. 3FN = Elimina dependência TRANSITIVA entre campos não-chave.",
+            "mnemonico": "1FN = Átomo | 2FN = Todo da PK | 3FN = Nada além da PK",
+            "esquema_jotta": {
+                "selo": "MAPA VISUAL · BANCO DE DADOS",
+                "titulo": "1FN x 2FN x 3FN (ESQUEMA DEFINITIVO)",
+                "subtitulo": "O que cada Forma Normal proíbe na modelagem relacional:",
+                "colunas": [
+                    {
+                        "termo": "1ª FN",
+                        "destaque_letra": "ATÔMICA",
+                        "gatilho": 'CÉLULA INDIVISÍVEL',
+                        "explicacao": "Proíbe listas, vetores ou 2 telefones na mesma célula separados por vírgula.",
+                        "cor": "amber",
+                    },
+                    {
+                        "termo": "2ª FN",
+                        "destaque_letra": "TOTAL DA PK",
+                        "gatilho": 'SEM DEP. PARCIAL',
+                        "explicacao": "Coluna comum não pode depender só de metade da Chave Primária composta.",
+                        "cor": "emerald",
+                    },
+                    {
+                        "termo": "3ª FN",
+                        "destaque_letra": "DIRETA NA PK",
+                        "gatilho": 'SEM DEP. TRANSITIVA',
+                        "explicacao": "Coluna não-chave NUNCA pode determinar outra coluna não-chave.",
+                        "cor": "sky",
+                    },
+                ],
+                "regra_rodape": "DICA DE OURO CEBRASPE: SE A TABELA ESTÁ NA 1FN E TEM CHAVE SIMPLES (1 COLUNA), JÁ ESTÁ NA 2FN!",
+            },
+        },
+        {
+            "id": "fc-bd-02",
+            "tipo": "conceito_definicao",
+            "tag": "Banco de Dados · Chaves",
+            "dificuldade_sugerida": "media",
+            "frente": "Qual a diferença entre Chave Primária (PK), Candidata, Superchave e Estrangeira (FK)?",
+            "verso": "Superchave = Qualquer conjunto que identifica a tupla. Candidata = Superchave mínima (sem sobras). PK = A candidata escolhida. FK = Referencia a PK de outra tabela (aceita NULL por padrão).",
+            "mnemonico": "PK = Única + NOT NULL | FK = Aponta para PK + Aceita NULL",
+            "esquema_jotta": {
+                "selo": "MAPA VISUAL · CHAVES RELACIONAIS",
+                "titulo": "PK x FK x CANDIDATA",
+                "subtitulo": "Regras de integridade que despencam em FGV e Cebraspe:",
+                "colunas": [
+                    {
+                        "termo": "PRIMARY KEY",
+                        "destaque_letra": "PK",
+                        "gatilho": "IDENTIDADE DE ENTIDADE",
+                        "explicacao": "Única por tabela. Jamais aceita valor NULL nem valores repetidos.",
+                        "cor": "amber",
+                    },
+                    {
+                        "termo": "FOREIGN KEY",
+                        "destaque_letra": "FK",
+                        "gatilho": "INTEGRIDADE REFERENCIAL",
+                        "explicacao": "Aponta para a PK de outra tabela. PODE aceitar NULL (salvo restrição explícita).",
+                        "cor": "sky",
+                    },
+                    {
+                        "termo": "CANDIDATA",
+                        "destaque_letra": "MÍNIMA",
+                        "gatilho": "SUPERCHAVE IRREDUTÍVEL",
+                        "explicacao": "Identifica a linha sem nenhum atributo supérfluo (ex: CPF ou Matrícula).",
+                        "cor": "emerald",
+                    },
+                ],
+                "regra_rodape": "PEGADINHA DE PROVA: CHAVE ESTRANGEIRA (FK) PODE TER VALORES REPETIDOS E PODE SER NULL!",
+            },
+        },
+    ],
+    "bd-02": [
+        {
+            "id": "fc-sql-01",
+            "tipo": "comparacao",
+            "tag": "SQL · Comandos",
+            "dificuldade_sugerida": "facil",
+            "frente": "Qual a diferença entre DELETE, TRUNCATE e DROP no SQL?",
+            "verso": "DELETE (DML) apaga linhas específicas com WHERE e permite ROLLBACK. TRUNCATE (DDL) esvazia toda a tabela rapidamente sem WHERE. DROP (DDL) destrói a própria tabela e sua estrutura.",
+            "mnemonico": "DELETE = Cirúrgico (WHERE) | TRUNCATE = Zera dados | DROP = Demole a tabela",
+            "esquema_jotta": {
+                "selo": "MAPA VISUAL · SQL",
+                "titulo": "DELETE x TRUNCATE x DROP",
+                "subtitulo": "Nunca mais erre a classificação DDL vs DML na prova:",
+                "colunas": [
+                    {
+                        "termo": "DELETE",
+                        "destaque_letra": "DML",
+                        "gatilho": "ACEITA CLÁUSULA WHERE",
+                        "explicacao": "Apaga linha por linha, grava log detalhado e dispara triggers.",
+                        "cor": "emerald",
+                    },
+                    {
+                        "termo": "TRUNCATE",
+                        "destaque_letra": "DDL",
+                        "gatilho": "ESVAZIA A TABELA INTEIRA",
+                        "explicacao": "Não aceita WHERE! Limpa todos os registros de uma vez e mantém a estrutura.",
+                        "cor": "amber",
+                    },
+                    {
+                        "termo": "DROP",
+                        "destaque_letra": "DDL",
+                        "gatilho": "APAGA DADOS + ESTRUTURA",
+                        "explicacao": "Elimina a tabela inteira do catálogo do banco de dados.",
+                        "cor": "rose",
+                    },
+                ],
+                "regra_rodape": "SE A QUESTÃO COLOCAR 'TRUNCATE TABLE ALUNOS WHERE ID = 1', MARQUE ERRADO NA HORA!",
+            },
+        },
+        {
+            "id": "fc-sql-02",
+            "tipo": "comparacao",
+            "tag": "SQL · Filtros",
+            "dificuldade_sugerida": "media",
+            "frente": "Quando usar WHERE e quando usar HAVING em uma consulta SQL?",
+            "verso": "WHERE filtra linhas individuais ANTES do GROUP BY e proíbe funções de agregação. HAVING filtra grupos DEPOIS do GROUP BY e aceita COUNT, SUM, AVG.",
+            "mnemonico": "WHERE = Antes do grupo (sem COUNT) | HAVING = Depois do grupo (com COUNT)",
+            "esquema_jotta": {
+                "selo": "MAPA VISUAL · AGRUPAMENTO SQL",
+                "titulo": "WHERE x HAVING",
+                "subtitulo": "A ordem de execução define quem filtra linhas e quem filtra grupos:",
+                "colunas": [
+                    {
+                        "termo": "WHERE",
+                        "destaque_letra": "LINHAS",
+                        "gatilho": "ANTES DO GROUP BY",
+                        "explicacao": "Filtra registros brutos da tabela. PROIBIDO usar COUNT(), SUM(), AVG() direto nele!",
+                        "cor": "sky",
+                    },
+                    {
+                        "termo": "HAVING",
+                        "destaque_letra": "GRUPOS",
+                        "gatilho": "DEPOIS DO GROUP BY",
+                        "explicacao": "Filtra o resultado agrupado. É o lugar certo para HAVING COUNT(*) > 5!",
+                        "cor": "amber",
+                    },
+                ],
+                "regra_rodape": "ORDEM REAL DE EXECUÇÃO: FROM ➔ WHERE ➔ GROUP BY ➔ HAVING ➔ SELECT ➔ ORDER BY!",
+            },
+        },
+    ],
+    "es-01": [
+        {
+            "id": "fc-es-01",
+            "tipo": "comparacao",
+            "tag": "Engenharia de Software · Scrum",
+            "dificuldade_sugerida": "facil",
+            "frente": "Quem faz o quê no Scrum? (Product Owner vs Scrum Master vs Developers)",
+            "verso": "Product Owner = Maximiza valor e prioriza o Product Backlog. Scrum Master = Líder servidor que garante o processo e remove impedimentos. Developers = Estimam e entregam o Incremento.",
+            "mnemonico": "PO = O Quê (Negócio) | Dev = Como/Quanto (Técnico) | SM = Processo/Fluxo",
+            "esquema_jotta": {
+                "selo": "MAPA VISUAL · SCRUM GUIDE",
+                "titulo": "PRODUCT OWNER x SCRUM MASTER x DEVS",
+                "subtitulo": "As bancas adoram inverter as responsabilidades dos 3 papéis:",
+                "colunas": [
+                    {
+                        "termo": "PRODUCT OWNER",
+                        "destaque_letra": "PO",
+                        "gatilho": "DONO DO PRODUCT BACKLOG",
+                        "explicacao": "Prioriza itens por valor de negócio. Único que pode cancelar uma Sprint!",
+                        "cor": "amber",
+                    },
+                    {
+                        "termo": "SCRUM MASTER",
+                        "destaque_letra": "SM",
+                        "gatilho": "GUARDIÃO DO MÉTODO",
+                        "explicacao": "NÃO é chefe! Não distribui tarefas. Remove impedimentos e treina o time.",
+                        "cor": "emerald",
+                    },
+                    {
+                        "termo": "DEVELOPERS",
+                        "destaque_letra": "TIME",
+                        "gatilho": "DONOS DO SPRINT BACKLOG",
+                        "explicacao": "Auto-organizados: somente eles definem COMO fazer e estimam o esforço.",
+                        "cor": "sky",
+                    },
+                ],
+                "regra_rodape": "SE A PROVA DISSER QUE O SCRUM MASTER PRIORIZA O BACKLOG OU CHEFIA O TIME, ESTÁ ERRADO!",
+            },
+        },
+    ],
+    "es-02": [
+        {
+            "id": "fc-gof-01",
+            "tipo": "comparacao",
+            "tag": "Padrões de Projeto · GoF",
+            "dificuldade_sugerida": "media",
+            "frente": "Como diferenciar ADAPTER, FACADE e DECORATOR (Padrões Estruturais GoF)?",
+            "verso": "Adapter CONVERTE uma interface incompatível. Facade SIMPLIFICA um subsistema complexo. Decorator ADICIONA responsabilidades dinamicamente mantendo a mesma interface.",
+            "mnemonico": "Adapter = Conversor de tomada | Facade = Recepção simples | Decorator = Camada extra",
+            "esquema_jotta": {
+                "selo": "MAPA VISUAL · PADRÕES GOF",
+                "titulo": "ADAPTER x FACADE x DECORATOR",
+                "subtitulo": "Os 3 padrões estruturais mais cobrados pela FGV e Cebraspe:",
+                "colunas": [
+                    {
+                        "termo": "ADAPTER",
+                        "destaque_letra": "CONVERTE",
+                        "gatilho": "INTERFACE INCOMPATÍVEL",
+                        "explicacao": "Faz um sistema novo conversar com um legado (como um adaptador de tomada).",
+                        "cor": "amber",
+                    },
+                    {
+                        "termo": "FACADE",
+                        "destaque_letra": "SIMPLIFICA",
+                        "gatilho": "FACHADA ÚNICA LIMPA",
+                        "explicacao": "Esconde 10 classes complexas atrás de 1 método simples de alto nível.",
+                        "cor": "sky",
+                    },
+                    {
+                        "termo": "DECORATOR",
+                        "destaque_letra": "EXPANDE",
+                        "gatilho": "SEM USAR HERANÇA",
+                        "explicacao": "Empacota o objeto para adicionar comportamento em tempo de execução.",
+                        "cor": "emerald",
+                    },
+                ],
+                "regra_rodape": "PALAVRA-CHAVE NA PROVA: 'INCOMPATIBILIDADE' = ADAPTER | 'SIMPLIFICAR SUBSISTEMA' = FACADE!",
+            },
+        },
+    ],
+    "dir-01": [
+        {
+            "id": "fc-dir-01",
+            "tipo": "comparacao",
+            "tag": "Constitucional · Art. 5º",
+            "dificuldade_sugerida": "facil",
+            "frente": "Qual remédio constitucional usar em cada caso do Art. 5º da CF/88?",
+            "verso": "HC = Locomoção. HD = Dados pessoais em bancos públicos (exige recusa prévia). MS = Direito líquido e certo residual (120 dias). MI = Falta de norma regulamentadora. Ação Popular = Cidadão contra lesão ao patrimônio público.",
+            "mnemonico": "HC e HD = Gratuitos! Ação Popular = Só CIDADÃO (Título de Eleitor)!",
+            "esquema_jotta": {
+                "selo": "MAPA VISUAL · CONSTITUCIONAL",
+                "titulo": "OS 5 REMÉDIOS CONSTITUCIONAIS",
+                "subtitulo": "Associação imediata entre palavra-gatilho e o remédio correto:",
+                "colunas": [
+                    {
+                        "termo": "HABEAS CORPUS / DATA",
+                        "destaque_letra": "GRATUITOS",
+                        "gatilho": "LOCOMOÇÃO vs DADOS",
+                        "explicacao": "HC = Ir e vir (não precisa advogado). HD = Ver/retificar dado próprio (exige recusa prévia).",
+                        "cor": "emerald",
+                    },
+                    {
+                        "termo": "MANDADO SEG. / INJ.",
+                        "destaque_letra": "MS x MI",
+                        "gatilho": "LÍQUIDO E CERTO vs OMISSÃO",
+                        "explicacao": "MS = Prova documental pré-constituída (120 dias). MI = Falta de lei regulamentadora.",
+                        "cor": "amber",
+                    },
+                    {
+                        "termo": "AÇÃO POPULAR",
+                        "destaque_letra": "CIDADÃO",
+                        "gatilho": "PATRIMÔNIO E MORALIDADE",
+                        "explicacao": "Exige título de eleitor! Pessoa Jurídica NÃO pode propor (Súmula 365 STF).",
+                        "cor": "sky",
+                    },
+                ],
+                "regra_rodape": "CASA INVIOLÁVEL: À NOITE SÓ ENTRA EM FLAGRANTE, DESASTRE OU SOCORRO (ORDEM JUDICIAL = SÓ DE DIA)!",
+            },
+        },
+    ],
+    "red-01": [
+        {
+            "id": "fc-red-01",
+            "tipo": "comparacao",
+            "tag": "Redes · Transporte",
+            "dificuldade_sugerida": "facil",
+            "frente": "Quais as diferenças vitais entre TCP e UDP na Camada de Transporte?",
+            "verso": "TCP = Orientado a conexão (SYN, SYN-ACK, ACK), confiável, controle de fluxo e congestionamento. UDP = Sem conexão, baixa latência, cabeçalho leve de 8 bytes, ideal para DNS e streaming.",
+            "mnemonico": "TCP = Entrega Garantida (Handshake) | UDP = Velocidade Máxima (Sem Handshake)",
+            "esquema_jotta": {
+                "selo": "MAPA VISUAL · REDES DE COMPUTADORES",
+                "titulo": "TCP x UDP & UNIDADES DE DADOS (PDU)",
+                "subtitulo": "O quadro que resolve 80% das questões de Redes em concursos:",
+                "colunas": [
+                    {
+                        "termo": "PROTOCOLO TCP",
+                        "destaque_letra": "CONEXÃO",
+                        "gatilho": "SYN ➔ SYN-ACK ➔ ACK",
+                        "explicacao": "Garante entrega, ordem e controle de fluxo. Usado em HTTP(80), HTTPS(443), SSH(22).",
+                        "cor": "emerald",
+                    },
+                    {
+                        "termo": "PROTOCOLO UDP",
+                        "destaque_letra": "VELOCIDADE",
+                        "gatilho": "SEM CONFIRMAÇÃO",
+                        "explicacao": "Não faz handshake nem retransmissão. Usado em DNS(53), DHCP(67/68) e VoIP.",
+                        "cor": "amber",
+                    },
+                    {
+                        "termo": "PDUs DO MODELO OSI",
+                        "destaque_letra": "CAMADAS 4-3-2",
+                        "gatilho": "SEGMENTO · PACOTE · QUADRO",
+                        "explicacao": "C4 Transporte = Segmento | C3 Rede = Pacote (IP) | C2 Enlace = Quadro (MAC).",
+                        "cor": "sky",
+                    },
+                ],
+                "regra_rodape": "MNEMÔNICO DAS 7 CAMADAS OSI (1 A 7): F-E-R-T-S-A-A (Física, Enlace, Rede, Transporte, Sessão, Apres., Aplicação)!",
+            },
+        },
+    ],
+    "seg-01": [
+        {
+            "id": "fc-seg-01",
+            "tipo": "comparacao",
+            "tag": "Segurança · Criptografia",
+            "dificuldade_sugerida": "facil",
+            "frente": "Qual chave cifra no Sigilo e qual chave cifra na Assinatura Digital?",
+            "verso": "Para CONFIDENCIALIDADE (Sigilo), cifra com a chave PÚBLICA do destinatário. Para ASSINATURA DIGITAL (Autenticidade/Não-repúdio), cifra o hash com a chave PRIVADA do remetente.",
+            "mnemonico": "Sigilo = Pública do Destino | Assinatura = Privada do Autor",
+            "esquema_jotta": {
+                "selo": "MAPA VISUAL · CRIPTOGRAFIA",
+                "titulo": "SIGILO x ASSINATURA DIGITAL x HASH",
+                "subtitulo": "A pegadinha nº 1 das bancas de TI desmascarada visualmente:",
+                "colunas": [
+                    {
+                        "termo": "SIGILO ASSIMÉTRICO",
+                        "destaque_letra": "PÚBLICA",
+                        "gatilho": "DO DESTINATÁRIO",
+                        "explicacao": "Qualquer um tranca com a Pública do destino; só ele abre com a Privada dele.",
+                        "cor": "sky",
+                    },
+                    {
+                        "termo": "ASSINATURA DIGITAL",
+                        "destaque_letra": "PRIVADA",
+                        "gatilho": "DO PRÓPRIO REMETENTE",
+                        "explicacao": "O autor assina o Hash com sua Privada; todos conferem com a Pública dele.",
+                        "cor": "amber",
+                    },
+                    {
+                        "termo": "FUNÇÃO HASH",
+                        "destaque_letra": "SHA-256",
+                        "gatilho": "SEM CHAVE · UNIDIRECIONAL",
+                        "explicacao": "Garante INTEGRIDADE (qualquer vírgula alterada muda todo o resumo hash).",
+                        "cor": "emerald",
+                    },
+                ],
+                "regra_rodape": "ATENÇÃO: ASSINATURA DIGITAL NÃO ESCONDE O DOCUMENTO (NÃO GARANTE CONFIDENCIALIDADE SOZINHA)!",
+            },
+        },
+    ],
+}
+
+
+# ==============================================================================
+# Quadros Visuais Interativos (Sem repetição de texto, claros e objetivos)
 # ==============================================================================
 
 LESSON_VISUAL_BOARDS: dict[str, dict[str, Any]] = {
     "port-01": {
-        "titulo": "Quadro Digital: Arquitetura das Relações Semânticas e Conectivos",
-        "subtitulo": "Explore visualmente como cada conectivo articula causa, consequência, concessão e oposição nas provas.",
+        "titulo": "Quadro Esquematizado: Conectivos e Relações Semânticas",
+        "subtitulo": "Compare o valor semântico, os conectivos equivalentes e a armadilha clássica de cada grupo.",
         "relacoes_conceituais": [
             {
                 "id": "rel-concessao",
-                "categoria": "CONCESSÃO",
+                "categoria": "CONCESSÃO (Quebra de Expectativa)",
                 "cor": "amber",
-                "regra_ouro": "Introduz um obstáculo real ou hipotético que NÃO impede a realização do fato principal.",
-                "conectivos": ["embora", "conquanto", "ainda que", "mesmo que", "posto que", "se bem que", "apesar de"],
-                "fluxo_visual": "embora  ➔  conquanto  ➔  ainda que  ➔  posto que (+ subjuntivo)",
-                "exemplo_destacado": "Conquanto o edital fosse extenso [obstáculo], o candidato fechou a prova [fato principal ocorreu].",
-                "armadilha_banca": "A FGV e o Cebraspe tentam substituir 'conquanto' (concessivo) por 'porquanto' (causal). Nunca aceite!",
+                "regra_ouro": "Introduz um obstáculo que NÃO impede o fato principal de acontecer.",
+                "conectivos": ["embora", "conquanto", "ainda que", "mesmo que", "posto que", "apesar de"],
+                "fluxo_visual": "Obstáculo vencido  ➔  Verbo no Subjuntivo",
+                "exemplo_destacado": "Conquanto a prova fosse difícil, o candidato foi aprovado.",
+                "armadilha_banca": "Nunca troque 'conquanto' (concessivo) por 'porquanto' (causal).",
             },
             {
                 "id": "rel-causa",
-                "categoria": "CAUSA / EXPLICAÇÃO",
+                "categoria": "CAUSA / EXPLICAÇÃO (Origem)",
                 "cor": "emerald",
-                "regra_ouro": "Apresenta a origem, motivo ou razão cronologicamente anterior que gera um determinado efeito.",
-                "conectivos": ["porque", "visto que", "já que", "como (no início)", "porquanto", "uma vez que", "na medida em que"],
-                "fluxo_visual": "porque  ➔  visto que  ➔  já que  ➔  porquanto",
-                "exemplo_destacado": "Como revisou por repetição espaçada [causa anterior], lembrou de todas as fórmulas [efeito].",
-                "armadilha_banca": "A locução 'na medida em que' é CAUSAL; já 'à medida que' é PROPORCIONAL.",
-            },
-            {
-                "id": "rel-consequencia",
-                "categoria": "CONSEQUÊNCIA",
-                "cor": "sky",
-                "regra_ouro": "Aponta o efeito ou resultado desencadeado pela intensidade da ação declarada na oração principal.",
-                "conectivos": ["tanto que", "de modo que", "de sorte que", "tão... que", "tamanho... que"],
-                "fluxo_visual": "tão / tanto  ➔  que  ➔  de modo que  ➔  de forma que",
-                "exemplo_destacado": "A jurisprudência mudou tanto [causa intensa] que o manual precisou ser reescrito [consequência].",
-                "armadilha_banca": "Bancas pedem a reescrita convertendo a oração consecutiva na sua inversa causal.",
+                "regra_ouro": "Indica o motivo cronologicamente anterior que gera um resultado.",
+                "conectivos": ["porque", "já que", "visto que", "porquanto", "uma vez que", "na medida em que"],
+                "fluxo_visual": "Motivo (Antes)  ➔  Efeito (Depois)",
+                "exemplo_destacado": "Como estudou pelas aulas esquematizadas, acertou 95% da prova.",
+                "armadilha_banca": "'Na medida em que' = Causa | 'À medida que' = Proporção.",
             },
             {
                 "id": "rel-adversidade",
-                "categoria": "OPOSIÇÃO / ADVERSIDADE",
+                "categoria": "OPOSIÇÃO / ADVERSIDADE (Contraste)",
                 "cor": "rose",
-                "regra_ouro": "Coordena duas ideias contrastantes em que o argumento da segunda oração prevalece.",
-                "conectivos": ["mas", "porém", "contudo", "todavia", "entretanto", "no entanto", "não obstante"],
-                "fluxo_visual": "mas (fixo no início)  ➔  porém / contudo / todavia / entretanto (deslocáveis entre vírgulas)",
-                "exemplo_destacado": "O candidato tinha pouco tempo livre; organizou, contudo, uma rotina disciplinada.",
-                "armadilha_banca": "A conjunção 'mas' NUNCA pode ser deslocada para depois do verbo da segunda oração.",
+                "regra_ouro": "Opõe duas ideias coordenadas fazendo prevalecer o segundo argumento.",
+                "conectivos": ["mas", "porém", "contudo", "todavia", "entretanto", "no entanto"],
+                "fluxo_visual": "Ideia A  ➔  [MAS / PORÉM]  ➔  Ideia B (Prevalece)",
+                "exemplo_destacado": "Tinha pouco tempo livre; manteve, contudo, a constância diária.",
+                "armadilha_banca": "'Mas' só aparece no início da oração; os demais podem vir entre vírgulas.",
+            },
+            {
+                "id": "rel-consequencia",
+                "categoria": "CONSEQUÊNCIA (Resultado)",
+                "cor": "sky",
+                "regra_ouro": "Aponta o efeito inevitável provocado pela intensidade da oração anterior.",
+                "conectivos": ["tanto que", "de modo que", "tão... que", "de forma que"],
+                "fluxo_visual": "Intensidade (Tão/Tanto)  ➔  QUE (Resultado)",
+                "exemplo_destacado": "Treinou tanto com questões reais que dominou o estilo da banca.",
+                "armadilha_banca": "Reescrever invertendo as orações transforma a consecutiva em causal.",
             },
         ],
         "passos_animados": [
             {
                 "passo": 1,
-                "titulo": "1. Identifique a Oração Principal e a Subordinada",
-                "detalhe": "Separe os dois eventos da frase e pergunte: um deles é motivo (causa) ou barreira vencida (concessão)?",
-                "destaque_codigo": "[Conquanto chovesse forte] (Barreira) ➔ [a prova ocorreu normalmente] (Fato Principal)",
+                "titulo": "Passo 1: Diferencie Conquanto vs Porquanto",
+                "detalhe": "Olhe o prefixo: CONquanto = CONcessão (Embora). PORquanto = PORque (Causa).",
+                "destaque_codigo": "Conquanto (Embora) ≠ Porquanto (Porque)",
             },
             {
                 "passo": 2,
-                "titulo": "2. Aplique o Teste da Comutação Segura",
-                "detalhe": "Se o conectivo puder ser trocado por 'EMBORA' mantendo o verbo no subjuntivo, a relação é 100% Concessiva.",
-                "destaque_codigo": "Conquanto = Embora = Ainda que = Posto que  (Todos exigem Subjuntivo)",
+                "titulo": "Passo 2: Verifique Sessão vs Cessão vs Seção",
+                "detalhe": "Sessão (SS) = Reunião/Tempo. Cessão (C) = Ato de ceder. Seção (Ç) = Setor/Repartição.",
+                "destaque_codigo": "Sessão (Reunião) · Cessão (Ceder) · Seção (Setor)",
             },
             {
                 "passo": 3,
-                "titulo": "3. Verifique a Referência Coesiva (Onde vs Em Que)",
-                "detalhe": "Pronome 'ONDE' exige lugar físico palpável. Para ideias, processos ou situações, use sempre 'EM QUE' ou 'NO QUAL'.",
-                "destaque_codigo": "ERRADO: 'A fase onde o projeto falhou'  ➔  CORRETO: 'A fase em que o projeto falhou'",
+                "titulo": "Passo 3: Isole Expressões Explicativas por Vírgulas",
+                "detalhe": "'Por exemplo', 'isto é' e 'ou seja' ficam sempre separados por vírgula em qualquer posição.",
+                "destaque_codigo": "..., por exemplo, ... | Por exemplo, ... | ..., por exemplo.",
             },
         ],
     },
     "bd-01": {
-        "titulo": "Quadro Digital: Pipeline Visual de Normalização (1FN ➔ 2FN ➔ 3FN ➔ BCNF)",
-        "subtitulo": "Acompanhe passo a passo como uma tabela com anomalias é purificada até a 3ª Forma Normal.",
+        "titulo": "Quadro Esquematizado: Evolução das Formas Normais (1FN ➔ 2FN ➔ 3FN)",
+        "subtitulo": "Entenda exatamente qual anomalia cada etapa elimina sem repetir conceitos.",
         "relacoes_conceituais": [
             {
                 "id": "fn-1",
                 "categoria": "1ª FORMA NORMAL (1FN)",
                 "cor": "amber",
-                "regra_ouro": "Proíbe atributos multivalorados, compostos ou tabelas aninhadas. Cada célula guarda 1 valor atômico.",
-                "conectivos": ["Atomicidade", "Sem listas", "Sem grupos repetitivos", "Valores indivisíveis"],
-                "fluxo_visual": "Tabela Bruta  ➔  Quebra multivalorados  ➔  Atributos 100% Atômicos (1FN)",
-                "exemplo_destacado": "Coluna Telefones = '9999-1111, 8888-2222' viola a 1FN! Deve-se criar tabela ou linhas atômicas.",
-                "armadilha_banca": "Toda tabela relacional válida já nasce, por definição teórica, na 1FN.",
+                "regra_ouro": "Cada célula da tabela deve conter apenas 1 valor atômico (indivisível).",
+                "conectivos": ["Atributos Atômicos", "Sem Listas", "Sem Grupos Repetitivos"],
+                "fluxo_visual": "Célula com 2 telefones  ➔  Divide em linhas atômicas",
+                "exemplo_destacado": "Transformar Telefones='9999-1111, 8888-2222' em registros individuais.",
+                "armadilha_banca": "Toda relação formal no modelo relacional já exige a 1FN como ponto de partida.",
             },
             {
                 "id": "fn-2",
                 "categoria": "2ª FORMA NORMAL (2FN)",
                 "cor": "emerald",
-                "regra_ouro": "Exige estar na 1FN + eliminar Dependência Funcional PARCIAL (nenhum atributo não-chave pode depender só de metade da PK composta).",
-                "conectivos": ["Dependência Funcional Total", "Atenção à PK Composta", "PK Simples = Já está na 2FN"],
-                "fluxo_visual": "PK Composta (Cod_Pedido, Cod_Produto)  ➔  Nome_Produto depende só de Cod_Produto (Viola 2FN!)",
-                "exemplo_destacado": "Se a tabela está na 1FN e sua Chave Primária tem apenas 1 coluna (simples), ela está AUTOMATICAMENTE na 2FN!",
-                "armadilha_banca": "Cebraspe cobra exatamente a regra da chave simples em 1FN ser automaticamente 2FN.",
+                "regra_ouro": "Elimina Dependência Parcial: colunas não-chave devem depender de TODA a chave composta.",
+                "conectivos": ["Estar na 1FN", "Sem Dependência Parcial", "Foco na PK Composta"],
+                "fluxo_visual": "PK(Pedido, Produto)  ➔  Nome_Produto só depende de Produto (Extrair!)",
+                "exemplo_destacado": "Se a PK tem apenas 1 coluna (simples) e está na 1FN, já está automaticamente na 2FN.",
+                "armadilha_banca": "Cebraspe cobra frequentemente que tabela em 1FN com PK simples já está na 2FN.",
             },
             {
                 "id": "fn-3",
                 "categoria": "3ª FORMA NORMAL (3FN)",
                 "cor": "sky",
-                "regra_ouro": "Exige estar na 2FN + eliminar Dependência Funcional TRANSITIVA (atributo não-chave determinando outro não-chave).",
-                "conectivos": ["Sem Dependência Transitiva", "Não-Chave ↛ Não-Chave", "Fato sobre a Chave, toda a Chave e nada além da Chave"],
-                "fluxo_visual": "PK (Matrícula) ➔ Cod_Depto (Não-Chave) ➔ Nome_Depto (Não-Chave)  [Ponte Transitiva = Viola 3FN!]",
-                "exemplo_destacado": "Para corrigir, extraia (Cod_Depto, Nome_Depto) para uma nova relação Departamento.",
-                "armadilha_banca": "FGV dá o esquema R(A,B,C,D) com PK(A) e C → D, pedindo qual forma normal foi violada (3FN!).",
+                "regra_ouro": "Elimina Dependência Transitiva: nenhuma coluna comum pode determinar outra coluna comum.",
+                "conectivos": ["Estar na 2FN", "Sem Dependência Transitiva", "Não-Chave ↛ Não-Chave"],
+                "fluxo_visual": "PK(Matrícula) ➔ Cod_Depto ➔ Nome_Depto (Separar tabela Depto!)",
+                "exemplo_destacado": "Mover Nome_Depto para uma tabela própria referenciada por Cod_Depto.",
+                "armadilha_banca": "FGV apresenta R(A,B,C) onde PK=(A) e B → C, perguntando a violação (3FN).",
             },
         ],
         "passos_animados": [
             {
                 "passo": 1,
-                "titulo": "1. Olhe para as Células (Teste da 1FN)",
-                "detalhe": "Há múltiplos valores separados por vírgula ou listas dentro de um atributo? Se sim, viole a 1FN.",
-                "destaque_codigo": "1FN: ∀ atributo A, domínio(A) é atômico e indivisível",
+                "titulo": "Passo 1: Cheque se há listas na célula (1FN)",
+                "detalhe": "Se houver valores múltiplos na mesma coluna, decomponha para atingir a 1FN.",
+                "destaque_codigo": "1FN = Apenas valores atômicos e indivisíveis",
             },
             {
                 "passo": 2,
-                "titulo": "2. Olhe para a Chave Primária (Teste da 2FN)",
-                "detalhe": "A PK é composta por 2+ colunas? Algum campo depende de apenas UMA parte da PK? Se sim, viola a 2FN.",
-                "destaque_codigo": "PK(A, B) com B ➔ C  ⟹  Dependência Parcial (Viola 2FN)",
+                "titulo": "Passo 2: Olhe para a Chave Primária (2FN)",
+                "detalhe": "PK simples? Já passou na 2FN! PK composta? Garanta que tudo dependa do par inteiro.",
+                "destaque_codigo": "2FN = Elimina Dependência Parcial (PK Composta)",
             },
             {
                 "passo": 3,
-                "titulo": "3. Olhe para os Campos Comuns (Teste da 3FN)",
-                "detalhe": "Algum campo não-chave determina outro campo não-chave? Se sim, há dependência transitiva (viola a 3FN).",
-                "destaque_codigo": "PK(A) ➔ B (não-chave) ➔ C (não-chave)  ⟹  Dependência Transitiva (Viola 3FN)",
+                "titulo": "Passo 3: Procure pontes entre colunas comuns (3FN)",
+                "detalhe": "Se uma coluna não-chave define outra não-chave (ex: CEP define Cidade), separe em outra tabela.",
+                "destaque_codigo": "3FN = Elimina Dependência Transitiva (Não-Chave ➔ Não-Chave)",
+            },
+        ],
+    },
+    "es-02": {
+        "titulo": "Quadro Esquematizado: Padrões de Projeto GoF & Princípios SOLID",
+        "subtitulo": "Divisão clara entre Criacionais, Estruturais e Comportamentais com o caso exato de prova.",
+        "relacoes_conceituais": [
+            {
+                "id": "gof-criacionais",
+                "categoria": "PADRÕES CRIACIONAIS",
+                "cor": "amber",
+                "regra_ouro": "Abstraem o processo de instanciação, desacoplando o sistema de como os objetos são criados.",
+                "conectivos": ["Singleton", "Factory Method", "Abstract Factory", "Builder", "Prototype"],
+                "fluxo_visual": "Código Cliente  ➔  Fábrica / Construtor  ➔  Objeto Instanciado",
+                "exemplo_destacado": "Singleton garante instância única (ex: Pool de Conexão ou Logger global).",
+                "armadilha_banca": "Abstract Factory cria FAMÍLIAS de objetos relacionados; Builder constrói objetos complexos passo a passo.",
+            },
+            {
+                "id": "gof-estruturais",
+                "categoria": "PADRÕES ESTRUTURAIS",
+                "cor": "emerald",
+                "regra_ouro": "Organizam a composição de classes e interfaces para formar estruturas flexíveis.",
+                "conectivos": ["Adapter", "Facade", "Decorator", "Proxy", "Composite", "Bridge"],
+                "fluxo_visual": "Interface A  ➔  [Adapter / Facade / Decorator]  ➔  Sistema B",
+                "exemplo_destacado": "Decorator adiciona novas funções ao objeto dinamicamente sem usar herança.",
+                "armadilha_banca": "Adapter CONVERTE interface incompatível; Facade SIMPLIFICA subsistema complexo.",
+            },
+            {
+                "id": "gof-comportamentais",
+                "categoria": "PADRÕES COMPORTAMENTAIS",
+                "cor": "sky",
+                "regra_ouro": "Gerenciam algoritmos, notificações e distribuição de responsabilidades entre objetos.",
+                "conectivos": ["Strategy", "Observer", "Command", "State", "Template Method", "Mediator"],
+                "fluxo_visual": "Contexto  ➔  Troca de Algoritmo (Strategy) ou Notificação (Observer)",
+                "exemplo_destacado": "Strategy permite trocar a regra de cálculo de imposto em tempo de execução.",
+                "armadilha_banca": "Observer implementa Pub/Sub (1-para-N); Command encapsula uma requisição como objeto.",
+            },
+        ],
+        "passos_animados": [
+            {
+                "passo": 1,
+                "titulo": "Passo 1: Identifique se o problema é de Criação, Estrutura ou Comportamento",
+                "detalhe": "Instanciar sem new explícito = Criacional. Conectar interfaces = Estrutural. Trocar algoritmo/evento = Comportamental.",
+                "destaque_codigo": "Criacional (Instanciar) · Estrutural (Compor) · Comportamental (Interagir)",
+            },
+            {
+                "passo": 2,
+                "titulo": "Passo 2: Não confunda Adapter, Facade e Decorator",
+                "detalhe": "Adapter compatibiliza; Facade oferece porta única simplificada; Decorator empacota responsabilidades extras.",
+                "destaque_codigo": "Adapter (Converte) ≠ Facade (Simplifica) ≠ Decorator (Expande)",
+            },
+            {
+                "passo": 3,
+                "titulo": "Passo 3: Aplique o SOLID (Foco em O e D)",
+                "detalhe": "Open/Closed = Aberto para extensão, fechado para modificação. Dependency Inversion = Dependa de interfaces.",
+                "destaque_codigo": "S.O.L.I.D ➔ Baixo acoplamento e alta coesão",
             },
         ],
     },
@@ -246,45 +807,50 @@ LESSON_VISUAL_BOARDS: dict[str, dict[str, Any]] = {
 
 
 def _build_default_visual_board(lesson: dict[str, Any]) -> dict[str, Any]:
-    """Constrói um quadro visual interativo rico a partir da tabela_resumo e pontos críticos da aula."""
+    """Constrói um quadro visual limpo e sem repetição de frases."""
     lid = lesson["id"]
     if lid in LESSON_VISUAL_BOARDS:
         return LESSON_VISUAL_BOARDS[lid]
 
     tabela = lesson.get("tabela_resumo") or {}
     linhas = tabela.get("linhas") or []
-    colunas = tabela.get("colunas") or []
     cores = ["amber", "emerald", "sky", "rose", "purple"]
+    pontos = lesson.get("pontos_criticos") or []
 
     relacoes = []
     for idx, row in enumerate(linhas):
         cat = row[0] if len(row) > 0 else f"Conceito {idx + 1}"
-        regra = row[1] if len(row) > 1 else ""
-        efeito = row[2] if len(row) > 2 else ""
-        pegadinha = row[3] if len(row) > 3 else (lesson.get("pontos_criticos") or [""])[0]
+        col1 = row[1] if len(row) > 1 else ""
+        col2 = row[2] if len(row) > 2 else ""
+        col3 = row[3] if len(row) > 3 else (pontos[idx % len(pontos)] if pontos else "")
+
+        tags_extraidas = [c.strip() for c in col1.split(",") if c.strip()]
+        if len(tags_extraidas) <= 1:
+            tags_extraidas = [cat]
+
         relacoes.append({
             "id": f"rel-{lid}-{idx}",
             "categoria": cat.upper(),
             "cor": cores[idx % len(cores)],
-            "regra_ouro": regra,
-            "conectivos": [c.strip() for c in efeito.split(",") if c.strip()][:4] or [cat],
-            "fluxo_visual": f"{cat}  ➔  {regra}  ➔  {efeito}",
-            "exemplo_destacado": f"{colunas[2] if len(colunas) > 2 else 'Aplicação'}: {efeito}",
-            "armadilha_banca": pegadinha,
+            "regra_ouro": col2 if col2 else col1,
+            "conectivos": tags_extraidas[:5],
+            "fluxo_visual": f"{cat}  ➔  {col1}",
+            "exemplo_destacado": col3 if col3 else col2,
+            "armadilha_banca": pontos[idx % len(pontos)] if pontos else col3,
         })
 
     passos = []
-    for idx, ponto in enumerate(lesson.get("pontos_criticos") or []):
+    for idx, ponto in enumerate(pontos):
         passos.append({
             "passo": idx + 1,
-            "titulo": f"Ponto Chave {idx + 1}: Regra de Prova",
+            "titulo": f"Passo {idx + 1}: Verificação de Prova",
             "detalhe": ponto,
             "destaque_codigo": (lesson.get("objetivos") or [ponto])[min(idx, len(lesson.get("objetivos") or [ponto]) - 1)],
         })
 
     return {
-        "titulo": f"Quadro Digital: {tabela.get('titulo') or lesson['titulo']}",
-        "subtitulo": "Esquema visual interativo com relações de causa-efeito, regras de ouro e armadilhas de prova.",
+        "titulo": f"Quadro Esquematizado: {tabela.get('titulo') or lesson['titulo']}",
+        "subtitulo": "Síntese visual direta para memorização rápida antes das questões.",
         "relacoes_conceituais": relacoes,
         "passos_animados": passos,
     }
@@ -312,8 +878,8 @@ def _build_mind_map(lesson: dict[str, Any]) -> dict[str, Any]:
             "exemplo": aplicacao,
             "dica_banca": alerta or (lesson.get("pontos_criticos") or [""])[0],
             "subnos": [
-                {"id": f"mm-{lid}-{idx}-a", "label": f"Essência: {desc_no[:70]}"},
-                {"id": f"mm-{lid}-{idx}-b", "label": f"Prática: {aplicacao[:70]}"},
+                {"id": f"mm-{lid}-{idx}-a", "label": f"Conceito: {desc_no[:70]}"},
+                {"id": f"mm-{lid}-{idx}-b", "label": f"Na Prova: {aplicacao[:70]}"},
             ],
         })
 
@@ -325,7 +891,7 @@ def _build_mind_map(lesson: dict[str, Any]) -> dict[str, Any]:
 
 
 def _enrich_videos(lesson: dict[str, Any]) -> list[dict[str, Any]]:
-    """Enriquece as videoaulas com capítulos clicáveis, perguntas de checkpoint durante o vídeo e slides guiados."""
+    """Enriquece as videoaulas com capítulos clicáveis, perguntas de checkpoint e slides guiados."""
     videos = lesson.get("videoaulas") or []
     objetivos = lesson.get("objetivos") or []
     pontos = lesson.get("pontos_criticos") or []
@@ -346,22 +912,22 @@ def _enrich_videos(lesson: dict[str, Any]) -> list[dict[str, Any]]:
                 {
                     "id": f"cap-{lesson['id']}-{v_idx}-2",
                     "titulo": "02. Teoria Estruturada & Mecanismos Chave",
-                    "tempo_seg": 420,
-                    "tempo_label": "07:00",
+                    "tempo_seg": 180,
+                    "tempo_label": "03:00",
                     "resumo": objetivos[1] if len(objetivos) > 1 else "Análise detalhada dos conceitos cobrados em edital.",
                 },
                 {
                     "id": f"cap-{lesson['id']}-{v_idx}-3",
                     "titulo": "03. Pegadinhas de Banca & Casos Práticos",
-                    "tempo_seg": 960,
-                    "tempo_label": "16:00",
+                    "tempo_seg": 420,
+                    "tempo_label": "07:00",
                     "resumo": pontos[0] if len(pontos) > 0 else "Como FGV e Cebraspe cobram o tema em provas reais.",
                 },
                 {
                     "id": f"cap-{lesson['id']}-{v_idx}-4",
                     "titulo": "04. Revisão Final & Resolução de Questões",
-                    "tempo_seg": 1380,
-                    "tempo_label": "23:00",
+                    "tempo_seg": 660,
+                    "tempo_label": "11:00",
                     "resumo": objetivos[-1] if len(objetivos) > 0 else "Consolidação e checklist final para gabaritar.",
                 },
             ]
@@ -371,8 +937,8 @@ def _enrich_videos(lesson: dict[str, Any]) -> list[dict[str, Any]]:
             v_copy["perguntas_video"] = [
                 {
                     "id": f"pv-{lesson['id']}-{v_idx}-1",
-                    "momento_seg": 420,
-                    "momento_label": "07:00",
+                    "momento_seg": 180,
+                    "momento_label": "03:00",
                     "capitulo_ref": "02. Teoria Estruturada",
                     "pergunta": fc_ref["frente"] if fc_ref else f"Qual é a regra crítica sobre {lesson['disciplina']} abordada neste trecho?",
                     "alternativas": [
@@ -415,17 +981,65 @@ def _enrich_videos(lesson: dict[str, Any]) -> list[dict[str, Any]]:
     return enriched
 
 
+def _synthesize_jotta_schema(card: dict[str, Any], lesson: dict[str, Any], idx: int) -> dict[str, Any]:
+    """Gera automaticamente um esquema visual estilo Jotta caso o cartão não possua um específico."""
+    if "esquema_jotta" in card and card["esquema_jotta"]:
+        return card["esquema_jotta"]
+
+    tabela = lesson.get("tabela_resumo") or {}
+    linhas = tabela.get("linhas") or []
+    cores = ["amber", "sky", "emerald", "rose"]
+
+    colunas = []
+    if len(linhas) >= 2:
+        for c_idx, row in enumerate(linhas[:3]):
+            colunas.append({
+                "termo": str(row[0]).upper(),
+                "destaque_letra": f"REGRA #{c_idx + 1}",
+                "gatilho": str(row[1])[:42].upper(),
+                "explicacao": str(row[2] if len(row) > 2 else row[1]),
+                "cor": cores[c_idx % len(cores)],
+            })
+    else:
+        colunas = [
+            {
+                "termo": card.get("tag", lesson["disciplina"]).upper(),
+                "destaque_letra": "CONCEITO CHAVE",
+                "gatilho": (card.get("mnemonico") or "MEMORIZAÇÃO DIRETA")[:42].upper(),
+                "explicacao": card.get("verso", ""),
+                "cor": "amber",
+            }
+        ]
+
+    return {
+        "selo": f"MAPA VISUAL GSN · #{idx + 1:02d}",
+        "titulo": card.get("frente", lesson["titulo"]),
+        "subtitulo": card.get("verso", ""),
+        "colunas": colunas,
+        "regra_rodape": (card.get("mnemonico") or (lesson.get("pontos_criticos") or ["Domine esta distinção para a prova!"])[0]).upper(),
+    }
+
+
 def _enrich_flashcards(lesson: dict[str, Any]) -> list[dict[str, Any]]:
-    """Enriquece os flashcards existentes e adiciona formatos interativos variados (V/F, Complete a Lacuna, Identifique o Erro)."""
+    """Retorna os flashcards enriquecidos com o Esquema Visual Estilo Jotta + formatos de treino."""
     lid = lesson["id"]
-    base_cards = [dict(fc) for fc in (lesson.get("flashcards") or [])]
+    jotta_cards = [dict(c) for c in JOTTA_VISUAL_CARDS.get(lid, [])]
+    seen_ids = {c["id"] for c in jotta_cards}
+
+    base_cards = list(jotta_cards)
     tipos_base = ["pergunta_resposta", "conceito_definicao", "comparacao", "exemplo_pratico"]
 
-    for idx, card in enumerate(base_cards):
+    for idx, raw_fc in enumerate(lesson.get("flashcards") or []):
+        if raw_fc["id"] in seen_ids:
+            continue
+        card = dict(raw_fc)
         if "tipo" not in card:
             card["tipo"] = tipos_base[idx % len(tipos_base)]
         if "dificuldade_sugerida" not in card:
             card["dificuldade_sugerida"] = "media"
+        card["esquema_jotta"] = _synthesize_jotta_schema(card, lesson, len(base_cards))
+        base_cards.append(card)
+        seen_ids.add(card["id"])
 
     pontos = lesson.get("pontos_criticos") or []
     tabela = lesson.get("tabela_resumo") or {}
@@ -433,7 +1047,7 @@ def _enrich_flashcards(lesson: dict[str, Any]) -> list[dict[str, Any]]:
 
     # Adicionar cartão Verdadeiro ou Falso
     if pontos:
-        base_cards.append({
+        vf_card: dict[str, Any] = {
             "id": f"fc-{lid}-vf",
             "tipo": "verdadeiro_falso",
             "frente": f"[Julgue V ou F] {pontos[0]}",
@@ -442,7 +1056,9 @@ def _enrich_flashcards(lesson: dict[str, Any]) -> list[dict[str, Any]]:
             "tag": lesson["disciplina"],
             "dificuldade_sugerida": "facil",
             "resposta_vf": "V",
-        })
+        }
+        vf_card["esquema_jotta"] = _synthesize_jotta_schema(vf_card, lesson, len(base_cards))
+        base_cards.append(vf_card)
 
     # Adicionar cartão Complete a Lacuna
     if linhas and len(linhas[0]) >= 2:
@@ -451,7 +1067,7 @@ def _enrich_flashcards(lesson: dict[str, Any]) -> list[dict[str, Any]]:
         opcoes = [linhas[i][0] for i in range(min(4, len(linhas)))]
         if len(opcoes) < 3:
             opcoes = [conceito_alvo, "Exceção Secundária", "Regra Inversa"]
-        base_cards.append({
+        lac_card: dict[str, Any] = {
             "id": f"fc-{lid}-lacuna",
             "tipo": "complete_lacuna",
             "frente": f"Complete a lacuna técnica: O conceito de [_______] exige como requisito fundamental: '{definicao_alvo}'.",
@@ -461,23 +1077,16 @@ def _enrich_flashcards(lesson: dict[str, Any]) -> list[dict[str, Any]]:
             "dificuldade_sugerida": "media",
             "lacuna_correta": conceito_alvo,
             "lacuna_opcoes": opcoes,
-        })
+        }
+        lac_card["esquema_jotta"] = _synthesize_jotta_schema(lac_card, lesson, len(base_cards))
+        base_cards.append(lac_card)
 
-    # Adicionar cartão Identifique o Erro
-    if len(linhas) >= 2 and len(linhas[0]) >= 2 and len(linhas[1]) >= 2:
-        c1, d1 = linhas[0][0], linhas[0][1]
-        c2, d2 = linhas[1][0], linhas[1][1]
-        base_cards.append({
-            "id": f"fc-{lid}-erro",
-            "tipo": "identifique_erro",
-            "frente": f"Identifique o ERRO na afirmativa de prova: 'O mecanismo {c1} caracteriza-se por {d2.lower()}.'",
-            "verso": f"ERRO DETECTADO: A banca inverteu os conceitos! '{d2}' pertence a {c2}, enquanto {c1} exige '{d1}'.",
-            "mnemonico": f"Não deixe a banca trocar {c1} por {c2}!",
-            "tag": lesson["disciplina"],
-            "dificuldade_sugerida": "dificil",
-            "erro_trecho": d2,
-            "correcao": d1,
-        })
+    for idx, c in enumerate(base_cards):
+        c["aula_id"] = lid
+        c["aula_titulo"] = lesson["titulo"]
+        c["disciplina"] = lesson["disciplina"]
+        if "esquema_jotta" not in c:
+            c["esquema_jotta"] = _synthesize_jotta_schema(c, lesson, idx)
 
     return base_cards
 
@@ -491,7 +1100,6 @@ def _build_interactive_exercises(lesson: dict[str, Any]) -> list[dict[str, Any]]
 
     exercicios: list[dict[str, Any]] = []
 
-    # 1. Associação de Conceitos
     if len(linhas) >= 3:
         pares = [
             {"id": f"par-{idx}", "conceito": row[0], "definicao": row[1]}
@@ -501,36 +1109,23 @@ def _build_interactive_exercises(lesson: dict[str, Any]) -> list[dict[str, Any]]
         exercicios.append({
             "id": f"ex-{lid}-associacao",
             "tipo": "associacao_conceitos",
-            "titulo": "Desafio Interativo: Associação Rápida de Conceitos",
-            "enunciado": "Conecte cada conceito técnico à sua definição exata cobrada em prova:",
+            "titulo": "Desafio Rápido: Associação de Conceitos",
+            "enunciado": "Confira a associação direta entre cada conceito e sua palavra-gatilho de prova:",
             "pares": pares,
             "explicacao": "Dominar a distinção exata entre as definições evita cair na armadilha de inversão conceitual da FGV e do Cebraspe.",
         })
 
-    # 2. Complete a Lacuna Contextualizada
     if len(linhas) >= 2:
         row0 = linhas[0]
         opcoes = [r[0] for r in linhas[:4]]
         exercicios.append({
             "id": f"ex-{lid}-lacuna",
             "tipo": "complete_lacuna",
-            "titulo": "Preenchimento de Precisão Técnica",
-            "enunciado": f"Em provas de {lesson['disciplina']}, quando o enunciado exige '{row0[1]}', a resposta obrigatória é [_______], cuja aplicação principal elimina/garante: '{row0[2] if len(row0) > 2 else row0[1]}'.",
+            "titulo": "Fixação Rápida: Complete a Lacuna",
+            "enunciado": f"Em provas de {lesson['disciplina']}, quando o enunciado exige '{row0[1]}', a resposta correta é [_______].",
             "opcoes": opcoes,
             "resposta_correta": row0[0],
-            "explicacao": f"{row0[0]} é definido diretamente por '{row0[1]}'. Atenção: {row0[3] if len(row0) > 3 else (pontos[0] if pontos else '')}",
-        })
-
-    # 3. Ordenação / Sequência Lógica
-    if len(linhas) >= 3:
-        etapas = [f"{idx + 1}º — {row[0]}: {row[1]}" for idx, row in enumerate(linhas[:4])]
-        exercicios.append({
-            "id": f"ex-{lid}-ordenacao",
-            "tipo": "ordenacao_etapas",
-            "titulo": "Sequenciamento Lógico da Matéria",
-            "enunciado": "Analise a progressão estrutural abaixo e confirme a ordem hierárquica correta dos conceitos estudados:",
-            "etapas_corretas": etapas,
-            "explicacao": "A compreensão da hierarquia e ordem de precedência resolve questões de análise de cenários complexos.",
+            "explicacao": f"{row0[0]} caracteriza-se diretamente por '{row0[1]}'. Atenção: {row0[3] if len(row0) > 3 else (pontos[0] if pontos else '')}",
         })
 
     return exercicios
@@ -598,10 +1193,10 @@ def enrich_lesson_detail(lesson: dict[str, Any]) -> dict[str, Any]:
     out["quadro_visual"] = _build_default_visual_board(out)
     out["mapa_mental"] = _build_mind_map(out)
 
-    # 4. Flashcards Multiformato
+    # 4. Flashcards Visuais Estilo Jotta
     out["flashcards"] = _enrich_flashcards(out)
 
-    # 5. Questões Reais Detalhadas (resolvidas diretamente por id_ref para nunca ficar vazio!)
+    # 5. Questões Reais Detalhadas
     q_map = {q["id_ref"]: q for q in _REAL_QUESTIONS}
     competencias = out.get("competencias") or ["Domínio Geral da Aula"]
     questoes_detalhadas = []
@@ -614,11 +1209,9 @@ def enrich_lesson_detail(lesson: dict[str, Any]) -> dict[str, Any]:
         q_item["id"] = qid
         q_item["subtopico"] = competencias[idx % len(competencias)]
 
-        # Extrair banca da tag (ex: banca:fgv -> FGV)
         banca_tag = next((t.split(":")[1].upper() for t in q_item.get("tags", []) if t.startswith("banca:")), "OFICIAL")
         q_item["banca_sigla"] = banca_tag
 
-        # Formatar alternativas padronizadas [{letra, texto, justificativa}]
         if q_item.get("tipo") == "verdadeiro_falso":
             gabarito = q_item.get("gabarito", "V")
             q_item["alternativas_formatadas"] = [
@@ -667,7 +1260,7 @@ def enrich_lesson_detail(lesson: dict[str, Any]) -> dict[str, Any]:
     # 7. Professor Virtual Contextual
     out["tutor_contextual"] = _build_tutor_contextual(out)
 
-    # 8. Estatísticas verificáveis de bancas a partir do banco real de questões da disciplina
+    # 8. Estatísticas verificáveis de bancas
     disc_questions = [
         q for q in _REAL_QUESTIONS
         if q.get("disciplina", "").strip().lower() == out["disciplina"].strip().lower()
@@ -703,6 +1296,7 @@ _CUSTOM_LESSONS: list[dict[str, Any]] = []
 def summarize_lesson(l: dict[str, Any]) -> dict[str, Any]:
     meta = LESSON_CURRICULUM_META.get(l["id"], {})
     q_count = len(l.get("questoes_ids", []))
+    enriched_fcs = _enrich_flashcards(l)
     return {
         "id": l["id"],
         "disciplina": l["disciplina"],
@@ -716,7 +1310,7 @@ def summarize_lesson(l: dict[str, Any]) -> dict[str, Any]:
         "total_questoes": q_count,
         "questoes_count": q_count,
         "videoaulas_count": len(l.get("videoaulas", [])),
-        "flashcards_count": len(l.get("flashcards", [])) + 3,
+        "flashcards_count": len(enriched_fcs),
     }
 
 
@@ -737,6 +1331,39 @@ def get_lesson_enriched(base_lessons: list[dict[str, Any]], lesson_id: str) -> d
         if l["id"] == lesson_id:
             return enrich_lesson_detail(l)
     return None
+
+
+def list_all_visual_flashcards(base_lessons: list[dict[str, Any]], disciplina: str | None = None) -> list[dict[str, Any]]:
+    """Retorna todos os Flashcards Visuais Estilo Jotta de todas as aulas (unificando Aulas e menu lateral Flashcards)."""
+    cards: list[dict[str, Any]] = []
+    disc_norm = disciplina.strip().lower() if disciplina else None
+    for l in list(base_lessons) + _CUSTOM_LESSONS:
+        if disc_norm and l["disciplina"].strip().lower() != disc_norm:
+            continue
+        cards.extend(_enrich_flashcards(l))
+    return cards
+
+
+def seed_default_flashcards(db_path: Path | str, base_lessons: list[dict[str, Any]]) -> int:
+    """Popula o deck SM-2 (pratica_flashcards) com os cartões essenciais caso esteja vazio."""
+    from radar.practice_store import create_flashcard, flashcard_stats
+
+    stats = flashcard_stats(db_path)
+    if stats.get("total", 0) > 0:
+        return 0
+
+    inserted = 0
+    for l in base_lessons:
+        for fc in JOTTA_VISUAL_CARDS.get(l["id"], [])[:2]:
+            create_flashcard(
+                db_path,
+                frente=fc["frente"],
+                verso=f"{fc['verso']}\n\n💡 Mnemônico: {fc.get('mnemonico', '')}",
+                tags=[l["disciplina"], fc.get("tag", "Visual")],
+                fonte=l["titulo"],
+            )
+            inserted += 1
+    return inserted
 
 
 def create_custom_lesson(base_lessons: list[dict[str, Any]], payload: dict[str, Any]) -> dict[str, Any]:
@@ -777,4 +1404,3 @@ def create_custom_lesson(base_lessons: list[dict[str, Any]], payload: dict[str, 
     }
     _CUSTOM_LESSONS.append(new_lesson)
     return get_lesson_enriched(base_lessons, lesson_id) or new_lesson
-

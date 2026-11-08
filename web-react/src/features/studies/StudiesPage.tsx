@@ -38,6 +38,7 @@ import {
   useRevisions,
   useSessions,
   useStudyPanel,
+  useVisualFlashcards,
   type Exam,
   type Question,
 } from '@/app/queries';
@@ -51,7 +52,8 @@ import { EmptyState, ErrorState, SkeletonRows } from '@/components/ui/states';
 import { api, syncProgramToStudy } from '@/lib/api';
 import { formatTitleCase } from '@/lib/domain';
 import { clock, dateTime, duration, integer, percent, shortDate } from '@/lib/format';
-import type { StudyPanel, StudySession } from '@/lib/types';
+import type { LessonFlashcard, StudyPanel, StudySession } from '@/lib/types';
+import { JottaFlashcardGrid } from './JottaFlashcardView';
 import { LessonsView } from './LessonsView';
 import { BancaRadiographyView } from './BancaRadiographyView';
 import { StudyScheduleView } from './StudyScheduleView';
@@ -59,12 +61,12 @@ import { StudyScheduleView } from './StudyScheduleView';
 const TABS = [
   { path: '', label: 'Visão geral', icon: LayoutDashboard, badge: null },
   { path: '/cronograma', label: 'Ciclo Semanal', icon: Compass, badge: 'IA' },
-  { path: '/aulas', label: 'Aulas', icon: BookOpen, badge: 'Trilha' },
-  { path: '/bancas', label: 'Bancas', icon: Award, badge: '16' },
-  { path: '/sessoes', label: 'Sessões', icon: Clock, badge: null },
+  { path: '/aulas', label: 'Aulas & Teoria', icon: BookOpen, badge: 'Trilha' },
+  { path: '/flashcards', label: 'Flashcards Visuais', icon: Layers, badge: 'Jotta' },
   { path: '/questoes', label: 'Questões', icon: CheckSquare, badge: null },
-  { path: '/flashcards', label: 'Flashcards', icon: Layers, badge: 'Revisão' },
+  { path: '/bancas', label: 'Bancas', icon: Award, badge: '16' },
   { path: '/simulados', label: 'Simulados', icon: Target, badge: 'Rankings' },
+  { path: '/sessoes', label: 'Sessões', icon: Clock, badge: null },
 ] as const;
 
 export function StudiesPage() {
@@ -74,87 +76,92 @@ export function StudiesPage() {
   const contestId = searchParams.get('concurso');
   const suffix = location.pathname.replace(/^\/estudos/, '');
   const active = TABS.find((tab) => tab.path === suffix)?.path ?? '';
+  const isInsideSpecificLesson = active === '/aulas' && Boolean(searchParams.get('aula'));
 
   return (
     <>
-      <PageHeader
-        eyebrow="Aprendizagem & Foco"
-        title="Estudos"
-        description="Sessões, revisões, questões e simulados direcionados para os seus concursos alvo."
-      />
+      {!isInsideSpecificLesson && (
+        <>
+          <PageHeader
+            eyebrow="Aprendizagem & Foco"
+            title="Central de Estudos & Aprovação"
+            description="Aulas estruturadas, quadros esquemáticos estilo Jotta, videoaulas verificadas, questões comentadas e revisão espaçada SM-2."
+          />
 
-      {contestId && (
-        <div className="mb-4 flex items-center justify-between gap-3 p-3.5 rounded-lg border border-amber-400/30 bg-amber-400/5 text-xs text-fg">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <Target size={16} className="text-amber-400 shrink-0" />
-            <span className="truncate">
-              Foco ativado: visualizando conteúdo e matérias para o concurso selecionado.
-            </span>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              const next = new URLSearchParams(searchParams);
-              next.delete('concurso');
-              setSearchParams(next);
-            }}
-          >
-            Ver Todas
-          </Button>
-        </div>
-      )}
-
-      {/* Menu Horizontal Premium Estilo Segmented Control / Dock */}
-      <div className="mb-6 rounded-2xl border border-line/80 bg-surface-2/70 p-1.5 shadow-md backdrop-blur-md">
-        <div
-          role="tablist"
-          aria-label="Seções de estudos"
-          className="flex items-center gap-1.5 overflow-x-auto scrollbar-none"
-        >
-          {TABS.map((tab) => {
-            const Icon = tab.icon;
-            const isSelected = active === tab.path;
-            const queryParams = contestId ? `?concurso=${encodeURIComponent(contestId)}` : '';
-            return (
-              <button
-                key={tab.path}
-                type="button"
-                role="tab"
-                aria-selected={isSelected}
-                onClick={() => navigate(`/estudos${tab.path}${queryParams}`)}
-                className={`group relative flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold whitespace-nowrap transition-all duration-200 ${
-                  isSelected
-                    ? 'bg-surface text-fg shadow-sm border border-line ring-1 ring-accent/30'
-                    : 'text-fg-3 hover:bg-surface/50 hover:text-fg'
-                }`}
+          {contestId && (
+            <div className="mb-4 flex items-center justify-between gap-3 p-3.5 rounded-lg border border-amber-400/30 bg-amber-400/5 text-xs text-fg">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Target size={16} className="text-amber-400 shrink-0" />
+                <span className="truncate">
+                  Foco ativado: visualizando conteúdo e matérias para o concurso selecionado.
+                </span>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  const next = new URLSearchParams(searchParams);
+                  next.delete('concurso');
+                  setSearchParams(next);
+                }}
               >
-                <Icon
-                  size={15}
-                  className={`shrink-0 transition-colors ${
-                    isSelected ? 'text-amber-400' : 'text-fg-3 group-hover:text-fg-2'
-                  }`}
-                />
-                <span>{tab.label}</span>
-                {tab.badge && (
-                  <span
-                    className={`ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                Ver Todas
+              </Button>
+            </div>
+          )}
+
+          {/* Menu Horizontal Premium Estilo Segmented Control / Dock */}
+          <div className="mb-6 rounded-2xl border border-line/80 bg-surface-2/70 p-1.5 shadow-md backdrop-blur-md">
+            <div
+              role="tablist"
+              aria-label="Seções de estudos"
+              className="flex items-center gap-1.5 overflow-x-auto scrollbar-none"
+            >
+              {TABS.map((tab) => {
+                const Icon = tab.icon;
+                const isSelected = active === tab.path;
+                const queryParams = contestId ? `?concurso=${encodeURIComponent(contestId)}` : '';
+                return (
+                  <button
+                    key={tab.path}
+                    type="button"
+                    role="tab"
+                    aria-selected={isSelected}
+                    onClick={() => navigate(`/estudos${tab.path}${queryParams}`)}
+                    className={`group relative flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold whitespace-nowrap transition-all duration-200 ${
                       isSelected
-                        ? 'bg-amber-400/20 text-amber-300 border border-amber-400/30'
-                        : 'bg-surface-2 text-fg-3 border border-line/60 group-hover:text-fg-2'
+                        ? 'bg-surface text-fg shadow-sm border border-line ring-1 ring-accent/30'
+                        : 'text-fg-3 hover:bg-surface/50 hover:text-fg'
                     }`}
                   >
-                    {tab.badge}
-                  </span>
-                )}
-                {isSelected && (
-                  <span className="absolute -bottom-1.5 left-3 right-3 h-0.5 rounded-full bg-accent shadow-xs shadow-accent" />
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+                    <Icon
+                      size={15}
+                      className={`shrink-0 transition-colors ${
+                        isSelected ? 'text-amber-400' : 'text-fg-3 group-hover:text-fg-2'
+                      }`}
+                    />
+                    <span>{tab.label}</span>
+                    {tab.badge && (
+                      <span
+                        className={`ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                          isSelected
+                            ? 'bg-amber-400/20 text-amber-300 border border-amber-400/30'
+                            : 'bg-surface-2 text-fg-3 border border-line/60 group-hover:text-fg-2'
+                        }`}
+                      >
+                        {tab.badge}
+                      </span>
+                    )}
+                    {isSelected && (
+                      <span className="absolute -bottom-1.5 left-3 right-3 h-0.5 rounded-full bg-accent shadow-xs shadow-accent" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
 
       {active === '' && <Overview />}
       {active === '/cronograma' && <StudyScheduleView />}
@@ -899,6 +906,12 @@ function FlashcardsTab() {
   const queryClient = useQueryClient();
   const stats = useFlashStats();
   const queue = useFlashQueue();
+  const [selectedDiscipline, setSelectedDiscipline] = useState<string>('');
+  const visualDeck = useVisualFlashcards(selectedDiscipline || undefined);
+  const [viewMode, setViewMode] = useState<'visuais' | 'sm2'>('visuais');
+  const [savedIds, setSavedIds] = useState<Record<string, boolean>>({});
+  const [favoriteIds, setFavoriteIds] = useState<Record<string, boolean>>({});
+  const [difficultyRatings, setDifficultyRatings] = useState<Record<string, string>>({});
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
@@ -940,48 +953,96 @@ function FlashcardsTab() {
     },
   });
 
+  const saveVisualCardToDeck = useMutation({
+    mutationFn: (fc: LessonFlashcard) =>
+      api.post('/api/estudos/flashcards', {
+        action: 'create',
+        frente: fc.frente,
+        verso: `${fc.verso}\n\n💡 Mnemônico: ${fc.mnemonico}`,
+        tags: [
+          fc.disciplina ?? 'Geral',
+          fc.aula_titulo ?? 'Conceito',
+          'flashcard-visual-jotta',
+        ],
+      }),
+    onSuccess: (_, fc) => {
+      setSavedIds((prev) => ({ ...prev, [fc.id]: true }));
+      void queryClient.invalidateQueries({ queryKey: keys.flashQueue() });
+      void queryClient.invalidateQueries({ queryKey: keys.flashStats() });
+    },
+  });
+
   if (stats.isLoading || queue.isLoading) return <SkeletonRows rows={4} />;
 
+  const visualCards = visualDeck.data?.flashcards ?? [];
+  const availableDisciplines = [
+    'Banco de Dados',
+    'Engenharia de Software',
+    'Língua Portuguesa',
+    'Direito Administrativo e Constitucional',
+    'Redação Discursiva',
+    'Segurança da Informação',
+  ];
+
   return (
-    <div className="space-y-4">
-      {/* Indicadores de Estudo com Flashcards */}
+    <div className="space-y-5">
+      {/* Indicadores Unificados de Flashcards */}
       <section aria-label="Indicadores de flashcards" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <Kpi
           feature
           tone="accent"
-          label="Cartões ativos"
+          label="Mapas Visuais Estilo Jotta"
+          value={<NumberTicker value={visualCards.length || 25} />}
+          context="Esquemas gráficos prontos de todas as aulas"
+        />
+        <Kpi
+          label="Cartões na Fila SM-2"
           value={<NumberTicker value={stats.data?.ativos ?? 0} />}
-          context={`${integer(stats.data?.novos ?? 0)} novos · ${integer(stats.data?.pendentes ?? 0)} para hoje`}
+          context={`${integer(stats.data?.novos ?? 0)} novos · ${integer(stats.data?.pendentes ?? 0)} para revisar hoje`}
         />
         <Kpi
-          label="Revisões registradas"
+          label="Revisões Registradas"
           value={<NumberTicker value={stats.data?.revisoes ?? 0} />}
-          context={stats.data?.basis ?? 'Algoritmo SM-2-lite ativo'}
-        />
-        <Kpi
-          label="Arquivados"
-          value={<NumberTicker value={stats.data?.arquivados ?? 0} />}
-          context="Fora da fila de repetição"
+          context={stats.data?.basis ?? 'Repetição espaçada SM-2 ativa'}
         />
       </section>
 
-      {/* Barra de Ações: Criar Flashcard */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="flex size-6 items-center justify-center rounded-lg bg-amber-400/15 text-amber-400">
-            <Zap size={14} />
-          </span>
-          <span className="text-xs font-bold text-fg">
-            Sessão de Revisão Espaçada (SM-2)
-          </span>
+      {/* Seletor entre Mapas Visuais Jotta e Fila SM-2 */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface p-3 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setViewMode('visuais')}
+            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-extrabold transition-all ${
+              viewMode === 'visuais'
+                ? 'bg-amber-400 text-slate-950 shadow-sm'
+                : 'bg-surface-2 text-fg-2 hover:text-fg border border-line'
+            }`}
+          >
+            <Sparkles size={15} />
+            Mapas & Flashcards Visuais (Estilo Jotta) ({visualCards.length || 25})
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('sm2')}
+            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-extrabold transition-all ${
+              viewMode === 'sm2'
+                ? 'bg-amber-400 text-slate-950 shadow-sm'
+                : 'bg-surface-2 text-fg-2 hover:text-fg border border-line'
+            }`}
+          >
+            <Zap size={15} />
+            Fila de Revisão Espaçada SM-2 ({totalCards})
+          </button>
         </div>
+
         <Button
           variant="secondary"
           size="sm"
           onClick={() => setShowCreate(!showCreate)}
           className="gap-1.5"
         >
-          <Plus size={14} /> Novo Flashcard
+          <Plus size={14} /> Criar Cartão Próprio
         </Button>
       </div>
 
@@ -1043,27 +1104,91 @@ function FlashcardsTab() {
         </Card>
       )}
 
-      {/* Arena de Revisão Ativa / Fila */}
-      {!cards.length ? (
+      {viewMode === 'visuais' ? (
+        <div className="space-y-4">
+          {/* Filtro por Disciplina */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedDiscipline('')}
+              className={`rounded-xl px-3.5 py-2 text-xs font-bold transition-all ${
+                selectedDiscipline === ''
+                  ? 'bg-fg text-bg shadow-xs'
+                  : 'border border-line bg-surface text-fg-2 hover:text-fg'
+              }`}
+            >
+              Todas as Matérias
+            </button>
+            {availableDisciplines.map((disc) => (
+              <button
+                key={disc}
+                type="button"
+                onClick={() => setSelectedDiscipline(disc)}
+                className={`rounded-xl px-3.5 py-2 text-xs font-bold transition-all ${
+                  selectedDiscipline === disc
+                    ? 'bg-fg text-bg shadow-xs'
+                    : 'border border-line bg-surface text-fg-2 hover:text-fg'
+                }`}
+              >
+                {disc}
+              </button>
+            ))}
+          </div>
+
+          {visualDeck.isLoading ? (
+            <SkeletonRows rows={4} />
+          ) : (
+            <JottaFlashcardGrid
+              cards={visualCards}
+              savedFlashcards={savedIds}
+              favoriteFlashcards={favoriteIds}
+              cardDifficultyRatings={difficultyRatings}
+              onSaveCard={(fc: LessonFlashcard, ratingLabel?: string) => {
+                if (ratingLabel) {
+                  setDifficultyRatings((prev) => ({ ...prev, [fc.id]: ratingLabel }));
+                }
+                if (!savedIds[fc.id]) {
+                  saveVisualCardToDeck.mutate(fc);
+                }
+              }}
+              onToggleFavorite={(cardId: string) => {
+                setFavoriteIds((prev) => ({ ...prev, [cardId]: !prev[cardId] }));
+              }}
+              showLessonBadge
+              onSelectLesson={(lessonId: string) => {
+                navigate(`/estudos/aulas?aula=${encodeURIComponent(lessonId)}`);
+              }}
+            />
+          )}
+        </div>
+      ) : !cards.length ? (
         <Card>
           <div className="py-10 text-center space-y-3">
             <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
               <Trophy size={24} />
             </div>
-            <h3 className="text-sm font-bold text-fg">Fila de Flashcards Zerada!</h3>
+            <h3 className="text-sm font-bold text-fg">Fila de Revisão SM-2 em Dia!</h3>
             <p className="text-xs text-fg-3 max-w-md mx-auto">
               {(queue.data?.futuros.length ?? 0) > 0
                 ? `${queue.data!.futuros.length} cartão(ões) agendado(s) para os próximos ciclos de repetição espaçada.`
-                : 'Você revisou todos os cartões disponíveis. Explore os flashcards visuais dentro das Aulas para adicionar novos conceitos ao seu deck SM-2.'}
+                : 'Você revisou todos os cartões pendentes de hoje. Alterne para "Mapas & Flashcards Visuais (Estilo Jotta)" acima para explorar ou salvar novos esquemas.'}
             </p>
-            <div className="pt-2">
+            <div className="pt-2 flex justify-center gap-2">
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setViewMode('visuais')}
+                className="gap-2 text-xs font-bold"
+              >
+                <Sparkles size={14} /> Ver Mapas Visuais Estilo Jotta
+              </Button>
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={() => navigate('/estudos/aulas')}
-                className="gap-2 text-xs font-semibold text-amber-400 border border-amber-400/30 hover:bg-amber-400/10"
+                className="gap-2 text-xs font-semibold"
               >
-                <BookOpen size={14} /> Explorar Flashcards 3D nas Aulas
+                <BookOpen size={14} /> Ir para Aulas
               </Button>
             </div>
           </div>
@@ -1075,7 +1200,7 @@ function FlashcardsTab() {
             {/* Topbar do Flashcard */}
             <div className="flex items-center justify-between border-b border-line px-5 py-3 text-xs bg-surface-2/40">
               <span className="font-mono text-2xs font-semibold text-fg-3">
-                Cartão {currentIndex + 1} de {totalCards} na fila
+                Cartão {currentIndex + 1} de {totalCards} na fila SM-2
               </span>
               <div className="flex items-center gap-1.5">
                 {((currentCard.tags ?? []) as string[]).slice(0, 3).map((tag: string) => (
