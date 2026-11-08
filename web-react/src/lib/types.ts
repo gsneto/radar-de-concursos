@@ -761,15 +761,41 @@ export interface LessonSummary {
   questoes_count: number;
 }
 
+export interface LessonVideo {
+  titulo: string;
+  canal: string;
+  duracao: string;
+  youtube_id: string;
+  descricao?: string;
+}
+
+export interface LessonFlashcard {
+  id: string;
+  frente: string;
+  verso: string;
+  mnemonico?: string;
+  tag: string;
+}
+
+export interface LessonSummaryTable {
+  titulo: string;
+  colunas: string[];
+  linhas: string[][];
+}
+
 export interface LessonDetail {
   id: string;
   disciplina: string;
   titulo: string;
   objetivos: string[];
   teoria_resumida: string;
+  tabela_resumo?: LessonSummaryTable;
+  videoaulas?: LessonVideo[];
+  flashcards?: LessonFlashcard[];
   radiografia_bancas: Record<string, string>;
   pontos_criticos: string[];
   questoes_ids: string[];
+  questoes_count?: number;
 }
 
 export interface BancaProfile {

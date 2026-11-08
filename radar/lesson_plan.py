@@ -659,6 +659,62 @@ As Formas Normais (FN) visam evitar anomalias de inserção, exclusão e modific
             "Não confunda chave primária (PK) com chave estrangeira (FK): a chave estrangeira pode aceitar valores nulos (a menos que haja restrição NOT NULL).",
             "Normalização reduz redundância, mas excesso de joins em consultas pode degradar performance, gerando a necessidade de desnormalização controlada em data warehouses.",
         ],
+                "tabela_resumo": {
+            "titulo": "Resumo Comparativo das Formas Normais",
+            "colunas": ["Forma Normal", "Requisito Fundamental", "O que Elimina", "Pegadinha Frequente"],
+            "linhas": [
+                ["1FN", "Atributos atômicos e indivisíveis", "Grupos repetitivos e campos multivalorados", "Telefones separados por vírgula violam a 1FN"],
+                ["2FN", "Estar na 1FN + dependência total da PK", "Dependência parcial de chaves compostas", "Se a PK for simples (1 coluna), estando na 1FN já está na 2FN"],
+                ["3FN", "Estar na 2FN + sem dependência transitiva", "Dependência entre colunas não-chave", "Atributo não-chave determinando outro não-chave"],
+                ["BCNF", "Todo determinante de DF deve ser chave candidata", "Anomalias de dependência funcional composta", "Mais restritiva que a 3FN tradicional"],
+            ]
+        },
+        "videoaulas": [
+            {
+                "titulo": "Modelagem de Dados e Formas Normais (1FN, 2FN e 3FN) para Concursos",
+                "canal": "Curso em Vídeo",
+                "duracao": "26 min",
+                "youtube_id": "Ofktsne-utM",
+                "descricao": "Aula didática passo a passo explicando como transformar tabelas não normalizadas em 1FN, 2FN e 3FN sem perda de dados."
+            },
+            {
+                "titulo": "Banco de Dados para FGV e Cebraspe - Questões Comentadas de Normalização",
+                "canal": "Gran Concursos TI",
+                "duracao": "34 min",
+                "youtube_id": "K_Qkxv_C34k",
+                "descricao": "Resolução de questões de alto nível focando nas armadilhas de dependência parcial e transitiva."
+            }
+        ],
+        "flashcards": [
+            {
+                "id": "fc-bd-01",
+                "frente": "Qual a exigência mandatória da Primeira Forma Normal (1FN)?",
+                "verso": "Todos os atributos devem ser ATÔMICOS (indivisíveis) e monovalorados. Proíbe listas, arrays ou campos separados por vírgula.",
+                "mnemonico": "1FN = Átomo único (sem vírgulas nem coleções)",
+                "tag": "Banco de Dados"
+            },
+            {
+                "id": "fc-bd-02",
+                "frente": "Uma tabela na 1FN com chave primária SIMPLES (1 atributo) já está na 2FN?",
+                "verso": "SIM! A 2FN proíbe dependência PARCIAL. Se a chave primária só tem um atributo, não existe como depender de apenas uma fração dela.",
+                "mnemonico": "PK Simples na 1FN ➔ Automaticamente 2FN",
+                "tag": "Banco de Dados"
+            },
+            {
+                "id": "fc-bd-03",
+                "frente": "Como identificar uma violação da Terceira Forma Normal (3FN)?",
+                "verso": "Quando existe dependência TRANSITIVA entre atributos não-chave: um campo comum determina outro campo comum (A ➔ B e B ➔ C).",
+                "mnemonico": "3FN = Proibida ponte entre atributos não-chaves",
+                "tag": "Banco de Dados"
+            },
+            {
+                "id": "fc-bd-04",
+                "frente": "Em qual situação a normalização pode ser desfavorável na prática?",
+                "verso": "Em sistemas analíticos (Data Warehouses / OLAP): o excesso de JOINs degrada a performance de leitura, justificando a desnormalização controlada.",
+                "mnemonico": "OLTP = Normalizado (3FN) | OLAP = Desnormalizado (Star Schema)",
+                "tag": "Banco de Dados"
+            }
+        ],
         "questoes_ids": ["q-fgv-bd-01", "q-ceb-bd-01", "q-qdx-bd-01"],
     },
     {
@@ -694,6 +750,55 @@ A linguagem SQL (Structured Query Language) opera sobre conjuntos relacionais:
             "O `COUNT(*)` conta linhas nulas, enquanto `COUNT(coluna)` ignora valores `NULL`.",
             "Em operações com `NULL`, comparações como `= NULL` retornam nulo/falso: deve-se usar `IS NULL` ou `IS NOT NULL`.",
         ],
+                "tabela_resumo": {
+            "titulo": "Guia de Sobrevivência em SQL para Provas",
+            "colunas": ["Comando / Cláusula", "Classificação", "Comportamento Chave", "Cai na Banca Como..."],
+            "linhas": [
+                ["DELETE vs TRUNCATE", "DML vs DDL", "DELETE aceita WHERE e gera log; TRUNCATE zera a tabela inteira e reseta sequence", "Afirmar que TRUNCATE aceita WHERE (Falso!)"],
+                ["WHERE vs HAVING", "Filtro", "WHERE filtra antes do agrupamento; HAVING filtra grupos após GROUP BY", "Usar função de agregação como COUNT() no WHERE (Erro!)"],
+                ["LEFT JOIN", "Junção Externa", "Retorna tudo da esquerda + correspondentes da direita (NULL onde faltar)", "Identificar registros órfãos usando WHERE direita.id IS NULL"],
+                ["COUNT(*) vs COUNT(col)", "Agregação", "COUNT(*) conta todas as linhas; COUNT(col) ignora nulos", "Pegadinha de total de linhas com valores NULL"],
+            ]
+        },
+        "videoaulas": [
+            {
+                "titulo": "SQL do Zero ao Avançado para Concursos de TI",
+                "canal": "Prof. Concursos TI",
+                "duracao": "38 min",
+                "youtube_id": "8H6Qk8gU0L0",
+                "descricao": "Ordem lógica de execução das cláusulas SQL (FROM, WHERE, GROUP BY, HAVING, SELECT, ORDER BY) e tipos de JOIN."
+            },
+            {
+                "titulo": "Subconsultas e Funções de Janela (Window Functions) na FGV",
+                "canal": "Estratégia Concursos",
+                "duracao": "29 min",
+                "youtube_id": "3pvdc_GkH88",
+                "descricao": "Dominando ROW_NUMBER(), RANK(), DENSE_RANK() e subqueries correlacionadas que mais caem em TI."
+            }
+        ],
+        "flashcards": [
+            {
+                "id": "fc-sql-01",
+                "frente": "Qual a ordem lógica real de processamento de uma query SQL?",
+                "verso": "1. FROM ➔ 2. WHERE ➔ 3. GROUP BY ➔ 4. HAVING ➔ 5. SELECT ➔ 6. DISTINCT ➔ 7. ORDER BY ➔ 8. LIMIT.",
+                "mnemonico": "FW-GHSL: From, Where, Group, Having, Select, Limit",
+                "tag": "SQL"
+            },
+            {
+                "id": "fc-sql-02",
+                "frente": "Por que 'SELECT * FROM tabela WHERE COUNT(id) > 5' é inválido?",
+                "verso": "Porque funções de agregação como COUNT, SUM, AVG só podem ser filtradas na cláusula HAVING, nunca no WHERE.",
+                "mnemonico": "WHERE = Linha a linha | HAVING = Grupos agregados",
+                "tag": "SQL"
+            },
+            {
+                "id": "fc-sql-03",
+                "frente": "Qual a diferença essencial entre INNER JOIN e LEFT JOIN?",
+                "verso": "INNER JOIN retorna apenas a interseção (match dos dois lados). LEFT JOIN preserva 100% da tabela esquerda mesmo sem par na direita.",
+                "mnemonico": "INNER = Apenas pares completos | LEFT = Esquerda garantida",
+                "tag": "SQL"
+            }
+        ],
         "questoes_ids": ["q-fgv-sql-01", "q-ceb-sql-01", "q-ibfc-sql-01"],
     },
     {
@@ -726,6 +831,54 @@ O Manifesto Ágil prioriza: indivíduos e interações sobre processos e ferrame
             "O Scrum Master NÃO é gerente de projetos: ele não cobra tarefas, ele remove impedimentos e ensina agilidade.",
             "A Sprint não deve ser alterada durante sua execução se isso colocar em risco a Meta da Sprint (Sprint Goal).",
             "Kanban não possui papéis fixos nem timeboxes obrigatórios como o Scrum: o foco do Kanban é no fluxo contínuo.",
+        ],
+                "tabela_resumo": {
+            "titulo": "Scrum vs Kanban vs XP: Diferenças Essenciais",
+            "colunas": ["Framework", "Papéis Definidos", "Ritmo de Entrega", "Métrica / Foco Principal"],
+            "linhas": [
+                ["Scrum", "Product Owner, Scrum Master, Developers", "Sprints fixas (timebox de 1 a 4 semanas)", "Sprint Goal e Velocity da equipe"],
+                ["Kanban", "Sem papéis pré-definidos", "Fluxo contínuo (puxado)", "Limitação de WIP e redução do Lead Time"],
+                ["XP (Extreme)", "Equipe com foco em engenharia", "Iterações curtas (1 a 2 semanas)", "Qualidade técnica (TDD, Pair Programming, CI)"],
+            ]
+        },
+        "videoaulas": [
+            {
+                "titulo": "Scrum Guide Completo para Concursos Públicos",
+                "canal": "Gabaritando TI",
+                "duracao": "31 min",
+                "youtube_id": "2gA9WqFv_0s",
+                "descricao": "Papéis, eventos e artefatos atualizados do Scrum Guide oficial com dicas de como as bancas tentam confundir."
+            },
+            {
+                "titulo": "Kanban e Práticas de DevOps (CI/CD) Explicados",
+                "canal": "Prof. Fernando Pedrosa",
+                "duracao": "24 min",
+                "youtube_id": "W1vL6v1MsqA",
+                "descricao": "Fluxo puxado, limites de WIP, Lead Time vs Cycle Time e automação de pipelines com Docker e Git."
+            }
+        ],
+        "flashcards": [
+            {
+                "id": "fc-es-01",
+                "frente": "No Scrum, quem é o único responsável pela gestão e priorização do Product Backlog?",
+                "verso": "O Product Owner (PO). Nem o Scrum Master nem os Desenvolvedores decidem a prioridade dos itens de negócio.",
+                "mnemonico": "PO = Dono do 'O Quê' | Time = Dono do 'Como'",
+                "tag": "Engenharia de Software"
+            },
+            {
+                "id": "fc-es-02",
+                "frente": "O Scrum Master pode atribuir tarefas aos desenvolvedores?",
+                "verso": "NÃO! O time é auto-gerenciável e auto-organizado. O Scrum Master é um líder servidor que remove impedimentos.",
+                "mnemonico": "Scrum Master facilita, orienta e remove barreiras; NUNCA manda",
+                "tag": "Engenharia de Software"
+            },
+            {
+                "id": "fc-es-03",
+                "frente": "Qual o objetivo central de limitar o WIP (Work In Progress) no Kanban?",
+                "verso": "Evitar gargalos, expor impedimentos e reduzir o tempo total de ciclo (Lead Time), garantindo que tarefas sejam concluídas antes de novas começarem.",
+                "mnemonico": "'Pare de começar e comece a terminar'",
+                "tag": "Engenharia de Software"
+            }
         ],
         "questoes_ids": ["q-fgv-agil-01", "q-ceb-agil-01", "q-qdx-agil-01"],
     },
@@ -762,6 +915,54 @@ O Manifesto Ágil prioriza: indivíduos e interações sobre processos e ferrame
             "Strategy permite trocar algoritmos em tempo de execução encapsulando cada um em uma classe separada.",
             "Em microsserviços, cada serviço deve ter seu próprio banco de dados para evitar acoplamento oculto.",
         ],
+                "tabela_resumo": {
+            "titulo": "Classificação dos Padrões GoF Mais Cobrados",
+            "colunas": ["Categoria", "Padrões Clássicos", "Intenção / Propósito", "Exemplo Típico em Concursos"],
+            "linhas": [
+                ["Criacionais", "Singleton, Factory Method, Abstract Factory, Builder", "Isolar a criação de objetos da sua representação", "Garantir única conexão de banco (Singleton)"],
+                ["Estruturais", "Adapter, Decorator, Facade, Composite, Proxy", "Composição flexível de classes e interfaces", "Adicionar funcionalidade sem herança (Decorator)"],
+                ["Comportamentais", "Observer, Strategy, State, Command, Template Method", "Distribuição de algoritmos e fluxo de mensagens", "Trocar algoritmo de cálculo em runtime (Strategy)"],
+            ]
+        },
+        "videoaulas": [
+            {
+                "titulo": "Padrões de Projeto GoF Descomplicados para Concursos",
+                "canal": "Fábio Araújo - Concursos TI",
+                "duracao": "36 min",
+                "youtube_id": "3pvdc_GkH88",
+                "descricao": "Diferença prática entre Strategy vs State, Adapter vs Facade e Decorator vs Proxy com diagramas UML."
+            },
+            {
+                "titulo": "Princípios SOLID com Exemplos Práticos de Código",
+                "canal": "Código Fonte TV",
+                "duracao": "27 min",
+                "youtube_id": "6SfrO3mMvKU",
+                "descricao": "Cada uma das 5 letras do SOLID explicada com código claro e violações comuns que caem em provas."
+            }
+        ],
+        "flashcards": [
+            {
+                "id": "fc-gof-01",
+                "frente": "Qual a diferença entre os padrões Adapter e Facade?",
+                "verso": "Adapter CONVERTE uma interface incompatível para que classes colaborem. Facade SIMPLIFICA uma interface complexa de um subsistema.",
+                "mnemonico": "Adapter = Adaptador de tomada | Facade = Fachada limpa do prédio",
+                "tag": "Padrões de Projeto"
+            },
+            {
+                "id": "fc-gof-02",
+                "frente": "Qual padrão GoF implementa o padrão de publicação/assinatura (Pub/Sub)?",
+                "verso": "Observer. Permite que um sujeito notifique múltiplos observadores automaticamente quando seu estado muda.",
+                "mnemonico": "Observer = Notificador de eventos / YouTube notify",
+                "tag": "Padrões de Projeto"
+            },
+            {
+                "id": "fc-gof-03",
+                "frente": "O que preconiza o Princípio Aberto/Fechado (Open/Closed - O do SOLID)?",
+                "verso": "Entidades de software devem estar ABERTAS para extensão, mas FECHADAS para modificação. Adicione novas classes sem alterar código testado.",
+                "mnemonico": "Open p/ novidades | Closed p/ cirurgias no código existente",
+                "tag": "SOLID"
+            }
+        ],
         "questoes_ids": ["q-fgv-gof-01", "q-ceb-gof-01", "q-ibfc-gof-01"],
     },
     {
@@ -793,6 +994,55 @@ A interpretação textual em concursos de alto nível não mede sua opinião pes
             "'Conquanto' é conjunção CONCESSIVA (equivale a 'embora'), e não causal ou conclusiva.",
             "O pronome relativo 'onde' SÓ pode ser usado para se referir a lugares físicos concretos. Em situações abstratas, usa-se 'em que', 'no qual', 'na qual'.",
             "Cuidado com a expressão 'prejuízo para a correção gramatical' vs 'prejuízo para o sentido original': muitas substituições mantêm a gramática correta, mas alteram a nuance de significado.",
+        ],
+                "tabela_resumo": {
+            "titulo": "Tabela de Ouro dos Conectivos em Provas",
+            "colunas": ["Valor Semântico", "Conjunções Principais", "Atenção Especial", "Pegadinha Clássica"],
+            "linhas": [
+                ["Concessão", "embora, conquanto, ainda que, mesmo que, posto que", "Quebra expectativa sem anular o fato", "'Conquanto' é concessivo, nunca causal"],
+                ["Adversidade", "mas, porém, contudo, todavia, entretanto, no entanto", "Contrapõe ideias (o segundo fato prevalece)", "'Mas' não pode vir após vírgula deslocado"],
+                ["Causa", "porque, já que, visto que, como (no início), porquanto", "Fato anterior que gera o efeito", "'Porquanto' é causal/explicativo; 'Conquanto' é concessivo"],
+                ["Condição", "se, caso, desde que (+ subjuntivo), contanto que", "Hipótese necessária", "Exige verbo no subjuntivo"],
+            ]
+        },
+        "videoaulas": [
+            {
+                "titulo": "Interpretação e Semântica de Texto para FGV e Cebraspe",
+                "canal": "Português com Letícia",
+                "duracao": "32 min",
+                "youtube_id": "W1vL6v1MsqA",
+                "descricao": "Como não cair nas pegadinhas de extrapolação e contradição em enunciados longos e densos."
+            },
+            {
+                "titulo": "Conjunções e Relações Semânticas que Mais Caem",
+                "canal": "Prof. Noslen",
+                "duracao": "25 min",
+                "youtube_id": "Y07Z2Y9s_iI",
+                "descricao": "Diferença definitiva entre conjunções concessivas, adversativas, causais e consecutivas."
+            }
+        ],
+        "flashcards": [
+            {
+                "id": "fc-port-01",
+                "frente": "Qual a diferença de sentido entre 'conquanto' e 'porquanto'?",
+                "verso": "'Conquanto' = CONCESSÃO (equivale a 'embora'). 'Porquanto' = CAUSA / EXPLICAÇÃO (equivale a 'porque').",
+                "mnemonico": "CONquanto = CONcessão | PORquanto = PORque",
+                "tag": "Português"
+            },
+            {
+                "id": "fc-port-02",
+                "frente": "Em quais casos o pronome relativo 'onde' pode ser empregado segundo a norma culta?",
+                "verso": "EXCLUSIVAMENTE para indicar espaço físico delimitado concreto (ex: 'A cidade onde nasci'). Em termos abstratos, usa-se 'em que' ou 'no qual'.",
+                "mnemonico": "Onde = Lugar físico que você toca/pisa",
+                "tag": "Português"
+            },
+            {
+                "id": "fc-port-03",
+                "frente": "A substituição de conectivos mantém a correção gramatical e o sentido original?",
+                "verso": "Muitas vezes mantém a gramática, mas ALTERA a relação de sentido (ex: trocar 'porque' por 'portanto' inverte causa e consequência). Cuidado com o comando da questão!",
+                "mnemonico": "Gramática pode continuar válida mesmo invertendo o sentido!",
+                "tag": "Português"
+            }
         ],
         "questoes_ids": ["q-fgv-port-01", "q-ceb-port-01", "q-qdx-port-01"],
     },
@@ -831,7 +1081,234 @@ O Art. 5º da CF/88 consagra os direitos fundamentais individuais e coletivos pa
             "Ação Popular só pode ser proposta por CIDADÃO (pessoa física no pleno gozo dos direitos políticos com título de eleitor). Pessoa jurídica NÃO pode propor Ação Popular (Súmula 365 STF).",
             "A quebra do sigilo das comunicações telefônicas (interceptação) exige ordem judicial, para fins de investigação criminal ou instrução processual penal, na forma da lei (não cabe em processo civil ou administrativo puro).",
         ],
+                "tabela_resumo": {
+            "titulo": "Quadro Comparativo dos 5 Remédios Constitucionais",
+            "colunas": ["Remédio", "Direito Protegido", "Legitimidade Ativa", "Custas Judiciais", "Prazo / Requisito"],
+            "linhas": [
+                ["Habeas Corpus", "Liberdade de locomoção (ir e vir)", "Qualquer pessoa (física ou jurídica)", "Gratuito (dispensa advogado)", "Não tem prazo decadencial"],
+                ["Habeas Data", "Acesso ou retificação de dados pessoais", "Apenas a própria pessoa (personalíssimo)", "Gratuito", "Exige recusa administrativa prévia"],
+                ["Mandado de Segurança", "Direito líquido e certo não amparado por HC/HD", "Pessoa física ou jurídica prejudicada", "Pago (salvo gratuidade da justiça)", "Prazo decadencial de 120 dias"],
+                ["Mandado de Injunção", "Falta de norma regulamentadora de direito", "Titular do direito inviabilizado", "Pago (processo civil)", "Necessita de omissão legislativa"],
+                ["Ação Popular", "Patrimônio público, moralidade e meio ambiente", "Apenas CIDADÃO (com título eleitoral)", "Gratuita (salvo comprovada má-fé)", "Pessoa jurídica NÃO tem legitimidade"],
+            ]
+        },
+        "videoaulas": [
+            {
+                "titulo": "Remédios Constitucionais Esquematizados (Art. 5º da CF)",
+                "canal": "Estratégia Concursos",
+                "duracao": "33 min",
+                "youtube_id": "Y07Z2Y9s_iI",
+                "descricao": "Quadro mnemônico dos remédios constitucionais com jurisprudência atualizada do STF e STJ."
+            },
+            {
+                "titulo": "Inviolabilidade de Domicílio e Sigilos no STF",
+                "canal": "Gran Cursos Online",
+                "duracao": "28 min",
+                "youtube_id": "Ofktsne-utM",
+                "descricao": "As 4 exceções da entrada forçada em domicílio (Art. 5º, XI) e a tese de repercussão geral do STF."
+            }
+        ],
+        "flashcards": [
+            {
+                "id": "fc-dir-01",
+                "frente": "Pessoa Jurídica (empresa ou associação) pode ajuizar Ação Popular?",
+                "verso": "NÃO! Ação Popular é remédio privativo do CIDADÃO (pessoa física no pleno exercício dos direitos políticos). Súmula 365 do STF.",
+                "mnemonico": "Ação Popular = Exclusivo de quem vota (tem título)",
+                "tag": "Direito Constitucional"
+            },
+            {
+                "id": "fc-dir-02",
+                "frente": "Quando é permitida a entrada na casa do indivíduo sem seu consentimento?",
+                "verso": "A qualquer hora: flagrante delito, desastre ou socorro. Durante o dia (apenas): por determinação JUDICIAL.",
+                "mnemonico": "Noite = FDS (Flagrante, Desastre, Socorro). Juiz = Só de dia!",
+                "tag": "Direito Constitucional"
+            },
+            {
+                "id": "fc-dir-03",
+                "frente": "Qual o requisito indispensável para impetrar Habeas Data?",
+                "verso": "A prova da RECUSA ou omissão da autoridade administrativa em fornecer ou retificar a informação (Súmula Vinculante 2 do STF).",
+                "mnemonico": "Sem pedido negado na administração = Sem Habeas Data",
+                "tag": "Direito Constitucional"
+            }
+        ],
         "questoes_ids": ["q-ceb-dir-01", "q-fgv-dir-01", "q-ibfc-dir-01"],
+    },
+    {
+        "id": "red-01",
+        "disciplina": "Redes de Computadores",
+        "titulo": "Aula 01: Arquitetura em Camadas (Modelo OSI vs TCP/IP), Protocolos e Roteamento",
+        "objetivos": [
+            "Dominar as 7 camadas do Modelo OSI e as 4 camadas da arquitetura TCP/IP.",
+            "Diferenciar perfeitamente TCP (orientado a conexão) de UDP (não orientado, baixa latência).",
+            "Conhecer protocolos essenciais e suas portas padrão: DNS (53), DHCP (67/68), HTTP (80), HTTPS (443), SSH (22)."
+        ],
+        "teoria_resumida": """
+O Modelo OSI (Open Systems Interconnection) da ISO padronizou a comunicação em 7 camadas lógicas:
+1. Física (bits e meios de transmissão)
+2. Enlace (quadros/frames, endereços MAC, switches L2)
+3. Rede (pacotes, endereçamento IP, roteamento L3)
+4. Transporte (segmentos, TCP/UDP, confiabilidade fim a fim)
+5. Sessão (estabelecimento e controle de sessões)
+6. Apresentação (criptografia, compressão e formatação de dados)
+7. Aplicação (interface com o usuário: HTTP, DNS, SMTP, FTP)
+
+A arquitetura prática TCP/IP simplifica para 4 camadas: Acesso à Rede (Física + Enlace), Internet (Rede), Transporte e Aplicação (Sessão + Apresentação + Aplicação).
+
+- **TCP vs UDP:**
+  - **TCP (Transmission Control Protocol):** Confiável, orientado a conexão, realiza three-way handshake (SYN, SYN-ACK, ACK), controle de fluxo (Janela Deslizante) e controle de congestionamento.
+  - **UDP (User Datagram Protocol):** Não confiável, sem conexão, sem controle de fluxo, com cabeçalho reduzido (8 bytes contra 20 bytes do TCP). Ideal para streaming de voz/vídeo (VoIP) e DNS rápido.
+""",
+        "tabela_resumo": {
+            "titulo": "Comparativo Modelo OSI vs TCP/IP e Unidades de Dados (PDU)",
+            "colunas": ["Camada OSI", "Camada TCP/IP", "Unidade de Dados (PDU)", "Protocolos / Equipamentos"],
+            "linhas": [
+                ["Aplicação / Apresentação / Sessão", "Aplicação", "Dados / Mensagem", "HTTP, HTTPS (443), DNS (53), SSH (22), SMTP (587)"],
+                ["Transporte", "Transporte", "Segmento", "TCP (Conexão e Controle) e UDP (Velocidade e Datagrama)"],
+                ["Rede", "Internet", "Pacote", "IP (IPv4/IPv6), ICMP (Ping), Roteadores L3"],
+                ["Enlace", "Acesso à Rede", "Quadro (Frame)", "Ethernet, Endereço MAC (48 bits), Switches L2"],
+                ["Física", "Acesso à Rede", "Bits", "Cabos, Fibra óptica, Hubs, Modulação"],
+            ]
+        },
+        "videoaulas": [
+            {
+                "titulo": "Modelo OSI e TCP/IP na Prática para Concursos de TI",
+                "canal": "Prof. Concursos TI",
+                "duracao": "35 min",
+                "youtube_id": "Vcb5F4P7eFw",
+                "descricao": "Mnemônico infalível das 7 camadas do modelo OSI e fluxo de encapsulamento e desencapsulamento."
+            },
+            {
+                "titulo": "TCP vs UDP e Three-Way Handshake Explicados",
+                "canal": "Gabaritando TI",
+                "duracao": "22 min",
+                "youtube_id": "K_Qkxv_C34k",
+                "descricao": "Como o handshake SYN / SYN-ACK / ACK funciona e como o Cebraspe tenta enganar o candidato."
+            }
+        ],
+        "flashcards": [
+            {
+                "id": "fc-red-01",
+                "frente": "Qual a ordem das 7 camadas do Modelo OSI da mais baixa à mais alta?",
+                "verso": "1. Física ➔ 2. Enlace ➔ 3. Rede ➔ 4. Transporte ➔ 5. Sessão ➔ 6. Apresentação ➔ 7. Aplicação.",
+                "mnemonico": "'FERTS-AA' (Física, Enlace, Rede, Transporte, Sessão, Apresentação, Aplicação)",
+                "tag": "Redes"
+            },
+            {
+                "id": "fc-red-02",
+                "frente": "Como é chamada a Unidade de Dados (PDU) nas camadas 4, 3 e 2 do modelo OSI?",
+                "verso": "Camada 4 (Transporte) = SEGMENTO | Camada 3 (Rede) = PACOTE | Camada 2 (Enlace) = QUADRO (FRAME).",
+                "mnemonico": "Transporte Segmenta, Rede Pacota, Enlace Enquadra",
+                "tag": "Redes"
+            },
+            {
+                "id": "fc-red-03",
+                "frente": "Qual a sequência de flags do aperto de mão de três vias (Three-Way Handshake) do TCP?",
+                "verso": "1. Cliente envia SYN ➔ 2. Servidor responde SYN-ACK ➔ 3. Cliente confirma com ACK.",
+                "mnemonico": "SYN ➔ SYN-ACK ➔ ACK (Olá? ➔ Olá, ouvi! ➔ Confirmado!)",
+                "tag": "Redes"
+            }
+        ],
+        "radiografia_bancas": {
+            "fgv": "A FGV descreve uma topologia de rede corporativa e pergunta em qual camada do modelo OSI atua determinado filtro de firewall stateful ou balanceador de carga.",
+            "cebraspe": "O Cebraspe adora trocar as funções de TCP e UDP, ou afirmar que o UDP realiza controle de congestionamento (FALSO!).",
+            "quadrix": "A Quadrix cobra as portas padrão dos protocolos de rede mais utilizados.",
+            "ibfc": "O IBFC foca em qual camada do OSI pertence determinado protocolo (ex: ICMP pertence à camada de Rede)."
+        },
+        "pontos_criticos": [
+            "O protocolo ICMP (usado pelo comando ping) opera na Camada de Rede (Camada 3), encapsulado diretamente em pacotes IP.",
+            "O endereço MAC opera na Camada de Enlace (Camada 2) e possui 48 bits (6 bytes hexadecimais).",
+            "DNS opera primariamente sobre UDP na porta 53 para consultas rápidas, mas utiliza TCP para transferência de zona entre servidores."
+        ],
+        "questoes_ids": ["q-ceb-red-01", "q-fgv-red-01"]
+    },
+    {
+        "id": "seg-01",
+        "disciplina": "Segurança da Informação",
+        "titulo": "Aula 01: Princípios (CID), Criptografia Simétrica vs Assimétrica, Hash e OWASP",
+        "objetivos": [
+            "Dominar os 5 pilares da Segurança: Confidencialidade, Integridade, Disponibilidade, Autenticidade e Não-Repúdio.",
+            "Diferenciar criptografia de chave simétrica (AES, DES) de assimétrica (RSA, ECC, chaves pública e privada).",
+            "Compreender a assinatura digital (criptografa o hash com a chave PRIVADA do remetente) e vulnerabilidades OWASP Top 10."
+        ],
+        "teoria_resumida": """
+A Segurança da Informação apoia-se nos pilares CIDAN:
+- **Confidencialidade:** Sigilo contra acesso não autorizado (garantido por criptografia).
+- **Integridade:** Certeza de que o dado não foi alterado indevidamente (garantido por funções hash).
+- **Disponibilidade:** Acesso garantido aos usuários legítimos quando necessário (garantido por redundância e backups).
+- **Autenticidade:** Certeza da identidade do autor da mensagem/ação.
+- **Não-Repúdio (Irretratabilidade):** O autor não pode negar a autoria de uma ação (garantido por assinatura digital com certificado).
+
+- **Criptografia Simétrica vs Assimétrica:**
+  - **Simétrica (Chave Secreta):** Uma única chave para cifrar e decifrar (ex: AES, DES, 3DES, RC4). Muito rápida, ideal para grandes volumes de dados. Problema: distribuição segura da chave.
+  - **Assimétrica (Chave Pública):** Par de chaves matematicamente correlacionadas (ex: RSA, ECC, Diffie-Hellman). A chave pública cifra; a chave privada decifra (ou vice-versa). Mais lenta, resolve o problema de troca de chaves.
+
+- **Assinatura Digital (O que cai em 90% das provas!):**
+  1. O remetente gera um hash do documento.
+  2. O remetente cifra o hash com sua **CHAVE PRIVADA**. O resultado é a assinatura digital.
+  3. O destinatário decifra o hash usando a **CHAVE PÚBLICA** do remetente e confere se bate com o hash recalculado.
+  - Garante: Autenticidade, Integridade e Não-Repúdio (mas NÃO garante confidencialidade por si só!).
+""",
+        "tabela_resumo": {
+            "titulo": "Criptografia Simétrica vs Assimétrica vs Assinatura Digital",
+            "colunas": ["Mecanismo", "Chave Utilizada", "Garante Principalmente", "Exemplos Frequentes"],
+            "linhas": [
+                ["Criptografia Simétrica", "Mesma chave secreta para cifrar e decifrar", "Confidencialidade rápida de dados", "AES (padrão de mercado), DES, 3DES, ChaCha20"],
+                ["Criptografia Assimétrica", "Par de chaves: Pública (aberta) e Privada (secreta)", "Troca segura de chaves e confidencialidade", "RSA, ECC (Curvas Elípticas), Diffie-Hellman"],
+                ["Função Hash", "Sem chave (algoritmo unidirecional / one-way)", "Integridade do arquivo (detecta qualquer alteração)", "SHA-256, SHA-3, MD5 (inseguro/obsoleto)"],
+                ["Assinatura Digital", "Hash cifrado com a chave PRIVADA do autor", "Autenticidade, Integridade e Não-Repúdio", "Certificados Digitais padrão ICP-Brasil"],
+            ]
+        },
+        "videoaulas": [
+            {
+                "titulo": "Criptografia Simétrica e Assimétrica para Concursos Públicos",
+                "canal": "Gran Concursos TI",
+                "duracao": "32 min",
+                "youtube_id": "8Z8m_2W5qF8",
+                "descricao": "Como funciona o par de chaves pública/privada e o segredo da assinatura digital explicado sem mistérios."
+            },
+            {
+                "titulo": "OWASP Top 10 e Ataques Web (SQL Injection, XSS, CSRF)",
+                "canal": "Prof. Fernando Pedrosa",
+                "duracao": "26 min",
+                "youtube_id": "Ofktsne-utM",
+                "descricao": "Principais vulnerabilidades web cobradas pela FGV e Cebraspe em cargos de Analista de TI."
+            }
+        ],
+        "flashcards": [
+            {
+                "id": "fc-seg-01",
+                "frente": "Com qual chave é gerada uma Assinatura Digital autêntica?",
+                "verso": "Com a CHAVE PRIVADA do remetente (aplicada sobre o resumo criptográfico / hash do documento).",
+                "mnemonico": "Assina com a PRIVADA (só você tem) | Confere com a PÚBLICA (todos têm)",
+                "tag": "Segurança"
+            },
+            {
+                "id": "fc-seg-02",
+                "frente": "A Assinatura Digital garante a Confidencialidade (sigilo) do documento?",
+                "verso": "NÃO! A assinatura digital garante Autenticidade, Integridade e Não-Repúdio. O documento pode estar legível a qualquer um se não for também criptografado.",
+                "mnemonico": "Assinatura = Quem assinou (AIN: Autenticidade, Integridade, Não-repúdio)",
+                "tag": "Segurança"
+            },
+            {
+                "id": "fc-seg-03",
+                "frente": "Qual a principal vantagem da criptografia simétrica sobre a assimétrica?",
+                "verso": "A velocidade de processamento e baixo consumo computacional: a criptografia simétrica é até 1.000x mais rápida para grandes volumes de dados.",
+                "mnemonico": "Simétrica = Rápida e Leve | Assimétrica = Segura para trocar chaves",
+                "tag": "Segurança"
+            }
+        ],
+        "radiografia_bancas": {
+            "fgv": "A FGV adora descrever um ataque de SQL Injection ou Cross-Site Scripting (XSS) e perguntar qual controle do OWASP previne (ex: validação e sanitização de inputs com prepared statements).",
+            "cebraspe": "O Cebraspe afirma que a assinatura digital é feita cifrando-se o texto com a chave pública do destinatário (FALSO! É com a chave privada do remetente).",
+            "quadrix": "A Quadrix cobra a associação direta entre os pilares CIDAN e suas definições conceituais.",
+            "ibfc": "O IBFC costuma listar algoritmos e pedir para assinalar qual deles é um algoritmo de chave simétrica (ex: AES)."
+        },
+        "pontos_criticos": [
+            "MD5 e SHA-1 são algoritmos de hash criptograficamente rompidos (colisões encontradas); hoje o padrão mínimo recomendado é o SHA-256.",
+            "Para garantir CONFIDENCIALIDADE usando criptografia assimétrica, você cifra com a chave PÚBLICA do destinatário (só a privada dele poderá abrir).",
+            "Para garantir AUTENTICIDADE/ASSINATURA, você cifra o hash com a sua chave PRIVADA (qualquer um com sua pública confere que foi você)."
+        ],
+        "questoes_ids": ["q-ceb-seg-01", "q-fgv-seg-01"]
     },
 ]
 

@@ -895,6 +895,7 @@ function QuestionCard({ question }: { question: Question }) {
 /* ------------------------------------------------------------------ */
 
 function FlashcardsTab() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const stats = useFlashStats();
   const queue = useFlashQueue();
@@ -1053,8 +1054,18 @@ function FlashcardsTab() {
             <p className="text-xs text-fg-3 max-w-md mx-auto">
               {(queue.data?.futuros.length ?? 0) > 0
                 ? `${queue.data!.futuros.length} cartão(ões) agendado(s) para os próximos ciclos de repetição espaçada.`
-                : 'Você revisou todos os cartões disponíveis. Continue estudando nas Aulas e Questões ou crie novos cartões.'}
+                : 'Você revisou todos os cartões disponíveis. Explore os flashcards visuais dentro das Aulas para adicionar novos conceitos ao seu deck SM-2.'}
             </p>
+            <div className="pt-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => navigate('/estudos/aulas')}
+                className="gap-2 text-xs font-semibold text-amber-400 border border-amber-400/30 hover:bg-amber-400/10"
+              >
+                <BookOpen size={14} /> Explorar Flashcards 3D nas Aulas
+              </Button>
+            </div>
           </div>
         </Card>
       ) : (

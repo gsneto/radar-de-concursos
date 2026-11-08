@@ -26,6 +26,7 @@ export interface StudyBlock {
   tipo: 'teoria' | 'questoes' | 'revisao' | 'simulado';
   dicaBanca?: string;
   actionHref?: string;
+  actionLabel?: string;
 }
 
 export interface DaySchedule {
@@ -147,7 +148,8 @@ export function StudyScheduleView() {
               dicaBanca: isFGV
                 ? 'FGV: Foque na intenção prática dos padrões em cenários de negócio, não na decoreba.'
                 : 'Priorize Factory, Strategy e Singleton.',
-              actionHref: '/estudos/sessoes',
+              actionHref: '/estudos/aulas?aula=es-02',
+              actionLabel: 'Estudar Aula & Vídeo',
             },
             {
               id: 'seg-2',
@@ -158,7 +160,8 @@ export function StudyScheduleView() {
               dicaBanca: isFGV
                 ? 'FGV é a banca mais imprevisível em português: resolva questões buscando a nuance do autor.'
                 : 'Atenção às regras de crase e regência verbal.',
-              actionHref: '/estudos/questoes',
+              actionHref: '/estudos/aulas?aula=port-01',
+              actionLabel: 'Aula Português',
             },
             {
               id: 'seg-3',
@@ -167,6 +170,7 @@ export function StudyScheduleView() {
               duracaoMin: m(30),
               tipo: 'revisao',
               actionHref: '/estudos/flashcards',
+              actionLabel: 'Flashcards (SM-2)',
             },
           ];
           break;
@@ -182,7 +186,8 @@ export function StudyScheduleView() {
               dicaBanca: isCebraspe
                 ? 'Cebraspe adora itens sobre níveis de isolamento de transações (Dirty Read, Phantom Read).'
                 : 'Treine subconsultas complexas e JOINs múltiplos.',
-              actionHref: '/estudos/sessoes',
+              actionHref: '/estudos/aulas?aula=bd-01',
+              actionLabel: 'Estudar Aula & Vídeo',
             },
             {
               id: 'ter-2',
@@ -193,7 +198,8 @@ export function StudyScheduleView() {
               duracaoMin: m(60),
               tipo: 'questoes',
               dicaBanca: 'Leitura atenta dos artigos mais cobrados e resolução de bateria de questões.',
-              actionHref: '/estudos/questoes',
+              actionHref: '/estudos/aulas?aula=dir-01',
+              actionLabel: 'Aula Legislação',
             },
             {
               id: 'ter-3',
@@ -202,6 +208,7 @@ export function StudyScheduleView() {
               duracaoMin: m(30),
               tipo: 'revisao',
               actionHref: '/estudos/flashcards',
+              actionLabel: 'Flashcards (SM-2)',
             },
           ];
           break;
@@ -215,7 +222,8 @@ export function StudyScheduleView() {
               duracaoMin: m(90),
               tipo: 'teoria',
               dicaBanca: 'Domine o fluxo do handshake TCP de 3 vias e portas padrão dos principais serviços.',
-              actionHref: '/estudos/sessoes',
+              actionHref: '/estudos/aulas?aula=red-01',
+              actionLabel: 'Estudar Redes & Vídeo',
             },
             {
               id: 'qua-2',
@@ -225,6 +233,7 @@ export function StudyScheduleView() {
               tipo: 'questoes',
               dicaBanca: 'Foque nos papéis da LGPD (Controlador, Operador, Encarregado/DPO) e bases legais.',
               actionHref: '/estudos/questoes',
+              actionLabel: 'Treinar Questões',
             },
             {
               id: 'qua-3',
@@ -233,6 +242,7 @@ export function StudyScheduleView() {
               duracaoMin: m(30),
               tipo: 'revisao',
               actionHref: '/estudos/questoes',
+              actionLabel: 'Revisar Erros',
             },
           ];
           break;
@@ -248,7 +258,8 @@ export function StudyScheduleView() {
               dicaBanca: isCebraspe
                 ? 'Cebraspe frequentemente inverte definições de chave pública e privada na assinatura digital.'
                 : 'Entenda a diferença entre Injeção de SQL e Cross-Site Scripting (XSS).',
-              actionHref: '/estudos/sessoes',
+              actionHref: '/estudos/aulas?aula=seg-01',
+              actionLabel: 'Estudar Segurança & Vídeo',
             },
             {
               id: 'qui-2',
@@ -258,6 +269,7 @@ export function StudyScheduleView() {
               tipo: 'questoes',
               dicaBanca: 'Tabelas-verdade, Leis de De Morgan e diagramas de Venn.',
               actionHref: '/estudos/questoes',
+              actionLabel: 'Treinar Questões',
             },
             {
               id: 'qui-3',
@@ -266,6 +278,7 @@ export function StudyScheduleView() {
               duracaoMin: m(30),
               tipo: 'revisao',
               actionHref: '/estudos/flashcards',
+              actionLabel: 'Flashcards (SM-2)',
             },
           ];
           break;
@@ -274,14 +287,15 @@ export function StudyScheduleView() {
           blocos = [
             {
               id: 'sex-1',
-              disciplina: 'Arquitetura de Microsserviços & APIs',
-              topico: 'RESTful, GraphQL, Mensageria (Kafka/RabbitMQ) e CI/CD',
+              disciplina: 'Arquitetura de Microsserviços & Metodologias Ágeis',
+              topico: 'Scrum, Kanban, XP, RESTful e CI/CD',
               duracaoMin: m(90),
               tipo: 'teoria',
               dicaBanca: isFGV
-                ? 'FGV exige entendimento prático de tolerância a falhas (Circuit Breaker) e escalabilidade.'
-                : 'Foque nos verbos HTTP e códigos de status (200, 201, 400, 401, 403, 500).',
-              actionHref: '/estudos/sessoes',
+                ? 'FGV exige entendimento prático de tolerância a falhas (Circuit Breaker) e papéis Scrum.'
+                : 'Foque nos eventos e artefatos Scrum vs Kanban.',
+              actionHref: '/estudos/aulas?aula=es-01',
+              actionLabel: 'Estudar Ágil & Vídeo',
             },
             {
               id: 'sex-2',
@@ -290,7 +304,8 @@ export function StudyScheduleView() {
               duracaoMin: m(60),
               tipo: 'questoes',
               dicaBanca: 'Modalidades de licitação e critérios de julgamento da Lei 14.133.',
-              actionHref: '/estudos/questoes',
+              actionHref: '/estudos/aulas?aula=dir-01',
+              actionLabel: 'Aula Direito',
             },
             {
               id: 'sex-3',
@@ -299,6 +314,7 @@ export function StudyScheduleView() {
               duracaoMin: m(30),
               tipo: 'revisao',
               actionHref: '/estudos/simulados',
+              actionLabel: 'Ver Simulados',
             },
           ];
           break;
@@ -315,6 +331,7 @@ export function StudyScheduleView() {
                 ? 'Simulado C/E: Treine deixar em branco questões que gerem dúvida irreversível para evitar penalidade.'
                 : 'Gerencie o tempo: 3 minutos por questão no máximo.',
               actionHref: '/estudos/simulados',
+              actionLabel: 'Iniciar Simulado',
             },
             {
               id: 'sab-2',
@@ -324,6 +341,7 @@ export function StudyScheduleView() {
               tipo: 'questoes',
               dicaBanca: 'Identifique se o erro foi por falta de teoria, distração ou pegadinha da banca.',
               actionHref: '/estudos/questoes',
+              actionLabel: 'Caderno de Erros',
             },
           ];
           break;
@@ -338,6 +356,7 @@ export function StudyScheduleView() {
               tipo: 'revisao',
               dicaBanca: 'Revisão ativa é comprovadamente 3x mais eficiente que re-leitura passiva.',
               actionHref: '/estudos/flashcards',
+              actionLabel: 'Revisar Decks',
             },
             {
               id: 'dom-2',
@@ -347,6 +366,7 @@ export function StudyScheduleView() {
               tipo: 'revisao',
               dicaBanca: 'O sono consolida a memória de longo prazo aprendida na semana.',
               actionHref: '/estudos',
+              actionLabel: 'Visão Geral',
             },
           ];
           break;
@@ -740,13 +760,14 @@ END:VCALENDAR`;
                         {/* Ação rápida para praticar */}
                         {bloco.actionHref && !isDone && (
                           <Button
-                            variant="ghost"
+                            variant="secondary"
                             size="sm"
                             onClick={() => navigate(bloco.actionHref!)}
-                            className="shrink-0 p-1.5 text-xs text-fg-3 hover:text-amber-400"
-                            title="Abrir ferramenta para estudar agora"
+                            className="shrink-0 gap-1.5 text-[11px] font-semibold text-amber-400 border border-amber-400/30 hover:bg-amber-400/10 hover:border-amber-400/60 shadow-xs"
+                            title={bloco.actionLabel || 'Estudar Agora'}
                           >
-                            <Play size={13} />
+                            <Play size={11} className="fill-current" />
+                            <span>{bloco.actionLabel || 'Estudar'}</span>
                           </Button>
                         )}
                       </div>
