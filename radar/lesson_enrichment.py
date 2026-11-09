@@ -1020,6 +1020,21 @@ def _synthesize_jotta_schema(card: dict[str, Any], lesson: dict[str, Any], idx: 
     }
 
 
+_AI_JPG_CARD_IDS: set[str] = {
+    "fc-port-jotta-01",
+    "fc-port-jotta-02",
+    "fc-port-01",
+    "fc-port-02",
+    "fc-bd-01",
+    "fc-sql-01",
+    "fc-sql-02",
+    "fc-es-01",
+    "fc-gof-01",
+    "fc-dir-01",
+    "fc-red-01",
+}
+
+
 def _enrich_flashcards(lesson: dict[str, Any]) -> list[dict[str, Any]]:
     """Retorna os flashcards enriquecidos com o Esquema Visual Estilo Jotta + formatos de treino."""
     lid = lesson["id"]
@@ -1082,11 +1097,19 @@ def _enrich_flashcards(lesson: dict[str, Any]) -> list[dict[str, Any]]:
         base_cards.append(lac_card)
 
     for idx, c in enumerate(base_cards):
+        cid = c["id"]
         c["aula_id"] = lid
         c["aula_titulo"] = lesson["titulo"]
         c["disciplina"] = lesson["disciplina"]
         if "esquema_jotta" not in c:
             c["esquema_jotta"] = _synthesize_jotta_schema(c, lesson, idx)
+        if cid in _AI_JPG_CARD_IDS:
+            c["imagem_url"] = f"/flashcards/{cid}.jpg"
+            c["formato_imagem"] = "ia_jpg"
+        else:
+            c["imagem_url"] = f"/flashcards/{cid}.svg"
+            c["formato_imagem"] = "ia_svg"
+        c["gerado_por_ia"] = True
 
     return base_cards
 
@@ -1341,6 +1364,7 @@ def list_all_visual_flashcards(base_lessons: list[dict[str, Any]], disciplina: s
         if disc_norm and l["disciplina"].strip().lower() != disc_norm:
             continue
         cards.extend(_enrich_flashcards(l))
+    cards.sort(key=lambda c: (0 if c.get("formato_imagem") == "ia_jpg" else 1))
     return cards
 
 

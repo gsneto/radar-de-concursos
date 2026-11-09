@@ -72,6 +72,9 @@ class TestServerLessons(unittest.TestCase):
         self.assertIn("esquema_jotta", first_card)
         self.assertIn("colunas", first_card["esquema_jotta"])
         self.assertIn("regra_rodape", first_card["esquema_jotta"])
+        self.assertIn("imagem_url", first_card)
+        self.assertTrue(first_card["gerado_por_ia"])
+        self.assertTrue(first_card["imagem_url"].startswith("/flashcards/"))
 
         status_port, data_port = self._get(
             "/api/estudos/flashcards/visuais?disciplina=L%C3%ADngua%20Portuguesa"

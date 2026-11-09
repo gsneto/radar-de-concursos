@@ -50,6 +50,9 @@ _CONTENT_TYPES = {
     ".woff2": "font/woff2",
     ".svg": "image/svg+xml",
     ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
     ".ico": "image/x-icon",
     ".map": "application/json; charset=utf-8",
 }

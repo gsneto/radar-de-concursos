@@ -848,6 +848,9 @@ export interface LessonFlashcard {
   erro_trecho?: string;
   correcao?: string;
   esquema_jotta?: JottaVisualSchema;
+  imagem_url?: string;
+  formato_imagem?: 'ia_jpg' | 'ia_svg' | string;
+  gerado_por_ia?: boolean;
 }
 
 export interface LessonSummaryTable {
