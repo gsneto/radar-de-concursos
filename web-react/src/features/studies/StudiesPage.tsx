@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
+  Activity,
   Award,
   BookOpen,
   CheckSquare,
@@ -19,6 +20,7 @@ import { ExamsSimulationTab } from './tabs/ExamsSimulationTab';
 import { FlashcardsDeckTab } from './tabs/FlashcardsDeckTab';
 import { QuestionsPracticeTab } from './tabs/QuestionsPracticeTab';
 import { SessionsTimerTab } from './tabs/SessionsTimerTab';
+import { StudentJourneyDashboard } from './tabs/StudentJourneyDashboard';
 import { StudyOverviewTab } from './tabs/StudyOverviewTab';
 
 const LessonsView = lazy(() => import('./LessonsView').then((m) => ({ default: m.LessonsView })));
@@ -31,13 +33,14 @@ const StudyScheduleView = lazy(() =>
 
 const TABS = [
   { path: '', label: 'Visão geral', icon: LayoutDashboard, badge: null },
-  { path: '/cronograma', label: 'Ciclo Semanal', icon: Compass, badge: 'IA' },
+  { path: '/evolucao', label: 'Meu Progresso & Histórico', icon: Activity, badge: '100%' },
   { path: '/aulas', label: 'Aulas & Teoria', icon: BookOpen, badge: 'Trilha' },
-  { path: '/flashcards', label: 'Flashcards Visuais', icon: Layers, badge: 'Jotta' },
-  { path: '/questoes', label: 'Questões', icon: CheckSquare, badge: null },
   { path: '/provas', label: 'Provas Anteriores', icon: FileText, badge: 'Acervo' },
-  { path: '/bancas', label: 'Bancas', icon: Award, badge: '348' },
   { path: '/simulados', label: 'Simulados', icon: Target, badge: '1-Clique' },
+  { path: '/questoes', label: 'Questões', icon: CheckSquare, badge: null },
+  { path: '/flashcards', label: 'Flashcards Visuais', icon: Layers, badge: 'Jotta' },
+  { path: '/bancas', label: 'Bancas', icon: Award, badge: '348' },
+  { path: '/cronograma', label: 'Ciclo Semanal', icon: Compass, badge: 'IA' },
   { path: '/sessoes', label: 'Sessões', icon: Clock, badge: null },
 ] as const;
 
@@ -136,6 +139,7 @@ export function StudiesPage() {
 
       <Suspense fallback={<SkeletonRows rows={5} />}>
         {active === '' && <StudyOverviewTab />}
+        {active === '/evolucao' && <StudentJourneyDashboard />}
         {active === '/cronograma' && <StudyScheduleView />}
         {active === '/aulas' && <LessonsView />}
         {active === '/bancas' && (

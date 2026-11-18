@@ -1,3 +1,5 @@
+import { Activity } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useTimeline } from '@/app/queries';
 import { BarList, DataTableFallback } from '@/components/charts';
 import { PageHeader } from '@/components/layout/page-header';
@@ -72,6 +74,21 @@ export function HistoryPage() {
           </span>
         }
       />
+
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-xs">
+        <div className="flex items-center gap-2 text-fg">
+          <Activity size={16} className="shrink-0 text-ok-ink" />
+          <span>
+            Procurando o <strong>histórico completo do que você estudou</strong> (porcentagem das etapas de cada aula, flashcards, questões e simulados)?
+          </span>
+        </div>
+        <Link
+          to="/estudos/evolucao"
+          className="rounded-lg bg-accent px-3 py-1.5 text-2xs font-bold uppercase tracking-wider text-white hover:bg-accent/90 transition-colors"
+        >
+          Ver Meu Histórico de Estudos ›
+        </Link>
+      </div>
 
       <section aria-label="Mudanças nas últimas 24 horas" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi

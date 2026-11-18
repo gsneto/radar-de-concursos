@@ -1,4 +1,5 @@
 import {
+  Activity,
   Award,
   BookOpen,
   CalendarDays,
@@ -48,6 +49,7 @@ export const studentNavGroups: NavGroup[] = [
   {
     label: 'Estudos & Aprovação',
     items: [
+      { to: '/estudos/evolucao', label: 'Meu Progresso & Histórico', icon: Activity },
       { to: '/estudos/aulas', label: 'Aulas & Teoria', icon: GraduationCap },
       { to: '/estudos/flashcards', label: 'Flashcards Visuais', icon: Layers },
       { to: '/estudos/questoes', label: 'Banco de Questões', icon: ListChecks },
