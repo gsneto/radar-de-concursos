@@ -13,6 +13,7 @@ import { ReviewPage } from '@/features/review/ReviewPage';
 import { IdentityPage } from '@/features/identity/IdentityPage';
 import { PipelinePage } from '@/features/pipeline/PipelinePage';
 import { MesaPage } from '@/features/mesa/MesaPage';
+import { AccountPage, PlansPage } from '@/features/account/PlansAndAuthPage';
 
 export const router = createBrowserRouter([
   {
@@ -24,14 +25,16 @@ export const router = createBrowserRouter([
       {
         path: 'oportunidades',
         element: <OpportunitiesPage />,
-        handle: { title: 'Radar de Oportunidades', crumb: 'Radar' },
+        handle: { title: 'Radar de Concursos', crumb: 'Radar' },
       },
       {
         path: 'dossie/:contestId',
         element: <DossierPage />,
-        handle: { title: 'Dossiê', crumb: 'Oportunidades' },
+        handle: { title: 'Dossiê', crumb: 'Concursos' },
       },
       { path: 'prazos', element: <DeadlinesPage />, handle: { title: 'Prazos' } },
+      { path: 'planos', element: <PlansPage />, handle: { title: 'Planos & Acesso Pro', crumb: 'Planos' } },
+      { path: 'conta', element: <AccountPage />, handle: { title: 'Minha Conta', crumb: 'Conta' } },
       { path: 'revisao', element: <ReviewPage />, handle: { title: 'Revisão' } },
       { path: 'mesa', element: <MesaPage />, handle: { title: 'Mesa' } },
       { path: 'identidades', element: <IdentityPage />, handle: { title: 'Identidades' } },

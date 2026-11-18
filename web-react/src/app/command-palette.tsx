@@ -6,7 +6,9 @@ import { useEffect, useState } from 'react';
 import { api, qs } from '@/lib/api';
 import { formatOpportunityRole } from '@/lib/format';
 import type { Portfolio } from '@/lib/types';
-import { flatNav } from './nav';
+import { useAuthMe } from './queries';
+import { getNavGroups } from './nav';
+import { useWorkspaceMode } from '@/lib/auth';
 
 export function CommandPalette({
   open,
@@ -16,6 +18,9 @@ export function CommandPalette({
   onOpenChange: (open: boolean) => void;
 }) {
   const navigate = useNavigate();
+  const authMe = useAuthMe();
+  const [workspaceMode] = useWorkspaceMode(authMe.data?.user?.role);
+  const visibleNav = getNavGroups(workspaceMode).flatMap((group) => group.items);
   const [search, setSearch] = useState('');
 
   useEffect(() => {
@@ -69,7 +74,7 @@ export function CommandPalette({
           heading="Navegar"
           className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[9px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:tracking-[0.12em] [&_[cmdk-group-heading]]:text-fg-3 [&_[cmdk-group-heading]]:uppercase"
         >
-          {flatNav.map((item) => {
+          {visibleNav.map((item) => {
             const Icon = item.icon;
             return (
               <Command.Item

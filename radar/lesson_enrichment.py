@@ -1026,12 +1026,14 @@ _AI_JPG_CARD_IDS: set[str] = {
     "fc-port-01",
     "fc-port-02",
     "fc-bd-01",
+    "fc-bd-02",
     "fc-sql-01",
     "fc-sql-02",
     "fc-es-01",
     "fc-gof-01",
     "fc-dir-01",
     "fc-red-01",
+    "fc-seg-01",
 }
 
 

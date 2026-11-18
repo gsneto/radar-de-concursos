@@ -28,6 +28,7 @@ import type {
   LessonFlashcard,
   BancaProfile,
 } from '@/lib/types';
+import type { AppUser, AuthMeResponse, BillingEventItem } from '@/lib/auth';
 
 /* Chaves centralizadas: invalidação previsível. */
 export const keys = {
@@ -52,7 +53,37 @@ export const keys = {
   dossier: (contestId: string, scope: string | null) => ['dossier', contestId, scope] as const,
   details: (contestId: string) => ['contest', contestId] as const,
   preferences: () => ['preferences'] as const,
+  authMe: () => ['auth', 'me'] as const,
+  adminUsers: () => ['admin', 'users'] as const,
+  adminBilling: () => ['admin', 'billing'] as const,
 };
+
+export function useAuthMe() {
+  return useQuery({
+    queryKey: keys.authMe(),
+    queryFn: () => api.get<AuthMeResponse>('/api/auth/me'),
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
+export function useAdminUsers(enabled: boolean) {
+  return useQuery({
+    queryKey: keys.adminUsers(),
+    queryFn: () => api.get<AppUser[]>('/api/admin/users'),
+    enabled,
+    staleTime: 15_000,
+  });
+}
+
+export function useAdminBilling(enabled: boolean) {
+  return useQuery({
+    queryKey: keys.adminBilling(),
+    queryFn: () => api.get<BillingEventItem[]>('/api/admin/billing'),
+    enabled,
+    staleTime: 15_000,
+  });
+}
 
 export interface PortfolioFilters {
   q?: string;

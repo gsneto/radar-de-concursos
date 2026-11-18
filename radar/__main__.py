@@ -57,12 +57,30 @@ def _cmd_collect(args: argparse.Namespace) -> None:
 
 def _cmd_serve(args: argparse.Namespace) -> None:
     try:
+        from radar.accounts import ensure_accounts_schema
+        ensure_accounts_schema(args.db)
+    except Exception:
+        pass
+    try:
         from radar.real_exam_questions import seed_real_questions
         seed_real_questions(args.db)
     except Exception:
         pass
     server = create_server(args.db, host=args.host, port=args.port)
     server.serve_forever()
+
+
+def _cmd_create_admin(args: argparse.Namespace) -> None:
+    from radar.accounts import register_user, set_user_plan
+    user = register_user(
+        args.db,
+        name=args.name,
+        email=args.email,
+        password=args.password,
+        allow_bootstrap_admin=True,
+    )
+    user = set_user_plan(args.db, user["id"], plan="founder", plan_status="active", role="admin")
+    print(json.dumps({"ok": True, "user": user}, ensure_ascii=False))
 
 
 def _cmd_analyze(args: argparse.Namespace) -> None:
@@ -2236,6 +2254,13 @@ def build_parser() -> argparse.ArgumentParser:
     curadoria.add_argument('--dry-run', action='store_true', help='apenas simula sem gravar decisões')
     curadoria.add_argument('--limit', type=int, default=1000, help='limite de itens por fase')
     curadoria.set_defaults(func=_cmd_curadoria_autonoma)
+
+    admin_cmd = subparsers.add_parser('create-admin', help='cria ou promove conta administrador inicial')
+    admin_cmd.add_argument('--db', required=True, help='caminho do banco SQLite')
+    admin_cmd.add_argument('--name', required=True)
+    admin_cmd.add_argument('--email', required=True)
+    admin_cmd.add_argument('--password', required=True)
+    admin_cmd.set_defaults(func=_cmd_create_admin)
 
     return parser
 

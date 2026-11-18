@@ -5,6 +5,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   Compass,
+  Crown,
   Gauge,
   GitMerge,
   GraduationCap,
@@ -15,9 +16,11 @@ import {
   Settings,
   Sparkles,
   Target,
+  UserCheck,
   Workflow,
   type LucideIcon,
 } from 'lucide-react';
+import type { WorkspaceMode } from '@/lib/auth';
 
 export interface NavItem {
   to: string;
@@ -31,7 +34,7 @@ export interface NavGroup {
   items: NavItem[];
 }
 
-export const navGroups: NavGroup[] = [
+export const studentNavGroups: NavGroup[] = [
   {
     label: 'Principal',
     items: [
@@ -55,22 +58,32 @@ export const navGroups: NavGroup[] = [
     ],
   },
   {
+    label: 'Conta & Assinatura',
+    items: [
+      { to: '/planos', label: 'Planos & Acesso Pro', icon: Crown },
+      { to: '/conta', label: 'Minha Conta', icon: UserCheck },
+      { to: '/historico', label: 'Histórico', icon: History },
+      { to: '/configuracoes', label: 'Configurações', icon: Settings },
+    ],
+  },
+];
+
+export const adminNavGroups: NavGroup[] = [
+  {
     label: 'Curadoria & Auditoria',
     items: [
       { to: '/mesa', label: 'Mesa de Validação', icon: LayoutGrid },
       { to: '/revisao', label: 'Revisão de Editais', icon: ClipboardCheck },
       { to: '/identidades', label: 'Padronização de Cargos', icon: GitMerge },
       { to: '/pipeline', label: 'Esteira de Editais', icon: Workflow },
-    ],
-  },
-  {
-    label: 'Sistema',
-    items: [
-      { to: '/historico', label: 'Histórico', icon: History },
-      { to: '/configuracoes', label: 'Configurações', icon: Settings },
       { to: '/operacao', label: 'Diagnóstico', icon: Target },
     ],
   },
 ];
 
+export function getNavGroups(mode: WorkspaceMode): NavGroup[] {
+  return mode === 'admin' ? [...studentNavGroups, ...adminNavGroups] : studentNavGroups;
+}
+
+export const navGroups: NavGroup[] = [...studentNavGroups, ...adminNavGroups];
 export const flatNav = navGroups.flatMap((group) => group.items);

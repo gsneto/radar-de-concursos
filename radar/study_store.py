@@ -61,6 +61,10 @@ def _today() -> str:
     return study.local_today().isoformat()
 
 
+def _has_user_id(conn, table: str) -> bool:
+    return any(row[1] == "user_id" for row in conn.execute(f"PRAGMA table_info({table})").fetchall())
+
+
 # --- Catálogo: disciplinas e tópicos -----------------------------------------
 
 def create_disciplina(db_path, nome: str) -> dict:
@@ -184,20 +188,27 @@ def _clean_contest_id(contest_id) -> str:
     return value
 
 
-def set_progress(db_path, topico_id: str, state: str, *, contest_id: str = "") -> dict:
+def set_progress(db_path, topico_id: str, state: str, *, contest_id: str = "", user_id: str = "") -> dict:
     """Define o estado de um tópico (em um edital ou geral) e (re)agenda revisões."""
     if state not in study.TOPIC_STATES:
         raise ValueError("estado de progresso inválido")
     contest_id = _clean_contest_id(contest_id)
+    uid = str(user_id or "")
     now = _now()
     conn = connect_documents(db_path)
     try:
         conn.execute("BEGIN IMMEDIATE")
         if not conn.execute("SELECT 1 FROM estudo_topicos WHERE id=?", (topico_id,)).fetchone():
             raise ValueError("tópico inexistente")
-        row = conn.execute(
-            "SELECT id FROM estudo_progresso WHERE contest_id=? AND topico_id=?",
-            (contest_id, topico_id)).fetchone()
+        has_uid = _has_user_id(conn, "estudo_progresso")
+        if has_uid:
+            row = conn.execute(
+                "SELECT id FROM estudo_progresso WHERE COALESCE(user_id,'')=? AND contest_id=? AND topico_id=?",
+                (uid, contest_id, topico_id)).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT id FROM estudo_progresso WHERE contest_id=? AND topico_id=?",
+                (contest_id, topico_id)).fetchone()
         concluido_em = _today() if state == "concluido" else None
         if row:
             pid = row[0]
@@ -209,10 +220,16 @@ def set_progress(db_path, topico_id: str, state: str, *, contest_id: str = "") -
                 conn.execute("DELETE FROM estudo_revisoes WHERE progresso_id=?", (pid,))
         else:
             pid = str(uuid4())
-            conn.execute(
-                "INSERT INTO estudo_progresso(id,contest_id,topico_id,state,data_conclusao,"
-                "adiamentos,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?)",
-                (pid, contest_id, topico_id, state, concluido_em, now, now))
+            if has_uid:
+                conn.execute(
+                    "INSERT INTO estudo_progresso(id,user_id,contest_id,topico_id,state,data_conclusao,"
+                    "adiamentos,created_at,updated_at) VALUES(?,?,?,?,?,?,0,?,?)",
+                    (pid, uid, contest_id, topico_id, state, concluido_em, now, now))
+            else:
+                conn.execute(
+                    "INSERT INTO estudo_progresso(id,contest_id,topico_id,state,data_conclusao,"
+                    "adiamentos,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?)",
+                    (pid, contest_id, topico_id, state, concluido_em, now, now))
         if state == "concluido" and not conn.execute(
                 "SELECT 1 FROM estudo_revisoes WHERE progresso_id=?", (pid,)).fetchone():
             for dia in study.revision_dates(concluido_em, [], 0):
@@ -227,22 +244,29 @@ def set_progress(db_path, topico_id: str, state: str, *, contest_id: str = "") -
     return {"id": pid, "topico_id": topico_id, "contest_id": contest_id, "state": state}
 
 
-def list_progresso(db_path, *, contest_id: str = "") -> list[dict]:
+def list_progresso(db_path, *, contest_id: str = "", user_id: str = "") -> list[dict]:
     contest_id = _clean_contest_id(contest_id)
+    uid = str(user_id or "")
     conn = connect_documents(db_path)
     try:
-        rows = conn.execute(
-            "SELECT id,contest_id,topico_id,state,data_conclusao,adiamentos,updated_at "
-            "FROM estudo_progresso WHERE contest_id=? ORDER BY updated_at, id", (contest_id,)).fetchall()
+        if _has_user_id(conn, "estudo_progresso"):
+            rows = conn.execute(
+                "SELECT id,contest_id,topico_id,state,data_conclusao,adiamentos,updated_at "
+                "FROM estudo_progresso WHERE COALESCE(user_id,'')=? AND contest_id=? ORDER BY updated_at, id",
+                (uid, contest_id)).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id,contest_id,topico_id,state,data_conclusao,adiamentos,updated_at "
+                "FROM estudo_progresso WHERE contest_id=? ORDER BY updated_at, id", (contest_id,)).fetchall()
         return [dict(zip(("id", "contest_id", "topico_id", "state", "data_conclusao",
                           "adiamentos", "updated_at"), row)) for row in rows]
     finally:
         conn.close()
 
 
-def progresso_por_topico(db_path, contest_id: str = "") -> dict:
+def progresso_por_topico(db_path, contest_id: str = "", *, user_id: str = "") -> dict:
     """Mapa ``topico_id -> estado`` para um edital (ou geral), para exibição na interface."""
-    return {item["topico_id"]: item["state"] for item in list_progresso(db_path, contest_id=contest_id)}
+    return {item["topico_id"]: item["state"] for item in list_progresso(db_path, contest_id=contest_id, user_id=user_id)}
 
 
 # --- Revisão espaçada (agenda persistida) ------------------------------------
@@ -269,16 +293,24 @@ def mark_revision_done(db_path, progresso_id: str, *, resultado: str | None = No
         conn.close()
 
 
-def pending_revisions(db_path, *, today=None) -> list[dict]:
+def pending_revisions(db_path, *, today=None, user_id: str = "") -> list[dict]:
     """Revisões **vencidas** a partir da agenda persistida (fonte de verdade)."""
     today = today or _today()
+    uid = str(user_id or "")
     conn = connect_documents(db_path)
     try:
-        rows = conn.execute(
-            """SELECT r.id, r.progresso_id, r.agendada_para, p.topico_id, p.contest_id
-            FROM estudo_revisoes r JOIN estudo_progresso p ON p.id=r.progresso_id
-            WHERE r.feita_em IS NULL AND r.agendada_para <= ?
-            ORDER BY r.agendada_para, r.id""", (today,)).fetchall()
+        if _has_user_id(conn, "estudo_progresso"):
+            rows = conn.execute(
+                """SELECT r.id, r.progresso_id, r.agendada_para, p.topico_id, p.contest_id
+                FROM estudo_revisoes r JOIN estudo_progresso p ON p.id=r.progresso_id
+                WHERE COALESCE(p.user_id,'')=? AND r.feita_em IS NULL AND r.agendada_para <= ?
+                ORDER BY r.agendada_para, r.id""", (uid, today)).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT r.id, r.progresso_id, r.agendada_para, p.topico_id, p.contest_id
+                FROM estudo_revisoes r JOIN estudo_progresso p ON p.id=r.progresso_id
+                WHERE r.feita_em IS NULL AND r.agendada_para <= ?
+                ORDER BY r.agendada_para, r.id""", (today,)).fetchall()
         return [dict(zip(("revisao_id", "progresso_id", "data", "topico_id", "contest_id"), row))
                 for row in rows]
     finally:
@@ -287,14 +319,21 @@ def pending_revisions(db_path, *, today=None) -> list[dict]:
 
 # --- Sessões de estudo (cronômetro) ------------------------------------------
 
-def current_session(db_path) -> dict | None:
+def current_session(db_path, *, user_id: str = "") -> dict | None:
     """Sessão aberta (em andamento/pausada), para retomada após reinício."""
+    uid = str(user_id or "")
     conn = connect_documents(db_path)
     try:
-        row = conn.execute(
-            "SELECT id,disciplina_id,topico_id,contest_id,inicio,fim,duracao_segundos,estado,modo,notas,created_at "
-            "FROM estudo_sessoes WHERE estado IN ('em_andamento','pausada') "
-            "ORDER BY created_at DESC LIMIT 1").fetchone()
+        if _has_user_id(conn, "estudo_sessoes"):
+            row = conn.execute(
+                "SELECT id,disciplina_id,topico_id,contest_id,inicio,fim,duracao_segundos,estado,modo,notas,created_at "
+                "FROM estudo_sessoes WHERE COALESCE(user_id,'')=? AND estado IN ('em_andamento','pausada') "
+                "ORDER BY created_at DESC LIMIT 1", (uid,)).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT id,disciplina_id,topico_id,contest_id,inicio,fim,duracao_segundos,estado,modo,notas,created_at "
+                "FROM estudo_sessoes WHERE estado IN ('em_andamento','pausada') "
+                "ORDER BY created_at DESC LIMIT 1").fetchone()
         if not row:
             return None
         return _row_to_session(row)
@@ -303,32 +342,47 @@ def current_session(db_path) -> dict | None:
 
 
 def start_session(db_path, *, disciplina_id=None, topico_id=None, contest_id: str = "",
-                  modo: str = "livre") -> dict:
-    """Inicia uma sessão. Recusa se já houver uma aberta (evita duplicação)."""
+                  modo: str = "livre", user_id: str = "") -> dict:
+    """Inicia uma sessão. Recusa se já houver uma aberta para o usuário (evita duplicação)."""
     if modo not in ("livre", "pomodoro"):
         raise ValueError("modo inválido")
     contest_id = _clean_contest_id(contest_id)
+    uid = str(user_id or "")
     conn = connect_documents(db_path)
     try:
         conn.execute("BEGIN IMMEDIATE")
-        if conn.execute("SELECT 1 FROM estudo_sessoes WHERE estado IN ('em_andamento','pausada')").fetchone():
-            raise ValueError("já existe uma sessão em andamento")
+        has_uid = _has_user_id(conn, "estudo_sessoes")
+        if has_uid:
+            if conn.execute(
+                "SELECT 1 FROM estudo_sessoes WHERE COALESCE(user_id,'')=? AND estado IN ('em_andamento','pausada')",
+                (uid,),
+            ).fetchone():
+                raise ValueError("já existe uma sessão em andamento")
+        else:
+            if conn.execute("SELECT 1 FROM estudo_sessoes WHERE estado IN ('em_andamento','pausada')").fetchone():
+                raise ValueError("já existe uma sessão em andamento")
         for table, value in (("estudo_disciplinas", disciplina_id), ("estudo_topicos", topico_id)):
             if value and not conn.execute(f"SELECT 1 FROM {table} WHERE id=?", (value,)).fetchone():
                 raise ValueError("referência inexistente")
         sid = str(uuid4())
         now = _now()
-        conn.execute(
-            "INSERT INTO estudo_sessoes(id,disciplina_id,topico_id,contest_id,inicio,fim,"
-            "duracao_segundos,estado,modo,notas,created_at) VALUES(?,?,?,?,?,NULL,0,'em_andamento',?,NULL,?)",
-            (sid, disciplina_id, topico_id, contest_id, now, modo, now))
+        if has_uid:
+            conn.execute(
+                "INSERT INTO estudo_sessoes(id,user_id,disciplina_id,topico_id,contest_id,inicio,fim,"
+                "duracao_segundos,estado,modo,notas,created_at) VALUES(?,?,?,?,?,?,NULL,0,'em_andamento',?,NULL,?)",
+                (sid, uid, disciplina_id, topico_id, contest_id, now, modo, now))
+        else:
+            conn.execute(
+                "INSERT INTO estudo_sessoes(id,disciplina_id,topico_id,contest_id,inicio,fim,"
+                "duracao_segundos,estado,modo,notas,created_at) VALUES(?,?,?,?,?,NULL,0,'em_andamento',?,NULL,?)",
+                (sid, disciplina_id, topico_id, contest_id, now, modo, now))
         conn.commit()
     except BaseException:
         conn.rollback()
         raise
     finally:
         conn.close()
-    return current_session(db_path)
+    return current_session(db_path, user_id=uid)
 
 
 def _row_to_session(row) -> dict:
@@ -340,10 +394,20 @@ def _row_to_session(row) -> dict:
     return session
 
 
-def _open_row(conn, session_id=None):
+def _open_row(conn, session_id=None, *, user_id: str = ""):
+    uid = str(user_id or "")
+    has_uid = _has_user_id(conn, "estudo_sessoes")
     if session_id:
+        if has_uid:
+            return conn.execute("SELECT id,duracao_segundos,estado,inicio FROM estudo_sessoes "
+                                "WHERE id=? AND COALESCE(user_id,'')=? AND estado IN ('em_andamento','pausada')",
+                                (session_id, uid)).fetchone()
         return conn.execute("SELECT id,duracao_segundos,estado,inicio FROM estudo_sessoes "
                             "WHERE id=? AND estado IN ('em_andamento','pausada')", (session_id,)).fetchone()
+    if has_uid:
+        return conn.execute("SELECT id,duracao_segundos,estado,inicio FROM estudo_sessoes "
+                            "WHERE COALESCE(user_id,'')=? AND estado IN ('em_andamento','pausada') "
+                            "ORDER BY created_at DESC LIMIT 1", (uid,)).fetchone()
     return conn.execute("SELECT id,duracao_segundos,estado,inicio FROM estudo_sessoes "
                         "WHERE estado IN ('em_andamento','pausada') ORDER BY created_at DESC LIMIT 1").fetchone()
 
@@ -352,11 +416,11 @@ def _open_elapsed(row) -> int:
     return study.capped_elapsed({"duracao_segundos": row[1], "estado": row[2], "inicio": row[3]})
 
 
-def pause_session(db_path, session_id: str | None = None) -> dict:
+def pause_session(db_path, session_id: str | None = None, *, user_id: str = "") -> dict:
     conn = connect_documents(db_path)
     try:
         conn.execute("BEGIN IMMEDIATE")
-        row = _open_row(conn, session_id)
+        row = _open_row(conn, session_id, user_id=user_id)
         if not row or row[2] != "em_andamento":
             conn.rollback()
             raise ValueError("nenhuma sessão em andamento para pausar")
@@ -372,11 +436,11 @@ def pause_session(db_path, session_id: str | None = None) -> dict:
     return _session_by_id(db_path, sid)
 
 
-def resume_session(db_path, session_id: str | None = None) -> dict:
+def resume_session(db_path, session_id: str | None = None, *, user_id: str = "") -> dict:
     conn = connect_documents(db_path)
     try:
         conn.execute("BEGIN IMMEDIATE")
-        row = _open_row(conn, session_id)
+        row = _open_row(conn, session_id, user_id=user_id)
         if not row or row[2] != "pausada":
             conn.rollback()
             raise ValueError("nenhuma sessão pausada para retomar")
@@ -392,11 +456,11 @@ def resume_session(db_path, session_id: str | None = None) -> dict:
     return _session_by_id(db_path, sid)
 
 
-def finish_session(db_path, session_id: str | None = None) -> dict:
+def finish_session(db_path, session_id: str | None = None, *, user_id: str = "") -> dict:
     conn = connect_documents(db_path)
     try:
         conn.execute("BEGIN IMMEDIATE")
-        row = _open_row(conn, session_id)
+        row = _open_row(conn, session_id, user_id=user_id)
         if not row:
             if session_id:
                 existing = conn.execute(
@@ -419,11 +483,11 @@ def finish_session(db_path, session_id: str | None = None) -> dict:
     return _session_by_id(db_path, sid)
 
 
-def discard_session(db_path, session_id: str | None = None) -> dict:
+def discard_session(db_path, session_id: str | None = None, *, user_id: str = "") -> dict:
     conn = connect_documents(db_path)
     try:
         conn.execute("BEGIN IMMEDIATE")
-        row = _open_row(conn, session_id)
+        row = _open_row(conn, session_id, user_id=user_id)
         if not row:
             conn.rollback()
             raise ValueError("nenhuma sessão aberta para descartar")
@@ -450,14 +514,22 @@ def _session_by_id(db_path, session_id: str) -> dict:
         conn.close()
 
 
-def list_sessions(db_path, *, limit: int = 50, concluidas_only: bool = False) -> list[dict]:
+def list_sessions(db_path, *, limit: int = 50, concluidas_only: bool = False, user_id: str = "") -> list[dict]:
+    uid = str(user_id or "")
     conn = connect_documents(db_path)
     try:
-        where = "WHERE estado='concluida'" if concluidas_only else ""
+        clauses = []
+        params: list = []
+        if _has_user_id(conn, "estudo_sessoes"):
+            clauses.append("COALESCE(user_id,'')=?")
+            params.append(uid)
+        if concluidas_only:
+            clauses.append("estado='concluida'")
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
         rows = conn.execute(
             f"SELECT id,disciplina_id,topico_id,contest_id,inicio,fim,duracao_segundos,estado,modo,notas,created_at "
             f"FROM estudo_sessoes {where} ORDER BY COALESCE(fim, inicio) DESC, id DESC LIMIT ?",
-            (max(0, int(limit)),)).fetchall()
+            (*params, max(0, int(limit)))).fetchall()
         keys = ("id", "disciplina_id", "topico_id", "contest_id", "inicio", "fim",
                 "duracao_segundos", "estado", "modo", "notas", "created_at")
         return [dict(zip(keys, row)) for row in rows]
@@ -467,45 +539,83 @@ def list_sessions(db_path, *, limit: int = 50, concluidas_only: bool = False) ->
 
 # --- Painel (agregados a partir dos dados persistidos) -----------------------
 
-def study_dashboard(db_path, *, today=None) -> dict:
+def study_dashboard(db_path, *, today=None, user_id: str = "") -> dict:
     """Agregados reais (não fictícios): progresso, tempo, revisões pendentes e sessão aberta.
 
     Totais agregados em SQL (sem truncar por limite de linhas) e revisões lidas da agenda
     persistida — nunca de exemplos fictícios.
     """
     today = today or _today()
+    uid = str(user_id or "")
     conn = connect_documents(db_path)
     try:
+        has_uid_prog = _has_user_id(conn, "estudo_progresso")
+        has_uid_sess = _has_user_id(conn, "estudo_sessoes")
         disciplinas = [dict(zip(("id", "nome"), row)) for row in conn.execute(
             "SELECT id,nome FROM estudo_disciplinas ORDER BY nome COLLATE NOCASE, id").fetchall()]
         topicos = conn.execute(
             "SELECT id,disciplina_id FROM estudo_topicos ORDER BY disciplina_id, nome COLLATE NOCASE").fetchall()
-        progresso = [dict(zip(("id", "contest_id", "topico_id", "state", "data_conclusao",
-                              "adiamentos", "updated_at"), row)) for row in conn.execute(
-            "SELECT id,contest_id,topico_id,state,data_conclusao,adiamentos,updated_at "
-            "FROM estudo_progresso WHERE contest_id='' ORDER BY updated_at, id").fetchall()]
-        total_segundos = conn.execute(
-            "SELECT COALESCE(SUM(duracao_segundos),0) FROM estudo_sessoes WHERE estado='concluida'"
-        ).fetchone()[0]
-        semana_cutoff = (study.local_today(today) - timedelta(days=6)).isoformat()
-        semana_segundos = conn.execute(
-            "SELECT COALESCE(SUM(duracao_segundos),0) FROM estudo_sessoes "
-            "WHERE estado='concluida' AND substr(COALESCE(fim,inicio),1,10) >= ?", (semana_cutoff,)
-        ).fetchone()[0]
-        sessoes_concluidas = conn.execute(
-            "SELECT count(*) FROM estudo_sessoes WHERE estado='concluida'").fetchone()[0]
-        por_disc = conn.execute(
-            "SELECT disciplina_id, COALESCE(SUM(duracao_segundos),0) FROM estudo_sessoes "
-            "WHERE estado='concluida' AND disciplina_id IS NOT NULL GROUP BY disciplina_id"
-        ).fetchall()
-        pendentes = conn.execute(
-            "SELECT count(*) FROM estudo_revisoes WHERE feita_em IS NULL AND agendada_para <= ?",
-            (today,)).fetchone()[0]
-        revisoes = [dict(zip(("revisao_id", "progresso_id", "data", "topico_id"), row)) for row in conn.execute(
-            """SELECT r.id, r.progresso_id, r.agendada_para, p.topico_id
-            FROM estudo_revisoes r JOIN estudo_progresso p ON p.id=r.progresso_id
-            WHERE r.feita_em IS NULL AND r.agendada_para <= ?
-            ORDER BY r.agendada_para, r.id""", (today,)).fetchall()]
+        if has_uid_prog:
+            progresso = [dict(zip(("id", "contest_id", "topico_id", "state", "data_conclusao",
+                                  "adiamentos", "updated_at"), row)) for row in conn.execute(
+                "SELECT id,contest_id,topico_id,state,data_conclusao,adiamentos,updated_at "
+                "FROM estudo_progresso WHERE COALESCE(user_id,'')=? AND contest_id='' ORDER BY updated_at, id",
+                (uid,)).fetchall()]
+        else:
+            progresso = [dict(zip(("id", "contest_id", "topico_id", "state", "data_conclusao",
+                                  "adiamentos", "updated_at"), row)) for row in conn.execute(
+                "SELECT id,contest_id,topico_id,state,data_conclusao,adiamentos,updated_at "
+                "FROM estudo_progresso WHERE contest_id='' ORDER BY updated_at, id").fetchall()]
+        if has_uid_sess:
+            total_segundos = conn.execute(
+                "SELECT COALESCE(SUM(duracao_segundos),0) FROM estudo_sessoes WHERE COALESCE(user_id,'')=? AND estado='concluida'",
+                (uid,)).fetchone()[0]
+            semana_cutoff = (study.local_today(today) - timedelta(days=6)).isoformat()
+            semana_segundos = conn.execute(
+                "SELECT COALESCE(SUM(duracao_segundos),0) FROM estudo_sessoes "
+                "WHERE COALESCE(user_id,'')=? AND estado='concluida' AND substr(COALESCE(fim,inicio),1,10) >= ?",
+                (uid, semana_cutoff)).fetchone()[0]
+            sessoes_concluidas = conn.execute(
+                "SELECT count(*) FROM estudo_sessoes WHERE COALESCE(user_id,'')=? AND estado='concluida'",
+                (uid,)).fetchone()[0]
+            por_disc = conn.execute(
+                "SELECT disciplina_id, COALESCE(SUM(duracao_segundos),0) FROM estudo_sessoes "
+                "WHERE COALESCE(user_id,'')=? AND estado='concluida' AND disciplina_id IS NOT NULL GROUP BY disciplina_id",
+                (uid,)).fetchall()
+        else:
+            total_segundos = conn.execute(
+                "SELECT COALESCE(SUM(duracao_segundos),0) FROM estudo_sessoes WHERE estado='concluida'"
+            ).fetchone()[0]
+            semana_cutoff = (study.local_today(today) - timedelta(days=6)).isoformat()
+            semana_segundos = conn.execute(
+                "SELECT COALESCE(SUM(duracao_segundos),0) FROM estudo_sessoes "
+                "WHERE estado='concluida' AND substr(COALESCE(fim,inicio),1,10) >= ?", (semana_cutoff,)
+            ).fetchone()[0]
+            sessoes_concluidas = conn.execute(
+                "SELECT count(*) FROM estudo_sessoes WHERE estado='concluida'").fetchone()[0]
+            por_disc = conn.execute(
+                "SELECT disciplina_id, COALESCE(SUM(duracao_segundos),0) FROM estudo_sessoes "
+                "WHERE estado='concluida' AND disciplina_id IS NOT NULL GROUP BY disciplina_id"
+            ).fetchall()
+        if has_uid_prog:
+            pendentes = conn.execute(
+                "SELECT count(*) FROM estudo_revisoes r JOIN estudo_progresso p ON p.id=r.progresso_id "
+                "WHERE COALESCE(p.user_id,'')=? AND r.feita_em IS NULL AND r.agendada_para <= ?",
+                (uid, today)).fetchone()[0]
+            revisoes = [dict(zip(("revisao_id", "progresso_id", "data", "topico_id"), row)) for row in conn.execute(
+                """SELECT r.id, r.progresso_id, r.agendada_para, p.topico_id
+                FROM estudo_revisoes r JOIN estudo_progresso p ON p.id=r.progresso_id
+                WHERE COALESCE(p.user_id,'')=? AND r.feita_em IS NULL AND r.agendada_para <= ?
+                ORDER BY r.agendada_para, r.id""", (uid, today)).fetchall()]
+        else:
+            pendentes = conn.execute(
+                "SELECT count(*) FROM estudo_revisoes WHERE feita_em IS NULL AND agendada_para <= ?",
+                (today,)).fetchone()[0]
+            revisoes = [dict(zip(("revisao_id", "progresso_id", "data", "topico_id"), row)) for row in conn.execute(
+                """SELECT r.id, r.progresso_id, r.agendada_para, p.topico_id
+                FROM estudo_revisoes r JOIN estudo_progresso p ON p.id=r.progresso_id
+                WHERE r.feita_em IS NULL AND r.agendada_para <= ?
+                ORDER BY r.agendada_para, r.id""", (today,)).fetchall()]
     finally:
         conn.close()
 
@@ -531,13 +641,13 @@ def study_dashboard(db_path, *, today=None) -> dict:
         "minutos_por_disciplina": minutos_por_disc,
         "revisoes_pendentes": int(pendentes),
         "revisoes": revisoes,
-        "sessao_aberta": current_session(db_path),
+        "sessao_aberta": current_session(db_path, user_id=uid),
     }
 
 
 # --- Sincronização: Conteúdo Programático do Edital -> Gestão de Estudos ----
 
-def sync_program_to_study(db_path, contest_id: str) -> dict:
+def sync_program_to_study(db_path, contest_id: str, *, user_id: str = "") -> dict:
     """Importa disciplinas e tópicos de um edital analisado para as tabelas de estudos.
 
     Gera as disciplinas em `estudo_disciplinas` e tópicos em `estudo_topicos`, associando
@@ -545,6 +655,7 @@ def sync_program_to_study(db_path, contest_id: str) -> dict:
     Idempotente: executar múltiplas vezes não duplica registros já existentes.
     """
     contest_id = _clean_contest_id(contest_id)
+    uid = str(user_id or "")
     if not contest_id:
         raise ValueError("contest_id obrigatório")
 
@@ -627,16 +738,28 @@ def sync_program_to_study(db_path, contest_id: str) -> dict:
                 tid = topico_map[topic_key]
 
             # Inicializa registro em estudo_progresso para este concurso se não existir
-            exists = conn.execute(
-                "SELECT 1 FROM estudo_progresso WHERE contest_id=? AND topico_id=?",
-                (contest_id, tid)).fetchone()
-            if not exists:
-                pid = str(uuid4())
-                conn.execute(
-                    "INSERT INTO estudo_progresso(id, contest_id, topico_id, state, data_conclusao, "
-                    "adiamentos, created_at, updated_at) VALUES(?,?,?,'nao_iniciado',NULL,0,?,?)",
-                    (pid, contest_id, tid, now, now))
-                progresso_iniciado += 1
+            if _has_user_id(conn, "estudo_progresso"):
+                exists = conn.execute(
+                    "SELECT 1 FROM estudo_progresso WHERE COALESCE(user_id,'')=? AND contest_id=? AND topico_id=?",
+                    (uid, contest_id, tid)).fetchone()
+                if not exists:
+                    pid = str(uuid4())
+                    conn.execute(
+                        "INSERT INTO estudo_progresso(id, user_id, contest_id, topico_id, state, data_conclusao, "
+                        "adiamentos, created_at, updated_at) VALUES(?,?,?,?,'nao_iniciado',NULL,0,?,?)",
+                        (pid, uid, contest_id, tid, now, now))
+                    progresso_iniciado += 1
+            else:
+                exists = conn.execute(
+                    "SELECT 1 FROM estudo_progresso WHERE contest_id=? AND topico_id=?",
+                    (contest_id, tid)).fetchone()
+                if not exists:
+                    pid = str(uuid4())
+                    conn.execute(
+                        "INSERT INTO estudo_progresso(id, contest_id, topico_id, state, data_conclusao, "
+                        "adiamentos, created_at, updated_at) VALUES(?,?,?,'nao_iniciado',NULL,0,?,?)",
+                        (pid, contest_id, tid, now, now))
+                    progresso_iniciado += 1
 
         conn.commit()
     except BaseException:

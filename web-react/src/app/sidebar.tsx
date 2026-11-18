@@ -1,7 +1,9 @@
 import { NavLink } from 'react-router-dom';
-import { PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
+import { Crown, PanelLeftClose, PanelLeftOpen, ShieldCheck, X } from 'lucide-react';
 import { cn } from '@/lib/cn';
-import { navGroups } from '@/app/nav';
+import { getNavGroups } from '@/app/nav';
+import { useAuthMe } from '@/app/queries';
+import { useWorkspaceMode } from '@/lib/auth';
 import { RadarMark } from './radar-mark';
 
 interface SidebarProps {
@@ -19,6 +21,21 @@ export function Sidebar({
   mobileOpen,
   onCloseMobile,
 }: SidebarProps) {
+  const authMe = useAuthMe();
+  const user = authMe.data?.user ?? null;
+  const [workspaceMode] = useWorkspaceMode(user?.role);
+  const visibleGroups = getNavGroups(workspaceMode);
+
+  const accountBadge = user
+    ? user.plan === 'founder'
+      ? 'Fundador TI'
+      : user.plan === 'pro'
+      ? 'Plano Pro'
+      : 'Conta Gratuita'
+    : workspaceMode === 'admin'
+    ? 'Modo Admin · Local'
+    : 'Modo Estudo · Entrar';
+
   return (
     <aside
       id="sidebar"
@@ -79,7 +96,7 @@ export function Sidebar({
       </div>
 
       <nav className="flex-1 overflow-y-auto overflow-x-hidden px-2 py-3">
-        {navGroups.map((group) => (
+        {visibleGroups.map((group) => (
           <div key={group.label} className="mb-4 last:mb-0">
             <p
               className={cn(
@@ -143,15 +160,22 @@ export function Sidebar({
           {collapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
           <span className={cn(collapsed && 'lg:hidden')}>Recolher</span>
         </button>
-        <p
+        <NavLink
+          to="/conta"
+          onClick={onNavigate}
+          title={accountBadge}
           className={cn(
-            'mt-1 flex items-center gap-1.5 px-2 py-1 text-[10px] text-fg-3',
+            'mt-1 flex items-center gap-2 rounded-sm px-2 py-1.5 text-[11px] font-medium text-fg-2 transition-colors hover:bg-surface-2 hover:text-fg',
             collapsed && 'lg:justify-center lg:px-0',
           )}
         >
-          <span className="size-1.5 shrink-0 rounded-full bg-ok" aria-hidden />
-          <span className={cn('truncate', collapsed && 'lg:hidden')}>Dados locais · sem conta</span>
-        </p>
+          {workspaceMode === 'admin' ? (
+            <ShieldCheck size={13} className="shrink-0 text-emerald-400" />
+          ) : (
+            <Crown size={13} className={cn('shrink-0', user && user.plan !== 'free' ? 'text-amber-400' : 'text-fg-3')} />
+          )}
+          <span className={cn('truncate', collapsed && 'lg:hidden')}>{accountBadge}</span>
+        </NavLink>
       </div>
     </aside>
   );

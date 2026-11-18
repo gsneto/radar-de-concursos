@@ -290,6 +290,9 @@ _ENTRIES = [
      "Importa conteúdo programático do edital para disciplinas e tópicos de estudo."),
     ("GET", "/api/estudos/aulas", "estudos", "disciplina", "", False, "n/a",
      "Lista de aulas estruturadas por disciplina com objetivos e questões."),
+    ("POST", "/api/estudos/aulas", "estudos", "",
+     "titulo,disciplina,objetivos,teoria_resumida,pontos_criticos", True, "nao",
+     "Cria aula customizada no plano de estudos."),
     ("GET", "/api/estudos/aulas/{aula_id}", "estudos", "", "", False, "n/a",
      "Detalhe de uma aula estruturada: teoria, radiografia de bancas e questões."),
     ("GET", "/api/estudos/bancas", "estudos", "", "", False, "n/a",
@@ -302,6 +305,8 @@ _ENTRIES = [
      "Fila de revisão de flashcards (novos + vencidos)."),
     ("GET", "/api/estudos/flashcards/estatisticas", "flashcards", "", "", False, "n/a",
      "Estatísticas de flashcards."),
+    ("GET", "/api/estudos/flashcards/visuais", "flashcards", "disciplina", "", False, "n/a",
+     "Lista todos os flashcards visuais ilustrados por IA no estilo sketchnote."),
     ("POST", "/api/estudos/flashcards", "flashcards", "",
      "action,id,frente,verso,disciplina_id,topico_id,contest_id,conceito_key,tags,fonte,"
      "licenca,qualidade,estado", True, "condicional",
@@ -368,6 +373,24 @@ _ENTRIES = [
      "Pré-visualiza pacote sem gravar (limites de tamanho e estrutura)."),
     ("POST", "/api/estudos/pacotes/importar", "pacotes", "", "dados_base64,dry_run", True,
      "sim", "Importa pacote com validação de licença, tamanho e colisões."),
+
+    # --- Contas, sessões, planos e billing SaaS -------------------------------
+    ("GET", "/api/auth/me", "contas", "", "", False, "n/a",
+     "Retorna o estado da sessão atual, usuário autenticado, plano e configuração pública."),
+    ("POST", "/api/auth/register", "contas", "", "name,email,password,bootstrap_admin", True, "nao",
+     "Cria nova conta de estudante (ou administrador inicial local) e abre sessão via cookie HttpOnly."),
+    ("POST", "/api/auth/login", "contas", "", "email,password", True, "sim",
+     "Autentica por e-mail/senha (scrypt) e emite cookie HttpOnly de sessão."),
+    ("POST", "/api/auth/logout", "contas", "", "", True, "sim",
+     "Encerra a sessão ativa e limpa o cookie de autenticação."),
+    ("GET", "/api/admin/users", "contas", "", "", False, "n/a",
+     "Lista usuários cadastrados e planos (somente administrador)."),
+    ("GET", "/api/admin/billing", "contas", "", "", False, "n/a",
+     "Lista eventos recentes de pagamento/assinatura recebidos por webhook (somente administrador)."),
+    ("POST", "/api/admin/users/plan", "contas", "", "user_id,plan,plan_status,role", True, "sim",
+     "Atualiza manualmente plano/perfil de um usuário (somente administrador)."),
+    ("POST", "/api/billing/webhook", "contas", "", "email,plan,event_type,provider", True, "nao",
+     "Webhook autenticado para liberação automática de acesso (Kiwify, Hotmart, Asaas, Stripe)."),
 ]
 
 _MATCH_OVERRIDES = {
@@ -443,6 +466,7 @@ DOMAIN_LABELS = {
     "simulados": "Simulados",
     "pacotes": "Pacotes de conteúdo",
     "estaticos": "Estáticos (build e UI legada)",
+    "contas": "Contas, sessões e assinaturas",
 }
 
 

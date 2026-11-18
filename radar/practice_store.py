@@ -33,14 +33,19 @@ def _clean(value, limit=200) -> str | None:
     return text[:limit] or None
 
 
+def _has_user_id(conn, table: str) -> bool:
+    return any(row[1] == "user_id" for row in conn.execute(f"PRAGMA table_info({table})").fetchall())
+
+
 # --- Flashcards --------------------------------------------------------------
 
 def create_flashcard(db_path, *, frente, verso, disciplina_id=None, topico_id=None,
                      contest_id="", conceito_key=None, tags=None, fonte=None,
-                     licenca=None) -> dict:
+                     licenca=None, user_id: str = "") -> dict:
     if not _clean(frente) or not _clean(verso):
         raise ValueError("frente e verso são obrigatórios")
     contest_id = (contest_id or "")[:_MAX_CONTEST_ID]
+    uid = str(user_id or "")
     fid, now = str(uuid4()), _now()
     conn = connect_documents(db_path)
     try:
@@ -48,15 +53,26 @@ def create_flashcard(db_path, *, frente, verso, disciplina_id=None, topico_id=No
         for table, value in (("estudo_disciplinas", disciplina_id), ("estudo_topicos", topico_id)):
             if value and not conn.execute(f"SELECT 1 FROM {table} WHERE id=?", (value,)).fetchone():
                 raise ValueError("referência inexistente")
-        conn.execute(
-            "INSERT INTO pratica_flashcards(id,disciplina_id,topico_id,contest_id,conceito_key,"
-            "frente,verso,tags,fonte,licenca,estado,ease,intervalo,repeticoes,proxima_revisao,"
-            "ultima_revisao,revisoes,created_at,updated_at) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,'ativo',?,0,0,NULL,NULL,0,?,?)",
-            (fid, disciplina_id, topico_id, contest_id, _clean(conceito_key, 300),
-             _clean(frente, 4000), _clean(verso, 4000),
-             json.dumps(questions.normalize_tags(tags), ensure_ascii=False),
-             _clean(fonte), _clean(licenca), flashcards.DEFAULT_EASE, now, now))
+        if _has_user_id(conn, "pratica_flashcards"):
+            conn.execute(
+                "INSERT INTO pratica_flashcards(id,user_id,disciplina_id,topico_id,contest_id,conceito_key,"
+                "frente,verso,tags,fonte,licenca,estado,ease,intervalo,repeticoes,proxima_revisao,"
+                "ultima_revisao,revisoes,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,'ativo',?,0,0,NULL,NULL,0,?,?)",
+                (fid, uid, disciplina_id, topico_id, contest_id, _clean(conceito_key, 300),
+                 _clean(frente, 4000), _clean(verso, 4000),
+                 json.dumps(questions.normalize_tags(tags), ensure_ascii=False),
+                 _clean(fonte), _clean(licenca), flashcards.DEFAULT_EASE, now, now))
+        else:
+            conn.execute(
+                "INSERT INTO pratica_flashcards(id,disciplina_id,topico_id,contest_id,conceito_key,"
+                "frente,verso,tags,fonte,licenca,estado,ease,intervalo,repeticoes,proxima_revisao,"
+                "ultima_revisao,revisoes,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,'ativo',?,0,0,NULL,NULL,0,?,?)",
+                (fid, disciplina_id, topico_id, contest_id, _clean(conceito_key, 300),
+                 _clean(frente, 4000), _clean(verso, 4000),
+                 json.dumps(questions.normalize_tags(tags), ensure_ascii=False),
+                 _clean(fonte), _clean(licenca), flashcards.DEFAULT_EASE, now, now))
         conn.commit()
     except BaseException:
         conn.rollback()
@@ -93,10 +109,14 @@ def get_flashcard(db_path, flashcard_id: str) -> dict | None:
         conn.close()
 
 
-def list_flashcards(db_path, *, include_archived=False, disciplina_id=None) -> list[dict]:
+def list_flashcards(db_path, *, include_archived=False, disciplina_id=None, user_id: str = "") -> list[dict]:
+    uid = str(user_id or "")
     conn = connect_documents(db_path)
     try:
         where, params = [], []
+        if _has_user_id(conn, "pratica_flashcards"):
+            where.append("COALESCE(user_id,'')=?")
+            params.append(uid)
         if not include_archived:
             where.append("estado='ativo'")
         if disciplina_id:
@@ -193,18 +213,25 @@ def flashcard_reviews(db_path, flashcard_id: str) -> list[dict]:
         conn.close()
 
 
-def study_queue(db_path, *, limit=None, today=None) -> dict:
+def study_queue(db_path, *, limit=None, today=None, user_id: str = "") -> dict:
     """Fila de estudo: novos primeiro, depois vencidos (dados persistidos)."""
-    cards = list_flashcards(db_path)
+    cards = list_flashcards(db_path, user_id=user_id)
     return flashcards.queue(cards, today=today, limit=limit)
 
 
-def flashcard_stats(db_path, *, today=None) -> dict:
-    cards = list_flashcards(db_path, include_archived=True)
+def flashcard_stats(db_path, *, today=None, user_id: str = "") -> dict:
+    uid = str(user_id or "")
+    cards = list_flashcards(db_path, include_archived=True, user_id=uid)
     conn = connect_documents(db_path)
     try:
-        rows = conn.execute(
-            "SELECT qualidade FROM pratica_flashcard_revisoes").fetchall()
+        if _has_user_id(conn, "pratica_flashcards"):
+            rows = conn.execute(
+                "SELECT r.qualidade FROM pratica_flashcard_revisoes r "
+                "JOIN pratica_flashcards f ON f.id=r.flashcard_id WHERE COALESCE(f.user_id,'')=?",
+                (uid,),
+            ).fetchall()
+        else:
+            rows = conn.execute("SELECT qualidade FROM pratica_flashcard_revisoes").fetchall()
     finally:
         conn.close()
     return flashcards.stats(cards, [{"qualidade": r[0]} for r in rows], today=today)
@@ -385,7 +412,7 @@ def question_version(db_path, question_id: str, versao: int) -> dict | None:
 
 
 def answer_question(db_path, question_id: str, resposta, *, duracao_segundos=None,
-                    origem="pratica", simulado_id=None, now=None) -> dict:
+                    origem="pratica", simulado_id=None, now=None, user_id: str = "") -> dict:
     """Registra uma tentativa de prática (correção imediata) com a **versão** respondida."""
     if origem not in ("pratica", "simulado"):
         raise ValueError("origem inválida")
@@ -395,20 +422,33 @@ def answer_question(db_path, question_id: str, resposta, *, duracao_segundos=Non
     if question["estado"] != "ativo":
         raise ValueError("questão arquivada não pode ser respondida")
     graded = questions.grade(question, resposta)
+    uid = str(user_id or "")
     tid, at = str(uuid4()), _now()
     conn = connect_documents(db_path)
     try:
         conn.execute("BEGIN IMMEDIATE")
-        conn.execute(
-            "INSERT INTO pratica_tentativas(id,questao_id,questao_versao,resposta,correta,respondida,"
-            "duracao_segundos,origem,simulado_id,disciplina,topico,conceito_key,created_at) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (tid, question_id, question["versao"], _clean(resposta, 20) if graded["respondida"] else None,
-             1 if graded["correta"] else (0 if graded["respondida"] else None),
-             1 if graded["respondida"] else 0,
-             None if duracao_segundos is None else max(0, int(duracao_segundos)),
-             origem, simulado_id, question["disciplina"], question["topico"],
-             question["conceito_key"], at))
+        if _has_user_id(conn, "pratica_tentativas"):
+            conn.execute(
+                "INSERT INTO pratica_tentativas(id,user_id,questao_id,questao_versao,resposta,correta,respondida,"
+                "duracao_segundos,origem,simulado_id,disciplina,topico,conceito_key,created_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (tid, uid, question_id, question["versao"], _clean(resposta, 20) if graded["respondida"] else None,
+                 1 if graded["correta"] else (0 if graded["respondida"] else None),
+                 1 if graded["respondida"] else 0,
+                 None if duracao_segundos is None else max(0, int(duracao_segundos)),
+                 origem, simulado_id, question["disciplina"], question["topico"],
+                 question["conceito_key"], at))
+        else:
+            conn.execute(
+                "INSERT INTO pratica_tentativas(id,questao_id,questao_versao,resposta,correta,respondida,"
+                "duracao_segundos,origem,simulado_id,disciplina,topico,conceito_key,created_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (tid, question_id, question["versao"], _clean(resposta, 20) if graded["respondida"] else None,
+                 1 if graded["correta"] else (0 if graded["respondida"] else None),
+                 1 if graded["respondida"] else 0,
+                 None if duracao_segundos is None else max(0, int(duracao_segundos)),
+                 origem, simulado_id, question["disciplina"], question["topico"],
+                 question["conceito_key"], at))
         conn.commit()
     except BaseException:
         conn.rollback()
@@ -420,10 +460,14 @@ def answer_question(db_path, question_id: str, resposta, *, duracao_segundos=Non
             "gabarito": question["gabarito"], "comentario": question["comentario"]}
 
 
-def list_attempts(db_path, *, limit=200, simulado_id=None) -> list[dict]:
+def list_attempts(db_path, *, limit=200, simulado_id=None, user_id: str = "") -> list[dict]:
+    uid = str(user_id or "")
     conn = connect_documents(db_path)
     try:
         where, params = [], []
+        if _has_user_id(conn, "pratica_tentativas"):
+            where.append("COALESCE(user_id,'')=?")
+            params.append(uid)
         if simulado_id:
             where.append("simulado_id=?")
             params.append(simulado_id)
@@ -449,7 +493,7 @@ def list_attempts(db_path, *, limit=200, simulado_id=None) -> list[dict]:
 
 def create_exam(db_path, *, nome, limit, duracao_segundos=None, seed=None, shuffle=True,
                 exclude_answered=True, disciplina=None, topico=None, dificuldade=None,
-                tags=None) -> dict:
+                tags=None, user_id: str = "") -> dict:
     """Monta um simulado com questões **sem duplicação** e guarda a versão aplicada."""
     if not _clean(nome):
         raise ValueError("nome do simulado obrigatório")
@@ -457,10 +501,11 @@ def create_exam(db_path, *, nome, limit, duracao_segundos=None, seed=None, shuff
         duracao_segundos = max(0, min(int(duracao_segundos), exams.MAX_DURATION_SECONDS))
         if duracao_segundos == 0:
             duracao_segundos = None
+    uid = str(user_id or "")
     pool = list_questions(db_path, disciplina=disciplina, topico=topico)
     answered = set()
     if exclude_answered:
-        answered = {a["questao_id"] for a in list_attempts(db_path, limit=100000)}
+        answered = {a["questao_id"] for a in list_attempts(db_path, limit=100000, user_id=uid)}
     selected = exams.select_questions(pool, limit=limit, seed=seed, shuffle=shuffle,
                                       exclude_answered=answered, disciplina=disciplina,
                                       topico=topico, dificuldade=dificuldade, tags=tags)
@@ -470,10 +515,16 @@ def create_exam(db_path, *, nome, limit, duracao_segundos=None, seed=None, shuff
     conn = connect_documents(db_path)
     try:
         conn.execute("BEGIN IMMEDIATE")
-        conn.execute(
-            "INSERT INTO pratica_simulados(id,nome,duracao_segundos,iniciado_em,finalizado_em,"
-            "estado,created_at) VALUES(?,?,?,?,NULL,'em_andamento',?)",
-            (eid, _clean(nome), duracao_segundos, now, now))
+        if _has_user_id(conn, "pratica_simulados"):
+            conn.execute(
+                "INSERT INTO pratica_simulados(id,user_id,nome,duracao_segundos,iniciado_em,finalizado_em,"
+                "estado,created_at) VALUES(?,?,?,?,?,NULL,'em_andamento',?)",
+                (eid, uid, _clean(nome), duracao_segundos, now, now))
+        else:
+            conn.execute(
+                "INSERT INTO pratica_simulados(id,nome,duracao_segundos,iniciado_em,finalizado_em,"
+                "estado,created_at) VALUES(?,?,?,?,NULL,'em_andamento',?)",
+                (eid, _clean(nome), duracao_segundos, now, now))
         for ordem, question in enumerate(selected):
             conn.execute(
                 "INSERT INTO pratica_simulado_questoes(simulado_id,ordem,questao_id,questao_versao,"
@@ -640,16 +691,33 @@ def finish_exam(db_path, exam_id: str, *, now=None) -> dict:
             conn.rollback()
             return exam_result(db_path, exam_id, now=now)
         # Persiste uma tentativa por questão aplicada (inclusive em branco, com respondida=0).
+        has_uid_tent = _has_user_id(conn, "pratica_tentativas")
+        exam_uid = ""
+        if _has_user_id(conn, "pratica_simulados"):
+            u_row = conn.execute("SELECT COALESCE(user_id,'') FROM pratica_simulados WHERE id=?", (exam_id,)).fetchone()
+            if u_row:
+                exam_uid = u_row[0] or ""
         for item in items:
-            conn.execute(
-                "INSERT INTO pratica_tentativas(id,questao_id,questao_versao,resposta,correta,"
-                "respondida,duracao_segundos,origem,simulado_id,disciplina,topico,conceito_key,"
-                "created_at) VALUES(?,?,?,?,?,?,NULL,'simulado',?,?,?,NULL,?)",
-                (str(uuid4()), item["questao_id"], item["questao_versao"], item.get("resposta"),
-                 1 if item.get("respondida") and str(item.get("resposta") or "").upper()
-                 == str(item.get("gabarito") or "").upper() else (0 if item.get("respondida") else None),
-                 1 if item.get("respondida") else 0, exam_id, item.get("disciplina"),
-                 item.get("topico"), at))
+            if has_uid_tent:
+                conn.execute(
+                    "INSERT INTO pratica_tentativas(id,user_id,questao_id,questao_versao,resposta,correta,"
+                    "respondida,duracao_segundos,origem,simulado_id,disciplina,topico,conceito_key,"
+                    "created_at) VALUES(?,?,?,?,?,?,?,NULL,'simulado',?,?,?,NULL,?)",
+                    (str(uuid4()), exam_uid, item["questao_id"], item["questao_versao"], item.get("resposta"),
+                     1 if item.get("respondida") and str(item.get("resposta") or "").upper()
+                     == str(item.get("gabarito") or "").upper() else (0 if item.get("respondida") else None),
+                     1 if item.get("respondida") else 0, exam_id, item.get("disciplina"),
+                     item.get("topico"), at))
+            else:
+                conn.execute(
+                    "INSERT INTO pratica_tentativas(id,questao_id,questao_versao,resposta,correta,"
+                    "respondida,duracao_segundos,origem,simulado_id,disciplina,topico,conceito_key,"
+                    "created_at) VALUES(?,?,?,?,?,?,NULL,'simulado',?,?,?,NULL,?)",
+                    (str(uuid4()), item["questao_id"], item["questao_versao"], item.get("resposta"),
+                     1 if item.get("respondida") and str(item.get("resposta") or "").upper()
+                     == str(item.get("gabarito") or "").upper() else (0 if item.get("respondida") else None),
+                     1 if item.get("respondida") else 0, exam_id, item.get("disciplina"),
+                     item.get("topico"), at))
         conn.commit()
     except BaseException:
         conn.rollback()
@@ -673,13 +741,22 @@ def exam_result(db_path, exam_id: str, *, now=None) -> dict:
     return {"simulado": exam, "resultado": result, "questoes": items}
 
 
-def list_exams(db_path, *, limit=50) -> list[dict]:
+def list_exams(db_path, *, limit=50, user_id: str = "") -> list[dict]:
+    uid = str(user_id or "")
     conn = connect_documents(db_path)
     try:
-        rows = conn.execute(
-            "SELECT id,nome,duracao_segundos,iniciado_em,finalizado_em,estado,created_at,"
-            "questao_atual,modo,algoritmo_versao FROM pratica_simulados "
-            "ORDER BY iniciado_em DESC, id LIMIT ?", (max(0, int(limit)),)).fetchall()
+        if _has_user_id(conn, "pratica_simulados"):
+            rows = conn.execute(
+                "SELECT id,nome,duracao_segundos,iniciado_em,finalizado_em,estado,created_at,"
+                "questao_atual,modo,algoritmo_versao FROM pratica_simulados "
+                "WHERE COALESCE(user_id,'')=? ORDER BY iniciado_em DESC, id LIMIT ?",
+                (uid, max(0, int(limit))),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id,nome,duracao_segundos,iniciado_em,finalizado_em,estado,created_at,"
+                "questao_atual,modo,algoritmo_versao FROM pratica_simulados "
+                "ORDER BY iniciado_em DESC, id LIMIT ?", (max(0, int(limit)),)).fetchall()
         keys = ("id", "nome", "duracao_segundos", "iniciado_em", "finalizado_em", "estado",
                 "created_at", "questao_atual", "modo", "algoritmo_versao")
         return [dict(zip(keys, row)) for row in rows]
@@ -1006,10 +1083,10 @@ def next_adaptive_question(db_path, exam_id: str, *, now=None) -> dict:
 
 # --- Desempenho agregado -----------------------------------------------------
 
-def performance_report(db_path, *, include_blank=False) -> dict:
+def performance_report(db_path, *, include_blank=False, user_id: str = "") -> dict:
     """Desempenho **derivado das tentativas persistidas** (denominador explícito)."""
-    attempts = list_attempts(db_path, limit=100000)
+    attempts = list_attempts(db_path, limit=100000, user_id=user_id)
     return {"geral": questions.stats(attempts, include_blank=include_blank),
             "por_disciplina": questions.stats_by(attempts, "disciplina", include_blank=include_blank),
             "por_topico": questions.stats_by(attempts, "topico", include_blank=include_blank),
-            "simulados": list_exams(db_path)}
+            "simulados": list_exams(db_path, user_id=user_id)}

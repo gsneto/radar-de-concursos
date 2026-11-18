@@ -16,23 +16,56 @@ def _now() -> str:
 
 
 def init_my_contests(conn: sqlite3.Connection) -> None:
-    """Cria a tabela de concursos selecionados pelo usuário se não existir."""
+    """Cria/atualiza a tabela de concursos selecionados com suporte multiusuário (user_id)."""
     cur = conn.cursor()
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS meus_concursos (
             id TEXT PRIMARY KEY,
-            contest_id TEXT NOT NULL UNIQUE,
+            user_id TEXT NOT NULL DEFAULT '',
+            contest_id TEXT NOT NULL,
             role_id TEXT,
             selected_at TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'ativo',
             notes TEXT,
+            UNIQUE(user_id, contest_id),
             FOREIGN KEY (contest_id) REFERENCES concursos_identidade(id) ON DELETE CASCADE
         )
         """
     )
+    cols = {row[1] for row in cur.execute("PRAGMA table_info(meus_concursos)").fetchall()}
+    if "user_id" not in cols:
+        cur.execute("PRAGMA foreign_keys=OFF")
+        cur.execute(
+            """
+            CREATE TABLE meus_concursos_v2 (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL DEFAULT '',
+                contest_id TEXT NOT NULL,
+                role_id TEXT,
+                selected_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'ativo',
+                notes TEXT,
+                UNIQUE(user_id, contest_id),
+                FOREIGN KEY (contest_id) REFERENCES concursos_identidade(id) ON DELETE CASCADE
+            )
+            """
+        )
+        cur.execute(
+            """
+            INSERT INTO meus_concursos_v2 (id, user_id, contest_id, role_id, selected_at, status, notes)
+            SELECT id, '', contest_id, role_id, selected_at, status, notes FROM meus_concursos
+            """
+        )
+        cur.execute("DROP TABLE meus_concursos")
+        cur.execute("ALTER TABLE meus_concursos_v2 RENAME TO meus_concursos")
+        cur.execute("PRAGMA foreign_keys=ON")
+
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_meus_concursos_contest ON meus_concursos(contest_id)"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_meus_concursos_user ON meus_concursos(user_id, status)"
     )
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_meus_concursos_status ON meus_concursos(status)"
@@ -45,17 +78,20 @@ def add_my_contest(
     contest_id: str,
     role_id: str | None = None,
     notes: str | None = None,
+    *,
+    user_id: str = "",
 ) -> dict[str, Any]:
     """Adiciona ou atualiza um concurso na lista pessoal do usuário."""
     import uuid
 
+    uid = str(user_id or "")
     conn = sqlite3.connect(db_path)
     init_my_contests(conn)
     cur = conn.cursor()
 
     existing = cur.execute(
-        "SELECT id, role_id, notes, status FROM meus_concursos WHERE contest_id = ?",
-        (contest_id,),
+        "SELECT id, role_id, notes, status FROM meus_concursos WHERE user_id = ? AND contest_id = ?",
+        (uid, contest_id),
     ).fetchone()
 
     now_str = _now()
@@ -67,18 +103,18 @@ def add_my_contest(
             """
             UPDATE meus_concursos
             SET role_id = ?, notes = ?, status = 'ativo', selected_at = ?
-            WHERE contest_id = ?
+            WHERE user_id = ? AND contest_id = ?
             """,
-            (new_role, new_notes, now_str, contest_id),
+            (new_role, new_notes, now_str, uid, contest_id),
         )
     else:
         record_id = str(uuid.uuid4())
         cur.execute(
             """
-            INSERT INTO meus_concursos (id, contest_id, role_id, selected_at, status, notes)
-            VALUES (?, ?, ?, ?, 'ativo', ?)
+            INSERT INTO meus_concursos (id, user_id, contest_id, role_id, selected_at, status, notes)
+            VALUES (?, ?, ?, ?, ?, 'ativo', ?)
             """,
-            (record_id, contest_id, role_id, now_str, notes),
+            (record_id, uid, contest_id, role_id, now_str, notes),
         )
 
     conn.commit()
@@ -94,22 +130,24 @@ def add_my_contest(
     }
 
 
-def remove_my_contest(db_path: str, contest_id: str) -> bool:
+def remove_my_contest(db_path: str, contest_id: str, *, user_id: str = "") -> bool:
     """Remove um concurso da lista pessoal do usuário."""
+    uid = str(user_id or "")
     conn = sqlite3.connect(db_path)
     init_my_contests(conn)
     cur = conn.cursor()
-    cur.execute("DELETE FROM meus_concursos WHERE contest_id = ?", (contest_id,))
+    cur.execute("DELETE FROM meus_concursos WHERE user_id = ? AND contest_id = ?", (uid, contest_id))
     rows = cur.rowcount
     conn.commit()
     conn.close()
     return rows > 0
 
 
-def list_my_contests(db_path: str, *, status: str = "ativo") -> list[dict[str, Any]]:
+def list_my_contests(db_path: str, *, status: str = "ativo", user_id: str = "") -> list[dict[str, Any]]:
     """Lista todos os concursos no painel pessoal, enriquecidos com dados de cargo, banca e instituição."""
     import re
 
+    uid = str(user_id or "")
     conn = sqlite3.connect(db_path)
     init_my_contests(conn)
     conn.row_factory = sqlite3.Row
@@ -130,12 +168,12 @@ def list_my_contests(db_path: str, *, status: str = "ativo") -> list[dict[str, A
         FROM meus_concursos m
         LEFT JOIN cargos_identidade c ON c.id = m.role_id
         LEFT JOIN observacoes_concurso oc ON oc.contest_id = m.contest_id
-        WHERE m.status = ?
+        WHERE m.user_id = ? AND m.status = ?
         ORDER BY m.selected_at DESC
     """
     items = []
     try:
-        rows = cur.execute(query, (status,)).fetchall()
+        rows = cur.execute(query, (uid, status)).fetchall()
         for r in rows:
             cid = r["contest_id"]
 

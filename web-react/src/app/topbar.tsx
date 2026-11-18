@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import { Bot, Check, Loader2, Menu, Moon, Search, Settings2, Sun } from 'lucide-react';
+import { Bot, Check, Crown, Loader2, Menu, Moon, Search, Settings2, Sun, UserCheck } from 'lucide-react';
 import { Link, useLocation, useMatches } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
+import { useAuthMe } from '@/app/queries';
 import { cn } from '@/lib/cn';
 import { executeCuradoria } from '@/lib/api';
+import { useWorkspaceMode } from '@/lib/auth';
 import { useTheme } from '@/lib/theme';
 
 interface TopbarProps {
@@ -122,6 +124,9 @@ export function ThemeToggle() {
 export function Topbar({ onOpenMobile, onOpenPalette }: TopbarProps) {
   const matches = useMatches();
   const location = useLocation();
+  const authMe = useAuthMe();
+  const user = authMe.data?.user ?? null;
+  const [workspaceMode] = useWorkspaceMode(user?.role);
   const handle = [...matches].reverse().find((match) => (match.handle as RouteHandle)?.title)
     ?.handle as RouteHandle | undefined;
   const title = handle?.title ?? 'GSN Concursos';
@@ -158,7 +163,28 @@ export function Topbar({ onOpenMobile, onOpenPalette }: TopbarProps) {
       </div>
 
       <div className="ml-auto flex items-center gap-2">
-        <CuradoriaButton />
+        {workspaceMode === 'admin' && <CuradoriaButton />}
+        <Link
+          to={user && user.plan !== 'free' ? '/conta' : '/planos'}
+          className={cn(
+            'hidden sm:flex h-8 items-center gap-1.5 rounded-sm border px-2.5 text-xs font-semibold transition-all',
+            user && user.plan !== 'free'
+              ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
+              : 'border-amber-400/40 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20',
+          )}
+        >
+          {user && user.plan !== 'free' ? (
+            <>
+              <UserCheck size={13} />
+              <span>{user.name.split(' ')[0]}</span>
+            </>
+          ) : (
+            <>
+              <Crown size={13} />
+              <span>{user ? 'Assinar Pro' : 'Planos'}</span>
+            </>
+          )}
+        </Link>
         <ThemeToggle />
 
         <button
