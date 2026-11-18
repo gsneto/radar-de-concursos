@@ -424,4 +424,92 @@ describe('BancaRadiographyView', () => {
     expect(screen.getByText(/1 ponto por acerto/i)).toBeInTheDocument();
     expect(screen.getByText('exclusivamente')).toBeInTheDocument();
   });
+
+  it('alterna para o Diretório Completo A–Z de organizadoras estilo PCI com filtro por letra e grupo', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.includes('/api/estudos/bancas')) {
+          return new Response(
+            JSON.stringify({
+              bancas: {
+                fgv: {
+                  id: 'fgv',
+                  nome: 'Fundação Getulio Vargas (FGV)',
+                  estilo_predominante: 'Múltipla Escolha',
+                  regras_pontuacao: '1 ponto por acerto',
+                  caracteristicas: [],
+                  dicas_ti: [],
+                  dicas_gerais: [],
+                  palavras_chave_alerta: [],
+                },
+              },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('/api/organizadoras')) {
+          return new Response(
+            JSON.stringify({
+              total: 3,
+              letras: { A: 1, F: 1, Z: 1 },
+              grupos: { nacional: 1, federal_if_uf: 0, regional_municipal: 2 },
+              itens: [
+                {
+                  slug: 'a-s-instituto',
+                  nome: 'A.S. Instituto',
+                  letra: 'A',
+                  grupo: 'regional_municipal',
+                  grupo_label: 'Regional, Estadual & Municipal',
+                  pci_url: 'https://www.pciconcursos.com.br/organizadoras/a-s-instituto',
+                  tem_raio_x_ti: false,
+                  raio_x_id: null,
+                  concursos_count: 0,
+                  provas_count: 0,
+                  questoes_count: 0,
+                },
+                {
+                  slug: 'fgv',
+                  nome: 'FGV',
+                  letra: 'F',
+                  grupo: 'nacional',
+                  grupo_label: 'Nacional & Grande Porte',
+                  pci_url: 'https://www.pciconcursos.com.br/organizadoras/fgv',
+                  tem_raio_x_ti: true,
+                  raio_x_id: 'fgv',
+                  concursos_count: 4,
+                  provas_count: 5,
+                  questoes_count: 12,
+                },
+                {
+                  slug: 'zambini',
+                  nome: 'Zambini',
+                  letra: 'Z',
+                  grupo: 'regional_municipal',
+                  grupo_label: 'Regional, Estadual & Municipal',
+                  pci_url: 'https://www.pciconcursos.com.br/organizadoras/zambini',
+                  tem_raio_x_ti: false,
+                  raio_x_id: null,
+                  concursos_count: 0,
+                  provas_count: 0,
+                  questoes_count: 0,
+                },
+              ],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response('{}', { status: 200 });
+      }),
+    );
+
+    renderWithClient(<BancaRadiographyView />);
+
+    const dirTab = await screen.findByRole('button', { name: /Diretório Completo A–Z/i });
+    fireEvent.click(dirTab);
+
+    expect(await screen.findByText('A.S. Instituto')).toBeInTheDocument();
+    expect(screen.getByText('Zambini')).toBeInTheDocument();
+    expect(screen.getByText(/5 provas/i)).toBeInTheDocument();
+  });
 });

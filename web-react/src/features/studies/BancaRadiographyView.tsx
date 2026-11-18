@@ -1,11 +1,14 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useBancas } from '@/app/queries';
 import { GlowCard, type Accent } from '@/components/21st/glow-card';
 import { EmptyState, SkeletonRows } from '@/components/ui/states';
+import { OrganizersDirectorySection } from './OrganizersDirectorySection';
 import {
   AlertTriangle,
   Award,
   BookOpen,
+  Building2,
   CheckCircle2,
   Clock,
   Flame,
@@ -30,22 +33,22 @@ const CATEGORIES = [
 
 // Paleta de gradientes para os avatares das bancas
 const BANCA_THEMES: Record<string, { bg: string; text: string; border: string; glow: Accent }> = {
-  fgv: { bg: 'from-amber-500/20 to-orange-600/30', text: 'text-amber-400', border: 'border-amber-500/30', glow: 'amber' },
-  cebraspe: { bg: 'from-rose-500/20 to-red-700/30', text: 'text-rose-400', border: 'border-rose-500/30', glow: 'fuchsia' },
-  fcc: { bg: 'from-violet-500/20 to-purple-700/30', text: 'text-violet-400', border: 'border-violet-500/30', glow: 'indigo' },
-  cesgranrio: { bg: 'from-cyan-500/20 to-blue-700/30', text: 'text-cyan-400', border: 'border-cyan-500/30', glow: 'cyan' },
-  vunesp: { bg: 'from-emerald-500/20 to-teal-700/30', text: 'text-emerald-400', border: 'border-emerald-500/30', glow: 'emerald' },
-  esaf: { bg: 'from-amber-600/20 to-yellow-800/30', text: 'text-amber-300', border: 'border-amber-600/30', glow: 'amber' },
-  quadrix: { bg: 'from-blue-500/20 to-indigo-700/30', text: 'text-blue-400', border: 'border-blue-500/30', glow: 'indigo' },
-  ibfc: { bg: 'from-teal-500/20 to-emerald-700/30', text: 'text-teal-400', border: 'border-teal-500/30', glow: 'emerald' },
-  fepese: { bg: 'from-sky-500/20 to-indigo-700/30', text: 'text-sky-400', border: 'border-sky-500/30', glow: 'cyan' },
-  fundatec: { bg: 'from-fuchsia-500/20 to-pink-700/30', text: 'text-fuchsia-400', border: 'border-fuchsia-500/30', glow: 'fuchsia' },
-  ibam: { bg: 'from-lime-500/20 to-emerald-700/30', text: 'text-lime-400', border: 'border-lime-500/30', glow: 'emerald' },
-  idib: { bg: 'from-orange-500/20 to-amber-700/30', text: 'text-orange-400', border: 'border-orange-500/30', glow: 'amber' },
-  consesp: { bg: 'from-slate-500/20 to-zinc-700/30', text: 'text-zinc-300', border: 'border-zinc-500/30', glow: 'indigo' },
-  legalle: { bg: 'from-green-500/20 to-emerald-800/30', text: 'text-green-400', border: 'border-green-500/30', glow: 'emerald' },
-  consulpam: { bg: 'from-yellow-500/20 to-amber-700/30', text: 'text-yellow-400', border: 'border-yellow-500/30', glow: 'amber' },
-  comissao_propria: { bg: 'from-purple-500/20 to-violet-800/30', text: 'text-purple-400', border: 'border-purple-500/30', glow: 'indigo' },
+  fgv: { bg: 'from-amber-500/20 to-orange-600/30', text: 'text-accent-ink', border: 'border-amber-500/30', glow: 'amber' },
+  cebraspe: { bg: 'from-rose-500/20 to-red-700/30', text: 'text-risk-ink', border: 'border-rose-500/30', glow: 'fuchsia' },
+  fcc: { bg: 'from-violet-500/20 to-purple-700/30', text: 'text-info-ink', border: 'border-violet-500/30', glow: 'indigo' },
+  cesgranrio: { bg: 'from-cyan-500/20 to-blue-700/30', text: 'text-info-ink', border: 'border-cyan-500/30', glow: 'cyan' },
+  vunesp: { bg: 'from-emerald-500/20 to-teal-700/30', text: 'text-ok-ink', border: 'border-emerald-500/30', glow: 'emerald' },
+  esaf: { bg: 'from-amber-600/20 to-yellow-800/30', text: 'text-accent-ink', border: 'border-amber-600/30', glow: 'amber' },
+  quadrix: { bg: 'from-blue-500/20 to-indigo-700/30', text: 'text-info-ink', border: 'border-blue-500/30', glow: 'indigo' },
+  ibfc: { bg: 'from-teal-500/20 to-emerald-700/30', text: 'text-ok-ink', border: 'border-teal-500/30', glow: 'emerald' },
+  fepese: { bg: 'from-sky-500/20 to-indigo-700/30', text: 'text-info-ink', border: 'border-sky-500/30', glow: 'cyan' },
+  fundatec: { bg: 'from-fuchsia-500/20 to-pink-700/30', text: 'text-risk-ink', border: 'border-fuchsia-500/30', glow: 'fuchsia' },
+  ibam: { bg: 'from-lime-500/20 to-emerald-700/30', text: 'text-ok-ink', border: 'border-lime-500/30', glow: 'emerald' },
+  idib: { bg: 'from-orange-500/20 to-amber-700/30', text: 'text-accent-ink', border: 'border-orange-500/30', glow: 'amber' },
+  consesp: { bg: 'from-slate-500/20 to-zinc-700/30', text: 'text-fg-2', border: 'border-zinc-500/30', glow: 'indigo' },
+  legalle: { bg: 'from-green-500/20 to-emerald-800/30', text: 'text-ok-ink', border: 'border-green-500/30', glow: 'emerald' },
+  consulpam: { bg: 'from-yellow-500/20 to-amber-700/30', text: 'text-accent-ink', border: 'border-yellow-500/30', glow: 'amber' },
+  comissao_propria: { bg: 'from-purple-500/20 to-violet-800/30', text: 'text-info-ink', border: 'border-purple-500/30', glow: 'indigo' },
 };
 
 export function BancaRadiographyView({
@@ -53,12 +56,23 @@ export function BancaRadiographyView({
 }: {
   onSelectBancaSimulado?: (banca: string) => void;
 }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialMode = searchParams.get('modo') === 'diretorio' ? 'diretorio' : 'raio_x';
+  const [viewMode, setViewMode] = useState<'raio_x' | 'diretorio'>(initialMode);
   const { data, isLoading } = useBancas();
   const [activeBancaId, setActiveBancaId] = useState<string>('fgv');
   const [compareBancaId, setCompareBancaId] = useState<string>('cebraspe');
   const [isComparing, setIsComparing] = useState<boolean>(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
+
+  const switchMode = (nextMode: 'raio_x' | 'diretorio') => {
+    setViewMode(nextMode);
+    const next = new URLSearchParams(searchParams);
+    if (nextMode === 'diretorio') next.set('modo', 'diretorio');
+    else next.delete('modo');
+    setSearchParams(next, { replace: true });
+  };
 
   if (isLoading) {
     return <SkeletonRows rows={5} />;
@@ -103,38 +117,64 @@ export function BancaRadiographyView({
 
   return (
     <div className="space-y-6">
-      {/* 1. Header Hero com Posicionamento de Alto Valor */}
+      {/* 1. Header Hero com Alternador Raio-X Estratégico TI vs Diretório Completo A-Z */}
       <div className="relative overflow-hidden rounded-2xl border border-line bg-gradient-to-br from-surface to-surface-2 p-6 shadow-xl">
         <div className="absolute right-0 top-0 -mr-16 -mt-16 h-64 w-64 rounded-full bg-accent/10 blur-3xl pointer-events-none" />
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-2xs font-bold uppercase tracking-wider text-amber-300">
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-2xs font-bold uppercase tracking-wider text-accent-ink">
               <Sparkles size={12} /> Inteligência Estratégica de Prova
             </div>
             <h2 className="mt-2 font-display text-2xl font-bold tracking-tight text-fg sm:text-3xl">
               Radiografia Comparativa de Bancas Examinadoras
             </h2>
             <p className="mt-1 text-xs text-fg-3 max-w-2xl leading-relaxed">
-              Descubra os padrões de cobrança, a taxa real de pegadinhas e as métricas de tempo de 16 grandes organizadoras.
-              Chegue na prova sabendo exatamente como a banca pensa.
+              Navegue entre o Raio-X profundo das {bancaList.length} principais bancas de TI e o Diretório Completo A–Z com todas as organizadoras catalogadas.
             </p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => setIsComparing(!isComparing)}
-              className={`flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-semibold transition-all ${
-                isComparing
-                  ? 'border-accent bg-accent/15 text-accent shadow-sm'
-                  : 'border-line bg-surface-2 text-fg-2 hover:border-line-strong hover:text-fg'
-              }`}
-            >
-              <Swords size={15} />
-              {isComparing ? 'Fechar Comparador' : 'Modo Duelo (VS)'}
-            </button>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <div className="inline-flex rounded-xl border border-line bg-surface-2 p-1">
+              <button
+                type="button"
+                onClick={() => switchMode('raio_x')}
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
+                  viewMode === 'raio_x'
+                    ? 'bg-accent text-white shadow-xs'
+                    : 'text-fg-2 hover:text-fg'
+                }`}
+              >
+                <Sparkles size={13} /> Raio-X TI ({bancaList.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => switchMode('diretorio')}
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
+                  viewMode === 'diretorio'
+                    ? 'bg-accent text-white shadow-xs'
+                    : 'text-fg-2 hover:text-fg'
+                }`}
+              >
+                <Building2 size={13} /> Diretório Completo A–Z
+              </button>
+            </div>
 
-            {onSelectBancaSimulado && (
+            {viewMode === 'raio_x' && (
+              <button
+                type="button"
+                onClick={() => setIsComparing(!isComparing)}
+                className={`flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-semibold transition-all ${
+                  isComparing
+                    ? 'border-accent bg-accent/15 text-accent-ink shadow-sm'
+                    : 'border-line bg-surface-2 text-fg-2 hover:border-line-strong hover:text-fg'
+                }`}
+              >
+                <Swords size={15} />
+                {isComparing ? 'Fechar Comparador' : 'Modo Duelo (VS)'}
+              </button>
+            )}
+
+            {viewMode === 'raio_x' && onSelectBancaSimulado && (
               <button
                 type="button"
                 onClick={() => onSelectBancaSimulado(activeBanca.id)}
@@ -146,146 +186,159 @@ export function BancaRadiographyView({
           </div>
         </div>
 
-        {/* Barra de Filtros por Categoria & Busca */}
-        <div className="mt-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-t border-line/60 pt-4">
-          <div className="flex flex-wrap gap-1.5">
-            {CATEGORIES.map((cat) => {
-              const Icon = cat.icon;
-              const isSelected = selectedCategory === cat.id;
-              return (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => setSelectedCategory(cat.id)}
-                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-2xs font-semibold tracking-wide transition-colors ${
-                    isSelected
-                      ? 'bg-fg text-surface shadow-xs font-bold'
-                      : 'bg-surface-2/60 text-fg-3 border border-line/60 hover:text-fg hover:border-line'
-                  }`}
-                >
-                  <Icon size={12} />
-                  {cat.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="relative w-full sm:w-60">
-            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-3" />
-            <input
-              type="text"
-              placeholder="Buscar por sigla ou assunto..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full rounded-lg border border-line bg-surface-2/80 pl-8 pr-3 py-1.5 text-xs text-fg placeholder:text-fg-3 focus:border-accent focus:outline-none"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* 2. Grid Interativo de Cards das Bancas (Visual SaaS Moderno) */}
-      <div>
-        <div className="mb-2 flex items-center justify-between text-2xs text-fg-3 px-1">
-          <span>Selecione a banca para carregar o DNA de prova:</span>
-          <span><strong>{filteredBancas.length}</strong> organizadoras filtradas</span>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
-          {filteredBancas.map((banca) => {
-            const isSelected = activeBanca.id === banca.id;
-            const theme = BANCA_THEMES[banca.id] ?? BANCA_THEMES['fgv'];
-            const difficulty = banca.dificuldade ?? 8.0;
-
-            return (
-              <button
-                key={banca.id}
-                type="button"
-                onClick={() => {
-                  setActiveBancaId(banca.id);
-                  if (isComparing && compareBancaId === banca.id) {
-                    setCompareBancaId(activeBancaId);
-                  }
-                }}
-                className={`group relative flex flex-col justify-between rounded-xl border p-2.5 text-left transition-all hover:scale-[1.02] ${
-                  isSelected
-                    ? `border-accent bg-surface-2 shadow-md shadow-accent/10 ring-1 ring-accent`
-                    : 'border-line/70 bg-surface/80 hover:border-line-strong hover:bg-surface-2/50'
-                }`}
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-1 mb-1.5">
-                    <span
-                      className={`inline-flex items-center justify-center h-6 px-1.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-gradient-to-br ${theme.bg} ${theme.text} border ${theme.border}`}
-                    >
-                      {banca.id.replace('_', ' ').slice(0, 6)}
-                    </span>
-                    <span className="text-[10px] font-bold text-amber-400/90">
-                      ★ {difficulty.toFixed(1)}
-                    </span>
-                  </div>
-
-                  <h4 className="text-xs font-semibold text-fg truncate group-hover:text-amber-300 transition-colors">
-                    {banca.nome.split('(')[0].trim()}
-                  </h4>
-                </div>
-
-                <div className="mt-2 pt-1 border-t border-line/40 flex items-center justify-between text-[10px] text-fg-3">
-                  <span className="truncate max-w-[70px]">
-                    {banca.estilo_predominante?.includes('Certo') ? 'C/E' : 'M. Escolha'}
-                  </span>
-                  {banca.id === 'cebraspe' && (
-                    <span className="text-rose-400 font-bold" title="Erro anula acerto">
-                      -1pt
-                    </span>
-                  )}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 3. MODO COMPRADOR (DUELO DE BANCAS LADO A LADO) */}
-      {isComparing ? (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between rounded-xl border border-line bg-surface-2/80 p-3">
-            <div className="flex items-center gap-2">
-              <Swords className="text-accent" size={18} />
-              <span className="text-xs font-bold text-fg uppercase tracking-wider">
-                Duelo Direto: {activeBanca.nome.split('(')[0]} VS {compareBanca.nome.split('(')[0]}
-              </span>
+        {/* Barra de Filtros por Categoria & Busca (modo Raio-X) */}
+        {viewMode === 'raio_x' && (
+          <div className="mt-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-t border-line/60 pt-4">
+            <div className="flex flex-wrap gap-1.5">
+              {CATEGORIES.map((cat) => {
+                const Icon = cat.icon;
+                const isSelected = selectedCategory === cat.id;
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setSelectedCategory(cat.id)}
+                    className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-2xs font-semibold tracking-wide transition-colors ${
+                      isSelected
+                        ? 'bg-fg text-surface shadow-xs font-bold'
+                        : 'bg-surface-2/60 text-fg-3 border border-line/60 hover:text-fg hover:border-line'
+                    }`}
+                  >
+                    <Icon size={12} />
+                    {cat.label}
+                  </button>
+                );
+              })}
             </div>
 
-            <div className="flex items-center gap-2">
-              <span className="text-2xs text-fg-3">Comparar com:</span>
-              <select
-                value={compareBancaId}
-                onChange={(e) => setCompareBancaId(e.target.value)}
-                className="rounded-md border border-line bg-surface px-2.5 py-1 text-xs text-fg focus:border-accent focus:outline-none"
-              >
-                {bancaList
-                  .filter((b) => b.id !== activeBanca.id)
-                  .map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.nome}
-                    </option>
-                  ))}
-              </select>
+            <div className="relative w-full sm:w-60">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-3" />
+              <input
+                type="text"
+                placeholder="Buscar por sigla ou assunto..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full rounded-lg border border-line bg-surface-2/80 pl-8 pr-3 py-1.5 text-xs text-fg placeholder:text-fg-3 focus:border-accent focus:outline-none"
+              />
             </div>
           </div>
+        )}
+      </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <BancaDetailedCard banca={activeBanca} onSelectSimulado={onSelectBancaSimulado} isVersus />
-            <BancaDetailedCard banca={compareBanca} onSelectSimulado={onSelectBancaSimulado} isVersus />
-          </div>
-        </div>
-      ) : (
-        /* 4. VISÃO DETALHADA E BENTO DASHBOARD DA BANCA ATIVA */
-        <BancaDetailedCard
-          banca={activeBanca}
-          onSelectSimulado={onSelectBancaSimulado}
-          theme={activeTheme}
+      {viewMode === 'diretorio' ? (
+        <OrganizersDirectorySection
+          onOpenRaioX={(id) => {
+            setActiveBancaId(id);
+            switchMode('raio_x');
+          }}
         />
+      ) : (
+        <>
+          {/* 2. Grid Interativo de Cards das Bancas (Visual SaaS Moderno) */}
+          <div>
+            <div className="mb-2 flex items-center justify-between text-2xs text-fg-3 px-1">
+              <span>Selecione a banca para carregar o DNA de prova:</span>
+              <span><strong>{filteredBancas.length}</strong> organizadoras filtradas</span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
+              {filteredBancas.map((banca) => {
+                const isSelected = activeBanca.id === banca.id;
+                const theme = BANCA_THEMES[banca.id] ?? BANCA_THEMES['fgv'];
+                const difficulty = banca.dificuldade ?? 8.0;
+
+                return (
+                  <button
+                    key={banca.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveBancaId(banca.id);
+                      if (isComparing && compareBancaId === banca.id) {
+                        setCompareBancaId(activeBancaId);
+                      }
+                    }}
+                    className={`group relative flex flex-col justify-between rounded-xl border p-2.5 text-left transition-all hover:scale-[1.02] ${
+                      isSelected
+                        ? `border-accent bg-surface-2 shadow-md shadow-accent/10 ring-1 ring-accent`
+                        : 'border-line/70 bg-surface/80 hover:border-line-strong hover:bg-surface-2/50'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-1 mb-1.5">
+                        <span
+                          className={`inline-flex items-center justify-center h-6 px-1.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-gradient-to-br ${theme.bg} ${theme.text} border ${theme.border}`}
+                        >
+                          {banca.id.replace('_', ' ').slice(0, 6)}
+                        </span>
+                        <span className="text-[10px] font-bold text-accent-ink">
+                          ★ {difficulty.toFixed(1)}
+                        </span>
+                      </div>
+
+                      <h4 className="text-xs font-semibold text-fg truncate group-hover:text-accent-ink transition-colors">
+                        {banca.nome.split('(')[0].trim()}
+                      </h4>
+                    </div>
+
+                    <div className="mt-2 pt-1 border-t border-line/40 flex items-center justify-between text-[10px] text-fg-3">
+                      <span className="truncate max-w-[70px]">
+                        {banca.estilo_predominante?.includes('Certo') ? 'C/E' : 'M. Escolha'}
+                      </span>
+                      {banca.id === 'cebraspe' && (
+                        <span className="text-risk-ink font-bold" title="Erro anula acerto">
+                          -1pt
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 3. MODO COMPRADOR (DUELO DE BANCAS LADO A LADO) */}
+          {isComparing ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between rounded-xl border border-line bg-surface-2/80 p-3">
+                <div className="flex items-center gap-2">
+                  <Swords className="text-accent-ink" size={18} />
+                  <span className="text-xs font-bold text-fg uppercase tracking-wider">
+                    Duelo Direto: {activeBanca.nome.split('(')[0]} VS {compareBanca.nome.split('(')[0]}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-2xs text-fg-3">Comparar com:</span>
+                  <select
+                    value={compareBancaId}
+                    onChange={(e) => setCompareBancaId(e.target.value)}
+                    className="rounded-md border border-line bg-surface px-2.5 py-1 text-xs text-fg focus:border-accent focus:outline-none"
+                  >
+                    {bancaList
+                      .filter((b) => b.id !== activeBanca.id)
+                      .map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.nome}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <BancaDetailedCard banca={activeBanca} onSelectSimulado={onSelectBancaSimulado} isVersus />
+                <BancaDetailedCard banca={compareBanca} onSelectSimulado={onSelectBancaSimulado} isVersus />
+              </div>
+            </div>
+          ) : (
+            /* 4. VISÃO DETALHADA E BENTO DASHBOARD DA BANCA ATIVA */
+            <BancaDetailedCard
+              banca={activeBanca}
+              onSelectSimulado={onSelectBancaSimulado}
+              theme={activeTheme}
+            />
+          )}
+        </>
       )}
     </div>
   );
@@ -420,9 +473,9 @@ function BancaDetailedCard({
             <div style={{ width: `${breakdown.lei_seca}%` }} className="bg-emerald-400" title={`Lei Seca: ${breakdown.lei_seca}%`} />
           </div>
           <div className="mt-1.5 flex items-center justify-between text-[10px] text-fg-3">
-            <span className="text-amber-300 font-medium">Interp: {breakdown.interpretacao}%</span>
-            <span className="text-indigo-300 font-medium">Dout: {breakdown.doutrina_jurisprudencia}%</span>
-            <span className="text-emerald-300 font-medium">Lei: {breakdown.lei_seca}%</span>
+            <span className="text-accent-ink font-medium">Interp: {breakdown.interpretacao}%</span>
+            <span className="text-info-ink font-medium">Dout: {breakdown.doutrina_jurisprudencia}%</span>
+            <span className="text-ok-ink font-medium">Lei: {breakdown.lei_seca}%</span>
           </div>
         </div>
       </div>
@@ -431,7 +484,7 @@ function BancaDetailedCard({
       <div className={`grid gap-4 ${isVersus ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-3'}`}>
         {/* Card 1: Foco em TI & Sistemas de Informação */}
         <div className="rounded-xl border border-line/70 bg-surface-2/30 p-4 space-y-3">
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-emerald-400">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-ok-ink">
             <Sparkles size={15} />
             <span>Foco em TI & Sistemas de Informação</span>
           </div>
@@ -441,7 +494,7 @@ function BancaDetailedCard({
               {banca.top_disciplinas_ti.map((topic, i) => (
                 <span
                   key={i}
-                  className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-2xs font-semibold text-emerald-300"
+                  className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-2xs font-semibold text-ok-ink"
                 >
                   {topic}
                 </span>
@@ -452,7 +505,7 @@ function BancaDetailedCard({
           <ul className="space-y-2 text-xs text-fg-2 pt-1">
             {banca.dicas_ti.slice(0, 3).map((dica, i) => (
               <li key={i} className="flex items-start gap-2">
-                <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-emerald-400" />
+                <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-ok-ink" />
                 <span className="leading-snug">{dica}</span>
               </li>
             ))}
@@ -461,7 +514,7 @@ function BancaDetailedCard({
 
         {/* Card 2: Armadilhas Recorrentes & Expressões de Alerta */}
         <div className="rounded-xl border border-line/70 bg-surface-2/30 p-4 space-y-3">
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-400">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-accent-ink">
             <AlertTriangle size={15} />
             <span>Termos de Alerta & Gatilhos</span>
           </div>
@@ -474,7 +527,7 @@ function BancaDetailedCard({
             {banca.palavras_chave_alerta.map((termo, i) => (
               <span
                 key={i}
-                className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-2xs font-bold text-amber-300"
+                className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-2xs font-bold text-accent-ink"
               >
                 {termo}
               </span>
@@ -488,7 +541,7 @@ function BancaDetailedCard({
 
         {/* Card 3: Estratégia de Prova Recomendada */}
         <div className="rounded-xl border border-line/70 bg-surface-2/30 p-4 space-y-3">
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-cyan-400">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-info-ink">
             <Target size={15} />
             <span>Tática de Guerra no Dia da Prova</span>
           </div>
@@ -496,14 +549,14 @@ function BancaDetailedCard({
           <ul className="space-y-2.5 text-xs text-fg-2">
             {banca.dicas_gerais.map((dica, i) => (
               <li key={i} className="flex items-start gap-2.5">
-                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-cyan-400/10 text-cyan-400 border border-cyan-400/30 text-[10px] font-bold">
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-cyan-400/10 text-info-ink border border-cyan-400/30 text-[10px] font-bold">
                   {i + 1}
                 </span>
                 <span className="leading-snug">{dica}</span>
               </li>
             ))}
             <li className="flex items-start gap-2.5">
-              <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-cyan-400/10 text-cyan-400 border border-cyan-400/30 text-[10px] font-bold">
+              <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-cyan-400/10 text-info-ink border border-cyan-400/30 text-[10px] font-bold">
                 ✓
               </span>
               <span className="leading-snug text-fg-3">
@@ -517,7 +570,7 @@ function BancaDetailedCard({
               <button
                 type="button"
                 onClick={() => onSelectSimulado(banca.id)}
-                className="w-full flex items-center justify-center gap-2 rounded-lg bg-accent/20 border border-accent/40 px-3 py-2 text-xs font-bold uppercase tracking-wider text-amber-300 hover:bg-accent hover:text-white transition-all shadow-xs"
+                className="w-full flex items-center justify-center gap-2 rounded-lg bg-accent/20 border border-accent/40 px-3 py-2 text-xs font-bold uppercase tracking-wider text-accent-ink hover:bg-accent hover:text-white transition-all shadow-xs"
               >
                 <Zap size={14} /> Fazer Simulado Focado na {banca.id.toUpperCase()}
               </button>

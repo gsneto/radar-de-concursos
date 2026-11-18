@@ -132,4 +132,45 @@ describe('OpportunitiesPage', () => {
 
     expect(await screen.findByText(/Falha ao consultar carteira/i)).toBeInTheDocument();
   });
+
+  it('exibe barra rápida estilo PCI por região (Nordeste, Meu Raio) e carreira (TI & SI)', async () => {
+    const spOpp = {
+      ...sampleOpportunity,
+      contest_id: 'c-sp',
+      contest_label: 'TJ-SP Analista 2026',
+      localizacao: {
+        prova: { text: 'São Paulo/SP', uf: 'SP', state: 'extraido_nao_revisado' },
+        lotacao: { text: 'São Paulo/SP', uf: 'SP', state: 'extraido_nao_revisado' },
+      },
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            total: 2,
+            referencia: { hoje_local: '2026-11-04', fuso: 'America/Recife' },
+            por_urgencia: {},
+            por_prontidao: {},
+            itens: [sampleOpportunity, spOpp],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+
+    renderPage();
+
+    expect((await screen.findAllByText('TJ-PE Analista 2026')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('TJ-SP Analista 2026').length).toBeGreaterThan(0);
+
+    // Clicar em Nordeste filtra oportunidades da região Nordeste e exibe atalhos de UFs nordestinas
+    fireEvent.click(screen.getByRole('button', { name: /^Nordeste$/i }));
+    await waitFor(() => {
+      expect(screen.getAllByText('TJ-PE Analista 2026').length).toBeGreaterThan(0);
+      expect(screen.queryByText('TJ-SP Analista 2026')).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: 'BA' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'PE' })).toBeInTheDocument();
+  });
 });

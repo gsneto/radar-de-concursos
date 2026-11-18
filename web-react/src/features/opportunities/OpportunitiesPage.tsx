@@ -41,6 +41,12 @@ import {
 import { nextOperationalDeadline } from '@/lib/deadlines';
 import { formatOpportunityRole, integer, relativeDays, shortDate } from '@/lib/format';
 import type { Deadline, Opportunity } from '@/lib/types';
+import {
+  PciQuickDirectoryBar,
+  REGION_LABELS,
+  REGION_UFS,
+  type RegionKey,
+} from './PciQuickDirectoryBar';
 
 const PAGE_SIZE = 20;
 const UFS = [
@@ -89,6 +95,11 @@ export function OpportunitiesPage() {
     setSearchDraft(qParam);
   }, [qParam]);
 
+  const regiaoParam = ((params.get('regiao') as RegionKey) || 'nacional') as RegionKey;
+  const activeRegion: RegionKey =
+    regiaoParam in REGION_LABELS ? regiaoParam : 'nacional';
+  const regionFilterActive = activeRegion !== 'nacional' && !params.get('uf');
+
   const filters: PortfolioFilters = useMemo(
     () => ({
       q: params.get('q') ?? undefined,
@@ -99,10 +110,10 @@ export function OpportunitiesPage() {
       prazo: params.get('prazo') ?? undefined,
       documental: params.get('documental') ?? undefined,
       conflito: params.get('conflito') ?? undefined,
-      offset: Number(params.get('offset') ?? 0) || 0,
-      limit: PAGE_SIZE,
+      offset: regionFilterActive ? 0 : Number(params.get('offset') ?? 0) || 0,
+      limit: regionFilterActive ? 200 : PAGE_SIZE,
     }),
-    [params],
+    [params, regionFilterActive],
   );
 
   const sort = (params.get('sort') as SortKey) ?? 'prioridade';
@@ -115,11 +126,16 @@ export function OpportunitiesPage() {
   );
   const [onlySelected, setOnlySelected] = useState(false);
 
-  const total = query.data?.total ?? 0;
-  const offset = filters.offset ?? 0;
-
   const items = useMemo(() => {
     let list = [...(query.data?.itens ?? [])];
+    if (!params.get('uf') && activeRegion !== 'nacional') {
+      const allowedUfs = new Set(REGION_UFS[activeRegion]);
+      list = list.filter((a) => {
+        const ufProva = a.localizacao?.prova?.uf?.toUpperCase();
+        const ufLot = a.localizacao?.lotacao?.uf?.toUpperCase();
+        return (ufProva && allowedUfs.has(ufProva)) || (ufLot && allowedUfs.has(ufLot));
+      });
+    }
     if (onlySelected) {
       list = list.filter((a) => selectedSet.has(a.contest_id));
     }
@@ -135,7 +151,10 @@ export function OpportunitiesPage() {
       list.sort((a, b) => String(a.contest_label ?? '').localeCompare(String(b.contest_label ?? '')));
     }
     return list;
-  }, [query.data, sort, onlySelected, selectedSet]);
+  }, [query.data, sort, onlySelected, selectedSet, regionFilterActive, activeRegion]);
+
+  const total = regionFilterActive ? items.length : (query.data?.total ?? 0);
+  const offset = filters.offset ?? 0;
 
   const update = (changes: Record<string, string | undefined>, resetOffset = true) => {
     const next = new URLSearchParams(params);
@@ -156,6 +175,9 @@ export function OpportunitiesPage() {
 
   const activeChips = useMemo(() => {
     const chips: { key: string; label: string; value: string }[] = [];
+    if (activeRegion !== 'nacional') {
+      chips.push({ key: 'regiao', label: `Região: ${REGION_LABELS[activeRegion]}`, value: activeRegion });
+    }
     if (filters.q) chips.push({ key: 'q', label: `Busca: ${filters.q}`, value: filters.q });
     if (filters.uf) chips.push({ key: 'uf', label: `UF: ${filters.uf}`, value: filters.uf });
     if (filters.prontidao)
@@ -169,7 +191,7 @@ export function OpportunitiesPage() {
     if (filters.conflito)
       chips.push({ key: 'conflito', label: filters.conflito === 'sim' ? 'Com conflito' : 'Sem conflito', value: filters.conflito });
     return chips;
-  }, [filters]);
+  }, [filters, activeRegion]);
 
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const page = Math.floor(offset / PAGE_SIZE) + 1;
@@ -187,6 +209,26 @@ export function OpportunitiesPage() {
             </Button>
           ) : null
         }
+      />
+
+      <PciQuickDirectoryBar
+        activeRegion={activeRegion}
+        activeUf={filters.uf}
+        activeSi={filters.si}
+        activeQuery={filters.q}
+        onSelectRegion={(regiao) =>
+          update({ regiao: regiao === 'nacional' ? undefined : regiao, uf: undefined })
+        }
+        onSelectUf={(uf) => update({ uf })}
+        onSelectCareer={(career) => {
+          if (career.core) {
+            update({ si: filters.si ? undefined : 'explicito', q: undefined });
+          } else {
+            const same = filters.q?.toLowerCase() === career.query;
+            setSearchDraft(same ? '' : (career.query ?? ''));
+            update({ q: same ? undefined : career.query, si: undefined });
+          }
+        }}
       />
 
       <AnimatedFilterPills

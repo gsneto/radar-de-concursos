@@ -1012,3 +1012,49 @@ export interface BancaProfile {
   categoria_label?: string;
   top_disciplinas_ti?: string[];
 }
+
+export interface OrganizerItem {
+  slug: string;
+  nome: string;
+  letra: string;
+  grupo: 'nacional' | 'federal_if_uf' | 'regional_municipal' | string;
+  grupo_label: string;
+  pci_url: string;
+  tem_raio_x_ti: boolean;
+  raio_x_id: string | null;
+  concursos_count: number;
+  provas_count: number;
+  questoes_count: number;
+}
+
+export interface OrganizersResponse {
+  total: number;
+  letras: Record<string, number>;
+  grupos: Record<string, number>;
+  itens: OrganizerItem[];
+}
+
+export type ExamCareer = 'ti' | 'administrativa' | 'fiscal' | 'tribunais' | 'policial' | 'educacao';
+
+export interface ExamPaperItem {
+  id: string;
+  titulo: string;
+  cargo: string;
+  orgao: string;
+  banca_slug: string;
+  banca_nome: string;
+  ano: number;
+  nivel: string;
+  carreira: ExamCareer | string;
+  carreira_label: string;
+  edital_ou_prova_url: string | null;
+  gabarito_url: string | null;
+  questoes_count: number;
+  simulado_tag: string | null;
+}
+
+export interface ExamPapersResponse {
+  total: number;
+  por_carreira: Record<string, number>;
+  itens: ExamPaperItem[];
+}

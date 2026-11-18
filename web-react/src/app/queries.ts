@@ -27,6 +27,8 @@ import type {
   LessonDetail,
   LessonFlashcard,
   BancaProfile,
+  OrganizersResponse,
+  ExamPapersResponse,
 } from '@/lib/types';
 import type { AppUser, AuthMeResponse, BillingEventItem } from '@/lib/auth';
 
@@ -49,6 +51,8 @@ export const keys = {
   lessons: (disciplina?: string) => ['study', 'lessons', disciplina] as const,
   lesson: (id: string) => ['study', 'lesson', id] as const,
   bancas: () => ['study', 'bancas'] as const,
+  organizers: (filters: Record<string, unknown>) => ['organizers', filters] as const,
+  examPapers: (filters: Record<string, unknown>) => ['study', 'exam-papers', filters] as const,
   deadlines: (filters: Record<string, unknown>) => ['deadlines', filters] as const,
   dossier: (contestId: string, scope: string | null) => ['dossier', contestId, scope] as const,
   details: (contestId: string) => ['contest', contestId] as const,
@@ -251,6 +255,68 @@ export function useBancas() {
     queryKey: keys.bancas(),
     queryFn: () => api.get<{ bancas: Record<string, BancaProfile> }>('/api/estudos/bancas'),
     staleTime: 5 * 60_000,
+  });
+}
+
+export interface OrganizersFilters {
+  q?: string;
+  letra?: string;
+  grupo?: string;
+  com_raio_x?: boolean;
+  limit?: number;
+}
+
+export function useOrganizers(filters: OrganizersFilters = {}) {
+  const params: Record<string, string | number | undefined> = {
+    q: filters.q,
+    letra: filters.letra,
+    grupo: filters.grupo,
+    com_raio_x: filters.com_raio_x !== undefined ? (filters.com_raio_x ? '1' : '0') : undefined,
+    limit: filters.limit ?? 500,
+  };
+  return useQuery({
+    queryKey: keys.organizers(params),
+    queryFn: () => api.get<OrganizersResponse>(`/api/organizadoras${qs(params)}`),
+    staleTime: 2 * 60_000,
+  });
+}
+
+export interface ExamPapersFilters {
+  q?: string;
+  banca?: string;
+  carreira?: string;
+  ano?: number | string;
+  limit?: number;
+}
+
+export function useExamPapers(filters: ExamPapersFilters = {}) {
+  const params: Record<string, string | number | undefined> = {
+    q: filters.q,
+    banca: filters.banca,
+    carreira: filters.carreira,
+    ano: filters.ano !== undefined && filters.ano !== '' ? filters.ano : undefined,
+    limit: filters.limit ?? 200,
+  };
+  return useQuery({
+    queryKey: keys.examPapers(params),
+    queryFn: () => api.get<ExamPapersResponse>(`/api/estudos/provas${qs(params)}`),
+    staleTime: 60_000,
+  });
+}
+
+export function useImportExamPaper() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      api.post<{ ok: boolean; questoes_extraidas: number; prova: { id: string; titulo: string } }>(
+        '/api/estudos/provas',
+        payload,
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['study', 'exam-papers'] });
+      queryClient.invalidateQueries({ queryKey: keys.questions() });
+      queryClient.invalidateQueries({ queryKey: ['organizers'] });
+    },
   });
 }
 
