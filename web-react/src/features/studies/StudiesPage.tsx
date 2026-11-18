@@ -6,6 +6,7 @@ import {
   CheckSquare,
   Clock,
   Compass,
+  FileText,
   Layers,
   LayoutDashboard,
   Target,
@@ -13,6 +14,7 @@ import {
 import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { SkeletonRows } from '@/components/ui/states';
+import { ExamPapersTab } from './tabs/ExamPapersTab';
 import { ExamsSimulationTab } from './tabs/ExamsSimulationTab';
 import { FlashcardsDeckTab } from './tabs/FlashcardsDeckTab';
 import { QuestionsPracticeTab } from './tabs/QuestionsPracticeTab';
@@ -33,8 +35,9 @@ const TABS = [
   { path: '/aulas', label: 'Aulas & Teoria', icon: BookOpen, badge: 'Trilha' },
   { path: '/flashcards', label: 'Flashcards Visuais', icon: Layers, badge: 'Jotta' },
   { path: '/questoes', label: 'Questões', icon: CheckSquare, badge: null },
-  { path: '/bancas', label: 'Bancas', icon: Award, badge: '16' },
-  { path: '/simulados', label: 'Simulados', icon: Target, badge: 'Rankings' },
+  { path: '/provas', label: 'Provas Anteriores', icon: FileText, badge: 'Acervo' },
+  { path: '/bancas', label: 'Bancas', icon: Award, badge: '348' },
+  { path: '/simulados', label: 'Simulados', icon: Target, badge: '1-Clique' },
   { path: '/sessoes', label: 'Sessões', icon: Clock, badge: null },
 ] as const;
 
@@ -144,6 +147,7 @@ export function StudiesPage() {
         )}
         {active === '/sessoes' && <SessionsTimerTab />}
         {active === '/questoes' && <QuestionsPracticeTab />}
+        {active === '/provas' && <ExamPapersTab />}
         {active === '/flashcards' && <FlashcardsDeckTab />}
         {active === '/simulados' && <ExamsSimulationTab />}
       </Suspense>

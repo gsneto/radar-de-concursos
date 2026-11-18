@@ -166,4 +166,149 @@ describe('StudiesPage', () => {
     expect(savedBodies[0].verso).toBe('Atomicidade, Consistência, Isolamento e Durabilidade.');
     expect(savedBodies[0].verso).not.toContain('undefined');
   });
+
+  it('exibe tabela estilo PCI de Provas Anteriores (/estudos/provas) com foco em TI e áreas em expansão', async () => {
+    const createdExams: unknown[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.includes('/api/estudos/provas')) {
+          return new Response(
+            JSON.stringify({
+              total: 2,
+              por_carreira: { ti: 1, fiscal: 1 },
+              itens: [
+                {
+                  id: 'prova-fgv-mpo-2024-ti',
+                  titulo: 'Analista de Planejamento e Orçamento - Tecnologia da Informação',
+                  cargo: 'Analista de Planejamento e Orçamento (TI)',
+                  orgao: 'MPO',
+                  banca_slug: 'fgv',
+                  banca_nome: 'FGV',
+                  ano: 2024,
+                  nivel: 'superior',
+                  carreira: 'ti',
+                  carreira_label: 'TI & Sistemas de Informação',
+                  edital_ou_prova_url: 'https://conhecimento.fgv.br/concursos/mpo24',
+                  gabarito_url: 'https://conhecimento.fgv.br/concursos/mpo24',
+                  questoes_count: 4,
+                  simulado_tag: 'orgao:mpo',
+                },
+                {
+                  id: 'prova-fgv-sefaz-fiscal',
+                  titulo: 'Auditor Fiscal da Receita Estadual',
+                  cargo: 'Auditor Fiscal',
+                  orgao: 'SEFAZ/MG',
+                  banca_slug: 'fgv',
+                  banca_nome: 'FGV',
+                  ano: 2023,
+                  nivel: 'superior',
+                  carreira: 'fiscal',
+                  carreira_label: 'Fiscal & Controle',
+                  edital_ou_prova_url: 'https://conhecimento.fgv.br/concursos/',
+                  gabarito_url: null,
+                  questoes_count: 0,
+                  simulado_tag: null,
+                },
+              ],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('/api/estudos/simulados') && init?.method === 'POST') {
+          createdExams.push(JSON.parse(String(init.body)));
+          return new Response(
+            JSON.stringify({
+              id: 'sim-mpo-1',
+              nome: 'Prova FGV 2024 — MPO',
+              modo: 'tradicional',
+              estado: 'em_andamento',
+              duracao_segundos: null,
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }),
+    );
+
+    renderPage('/estudos/provas');
+
+    expect(
+      await screen.findByText('Analista de Planejamento e Orçamento - Tecnologia da Informação'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('MPO')).toBeInTheDocument();
+    expect(screen.getByText('Auditor Fiscal da Receita Estadual')).toBeInTheDocument();
+
+    const simBtn = screen.getByRole('button', { name: /Simular Prova/i });
+    fireEvent.click(simBtn);
+
+    await waitFor(() => {
+      expect(createdExams.length).toBe(1);
+    });
+    expect(createdExams[0]).toMatchObject({ tags: ['orgao:mpo'] });
+  });
+
+  it('exibe índice de Simulados por Disciplina estilo PCI em 1 clique (/estudos/simulados)', async () => {
+    const createdSubjectExams: unknown[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.includes('/api/estudos/questoes')) {
+          return new Response(
+            JSON.stringify([
+              { id: 'q1', enunciado: 'Q1', disciplina: 'Banco de Dados' },
+              { id: 'q2', enunciado: 'Q2', disciplina: 'Banco de Dados' },
+              { id: 'q3', enunciado: 'Q3', disciplina: 'Redes de Computadores' },
+            ]),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('/api/estudos/desempenho')) {
+          return new Response(
+            JSON.stringify({
+              geral: { total: 0, respondidas: 0, acertos: 0, erros: 0, brancos: 0, denominator: 0, pct: null, basis: '' },
+              por_disciplina: [{ grupo: 'Banco de Dados', total: 2, acertos: 2, erros: 0, brancos: 0, pct: 100 }],
+              por_topico: [],
+              simulados: [],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('/api/estudos/simulados') && init?.method === 'POST') {
+          createdSubjectExams.push(JSON.parse(String(init.body)));
+          return new Response(
+            JSON.stringify({
+              id: 'sim-bd-1',
+              nome: 'Simulado — Banco de Dados',
+              modo: 'tradicional',
+              estado: 'em_andamento',
+              duracao_segundos: null,
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('/api/estudos/simulados/sim-bd-1/questoes')) {
+          return new Response(JSON.stringify({ questoes: [] }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }),
+    );
+
+    renderPage('/estudos/simulados');
+
+    expect(await screen.findByText('Simulados por Disciplina')).toBeInTheDocument();
+    expect(await screen.findByText('2 questões')).toBeInTheDocument();
+
+    const startBdBtn = screen.getByRole('button', { name: /Iniciar simulado de Banco de Dados/i });
+    fireEvent.click(startBdBtn);
+
+    await waitFor(() => {
+      expect(createdSubjectExams.length).toBe(1);
+    });
+    expect(createdSubjectExams[0]).toMatchObject({ disciplina: 'Banco de Dados' });
+  });
 });
