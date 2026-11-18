@@ -57,7 +57,11 @@ export function OpportunityGlowCard({ item, isSelected = false, onToggleSelect }
       : (prova?.text ?? prova?.uf ?? 'Não informado');
 
   return (
-    <GlowCard accent={accent} className={cn("group flex flex-col justify-between h-full", isSelected && "ring-1 ring-amber-400/40")}>
+    <GlowCard
+      accent={accent}
+      contentClassName="p-4 sm:p-5 justify-between"
+      className={cn('group h-full', isSelected && 'ring-1 ring-amber-400/40')}
+    >
       {/* Topo do Card: Órgão e Cargo */}
       <div>
         <div className="flex items-start justify-between gap-3 mb-2.5">
@@ -86,8 +90,8 @@ export function OpportunityGlowCard({ item, isSelected = false, onToggleSelect }
                 className={cn(
                   'p-1.5 rounded-md border transition-all text-xs flex items-center gap-1',
                   isSelected
-                    ? 'bg-amber-400/15 border-amber-400/50 text-amber-300 shadow-xs'
-                    : 'bg-surface-2/80 border-line text-fg-3 hover:text-amber-400 hover:border-amber-400/30',
+                    ? 'bg-amber-400/15 border-amber-400/50 text-accent-ink shadow-xs'
+                    : 'bg-surface-2/80 border-line text-fg-3 hover:text-accent hover:border-amber-400/30',
                 )}
               >
                 <Star size={13} className={isSelected ? 'fill-amber-400 text-amber-400' : ''} />
@@ -109,7 +113,7 @@ export function OpportunityGlowCard({ item, isSelected = false, onToggleSelect }
             {locationText}
           </span>
           {isRegional && (
-            <span className="inline-flex items-center gap-1 text-cyan-300 font-mono text-[10px] bg-cyan-950/40 px-1.5 py-0.5 rounded-sm border border-cyan-800/40">
+            <span className="inline-flex items-center gap-1 text-info-ink font-mono text-[10px] bg-sky-500/10 px-1.5 py-0.5 rounded-sm border border-sky-500/30">
               📍 Região Nordeste / Paulo Afonso
             </span>
           )}

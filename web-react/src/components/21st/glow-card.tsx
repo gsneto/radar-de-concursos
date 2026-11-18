@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import type { MouseEvent, ReactNode, TouchEvent } from 'react';
+import { useRef } from 'react';
+import type { CSSProperties, MouseEvent, ReactNode, TouchEvent } from 'react';
 import { cn } from '@/lib/cn';
 
 export type Accent = 'indigo' | 'cyan' | 'emerald' | 'fuchsia' | 'amber';
@@ -18,79 +18,74 @@ const GRID_IMAGE =
 export function GlowCard({
   accent = 'indigo',
   className = '',
+  contentClassName = 'p-5',
   children,
 }: {
   accent?: Accent;
   className?: string;
+  contentClassName?: string;
   children: ReactNode;
 }) {
-  const [pos, setPos] = useState({ x: 0, y: 0 });
-  const [active, setActive] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
   const rgb = ACCENTS[accent] ?? ACCENTS.indigo;
 
-  const moveTo = (clientX: number, clientY: number, el: HTMLElement) => {
+  const moveTo = (clientX: number, clientY: number) => {
+    const el = rootRef.current;
+    if (!el) return;
     const rect = el.getBoundingClientRect();
-    setPos({ x: clientX - rect.left, y: clientY - rect.top });
+    el.style.setProperty('--glow-x', `${Math.round(clientX - rect.left)}px`);
+    el.style.setProperty('--glow-y', `${Math.round(clientY - rect.top)}px`);
   };
 
-  const handleMouseMove = (e: MouseEvent<HTMLDivElement>) =>
-    moveTo(e.clientX, e.clientY, e.currentTarget);
+  const handleMouseMove = (e: MouseEvent<HTMLDivElement>) => moveTo(e.clientX, e.clientY);
 
   const handleTouch = (e: TouchEvent<HTMLDivElement>) => {
     const touch = e.touches[0];
     if (touch) {
-      moveTo(touch.clientX, touch.clientY, e.currentTarget);
-      setActive(true);
+      moveTo(touch.clientX, touch.clientY);
+      rootRef.current?.setAttribute('data-touch', 'true');
     }
   };
 
-  const gridMask = `radial-gradient(220px circle at ${pos.x}px ${pos.y}px, black, transparent 75%)`;
+  const handleTouchEnd = () => {
+    rootRef.current?.removeAttribute('data-touch');
+  };
+
+  const gridMask =
+    'radial-gradient(220px circle at var(--glow-x, 0px) var(--glow-y, 0px), black, transparent 75%)';
 
   return (
     <div
+      ref={rootRef}
       onMouseMove={handleMouseMove}
-      onMouseEnter={() => setActive(true)}
-      onMouseLeave={() => setActive(false)}
       onTouchStart={handleTouch}
       onTouchMove={handleTouch}
-      onTouchEnd={() => setActive(false)}
-      onFocus={() => setActive(true)}
-      onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setActive(false);
-      }}
-      className={cn('relative rounded-2xl transition-all', className)}
+      onTouchEnd={handleTouchEnd}
+      style={{ '--glow-x': '0px', '--glow-y': '0px' } as CSSProperties}
+      className={cn('group/glow relative rounded-2xl transition-all', className)}
     >
       {/* Camada 1: borda sutil translúcida */}
       <div aria-hidden="true" className="absolute inset-0 rounded-2xl bg-line" />
 
-      {/* Camada 2: borda viva que segue o cursor */}
+      {/* Camada 2: borda viva que segue o cursor via CSS vars */}
       <div
         aria-hidden="true"
-        className={cn(
-          'absolute inset-0 rounded-2xl transition-opacity duration-500 pointer-events-none',
-          active ? 'opacity-100' : 'opacity-0',
-        )}
+        className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 transition-opacity duration-500 group-hover/glow:opacity-100 group-focus-within/glow:opacity-100 group-data-[touch=true]/glow:opacity-100"
         style={{
-          background: `radial-gradient(240px circle at ${pos.x}px ${pos.y}px, rgba(${rgb}, 0.95), transparent 70%)`,
+          background: `radial-gradient(240px circle at var(--glow-x, 0px) var(--glow-y, 0px), rgba(${rgb}, 0.95), transparent 70%)`,
         }}
       />
 
       {/* Camada 3: corpo do card com spotlight e grid */}
       <div aria-hidden="true" className="absolute inset-px overflow-hidden rounded-[15px] bg-surface">
         <div
-          className={cn(
-            'absolute inset-0 transition-opacity duration-500',
-            active ? 'opacity-100' : 'opacity-0',
-          )}
+          className="absolute inset-0 opacity-0 transition-opacity duration-500 group-hover/glow:opacity-100 group-focus-within/glow:opacity-100 group-data-[touch=true]/glow:opacity-100"
           style={{
-            background: `radial-gradient(380px circle at ${pos.x}px ${pos.y}px, rgba(${rgb}, 0.12), transparent 65%)`,
+            background: `radial-gradient(380px circle at var(--glow-x, 0px) var(--glow-y, 0px), rgba(${rgb}, 0.12), transparent 65%)`,
           }}
         />
         <div
-          className={cn(
-            'absolute inset-0 transition-opacity duration-500',
-            active ? 'opacity-100' : 'opacity-0',
-          )}
+          className="absolute inset-0 opacity-0 transition-opacity duration-500 group-hover/glow:opacity-100 group-focus-within/glow:opacity-100 group-data-[touch=true]/glow:opacity-100"
           style={{
             backgroundImage: GRID_IMAGE,
             backgroundSize: '24px 24px',
@@ -101,7 +96,7 @@ export function GlowCard({
       </div>
 
       {/* Conteúdo */}
-      <div className="relative z-10 flex h-full flex-col p-5">{children}</div>
+      <div className={cn('relative z-10 flex h-full flex-col', contentClassName)}>{children}</div>
     </div>
   );
 }
