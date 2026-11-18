@@ -27,12 +27,18 @@ PCI_TIMEOUT_SECONDS = 45
 PCI_MAX_BYTES = 8 * 1024 * 1024
 
 # Conjunto versionado de consultas de descoberta (ordem de execução).
-PCI_QUERIES_VERSION = 1
+PCI_QUERIES_VERSION = 2
 PCI_QUERIES = (
     ("listar_concursos", {}),
     ("buscar_por_cargo", {"cargo": "analista de sistemas"}),
+    ("buscar_por_cargo", {"cargo": "analista de tecnologia da informação"}),
     ("buscar_por_cargo", {"cargo": "técnico em informática"}),
+    ("buscar_por_cargo", {"cargo": "engenheiro de software"}),
     ("pesquisar_concursos", {"termo": "sistemas de informação"}),
+    ("pesquisar_concursos", {"termo": "ciência da computação"}),
+    ("pesquisar_concursos", {"termo": "banco de dados"}),
+    ("pesquisar_concursos", {"termo": "segurança da informação"}),
+    ("buscar_por_cidade", {"cidade": "Paulo Afonso"}),
 )
 # Ferramentas de concursos (a de apostilas não é usada).
 PCI_CONCURSO_TOOLS = ("listar_concursos", "pesquisar_concursos", "buscar_por_cargo", "buscar_por_cidade")

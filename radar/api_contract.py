@@ -55,6 +55,8 @@ _ENTRIES = [
      "Quadro de vagas por colunas e modalidades, com validação aritmética."),
     ("GET", "/api/lacunas", "concursos", "limit", "", False, "n/a",
      "Lacunas de dados agrupadas por campo e motivo, sem inventar valor."),
+    ("GET", "/api/organizadoras", "concursos", "com_raio_x,grupo,letra,limit,q", "", False, "n/a",
+     "Diretório A-Z completo de organizadoras (~350 bancas) com reconciliação de aliases e contagens."),
 
     # --- Meus Concursos (Painel de Foco Pessoal) -------------------------------
     ("GET", "/api/meus-concursos", "meus_concursos", "limit,offset", "", False, "n/a",
@@ -297,6 +299,12 @@ _ENTRIES = [
      "Detalhe de uma aula estruturada: teoria, radiografia de bancas e questões."),
     ("GET", "/api/estudos/bancas", "estudos", "", "", False, "n/a",
      "Radiografia analítica comparativa de bancas examinadoras (FGV, Cebraspe, Quadrix, IBFC)."),
+    ("GET", "/api/estudos/provas", "estudos", "ano,banca,carreira,limit,q", "", False, "n/a",
+     "Acervo estruturado de provas anteriores oficiais por carreira, banca, órgão e ano."),
+    ("POST", "/api/estudos/provas", "estudos", "",
+     "ano,banca,cargo,carreira,disciplina_padrao,edital_ou_prova_url,gabarito_url,nivel,orgao,"
+     "pdf_base64,texto_gabarito,texto_prova,titulo", True, "nao",
+     "Importa prova oficial pública e extrai questões numeradas com gabarito (somente admin)."),
 
     # --- Estudos: flashcards ---------------------------------------------------
     ("GET", "/api/estudos/flashcards", "flashcards", "incluir_arquivados", "", False,

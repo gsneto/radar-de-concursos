@@ -1,6 +1,6 @@
 # API do Radar de Concursos
 
-Versão do contrato: `api_contract_v1`. Rotas: **129** (112 caminhos).
+Versão do contrato: `api_contract_v1`. Rotas: **151** (131 caminhos).
 
 ## Convenções
 
@@ -60,6 +60,7 @@ Versão do contrato: `api_contract_v1`. Rotas: **129** (112 caminhos).
 | GET | `/api/campos-decisivos` | contest_id, limit | — | não | n/a | Cobertura dos campos decisivos por concurso, com estado explícito. |
 | GET | `/api/quadro-vagas` | contest_id, version_id | — | não | n/a | Quadro de vagas por colunas e modalidades, com validação aritmética. |
 | GET | `/api/lacunas` | limit | — | não | n/a | Lacunas de dados agrupadas por campo e motivo, sem inventar valor. |
+| GET | `/api/organizadoras` | com_raio_x, grupo, letra, limit, q | — | não | n/a | Diretório A-Z completo de organizadoras (~350 bancas) com reconciliação de aliases e contagens. |
 
 ## Confirmação documental
 
@@ -73,6 +74,25 @@ Versão do contrato: `api_contract_v1`. Rotas: **129** (112 caminhos).
 |---|---|---|---|---|---|---|
 | GET | `/api/conflitos` | contest_id, limit | — | não | n/a | Conflitos entre versões documentais. |
 | GET | `/api/conflitos-revisao` | cause, contest_id, field, limit, offset, priority | — | não | n/a | Conflitos classificados com causa e próxima ação. |
+
+## Contas, sessões e assinaturas
+
+| Método | Caminho | Query | Corpo | Escrita | Idempotência | Descrição |
+|---|---|---|---|---|---|---|
+| GET | `/api/auth/me` | — | — | não | n/a | Retorna o estado da sessão atual, usuário autenticado, plano e configuração pública. |
+| POST | `/api/auth/register` | — | name, email, password, bootstrap_admin | sim | nao | Cria nova conta de estudante (ou administrador inicial local) e abre sessão via cookie HttpOnly. |
+| POST | `/api/auth/login` | — | email, password | sim | sim | Autentica por e-mail/senha (scrypt) e emite cookie HttpOnly de sessão. |
+| POST | `/api/auth/logout` | — | — | sim | sim | Encerra a sessão ativa e limpa o cookie de autenticação. |
+| GET | `/api/admin/users` | — | — | não | n/a | Lista usuários cadastrados e planos (somente administrador). |
+| GET | `/api/admin/billing` | — | — | não | n/a | Lista eventos recentes de pagamento/assinatura recebidos por webhook (somente administrador). |
+| POST | `/api/admin/users/plan` | — | user_id, plan, plan_status, role | sim | sim | Atualiza manualmente plano/perfil de um usuário (somente administrador). |
+| POST | `/api/billing/webhook` | — | email, plan, event_type, provider | sim | nao | Webhook autenticado para liberação automática de acesso (Kiwify, Hotmart, Asaas, Stripe). |
+
+## curadoria
+
+| Método | Caminho | Query | Corpo | Escrita | Idempotência | Descrição |
+|---|---|---|---|---|---|---|
+| POST | `/api/curadoria/executar` | — | dry_run, limit | sim | sim | Executa ciclo de curadoria autônoma determinística. |
 
 ## Documentos e aquisição
 
@@ -94,6 +114,12 @@ Versão do contrato: `api_contract_v1`. Rotas: **129** (112 caminhos).
 | GET | `/api/elegibilidade/destaques` | limit, profile | — | não | n/a | Destaques de elegibilidade para um perfil. |
 | GET | `/api/elegibilidade/pendentes` | cause, contest_id, limit, offset | — | não | n/a | Pendências de elegibilidade com causa e próxima ação. |
 | GET | `/api/elegibilidade/revisao` | limit, profile | — | não | n/a | Revisão de compatibilidade de formação. |
+
+## Estáticos (build e UI legada)
+
+| Método | Caminho | Query | Corpo | Escrita | Idempotência | Descrição |
+|---|---|---|---|---|---|---|
+| GET | `/assets/` | — | — | não | n/a | Assets do build React com hash de conteúdo (cache imutável). |
 
 ## Estudos
 
@@ -119,6 +145,13 @@ Versão do contrato: `api_contract_v1`. Rotas: **129** (112 caminhos).
 | GET | `/api/estudos/exportar` | — | — | não | n/a | Exporta dados pessoais de estudo em JSON versionado. |
 | POST | `/api/estudos/importar` | — | payload, dry_run | sim | sim | Importa dados pessoais de estudo com validação e transação. |
 | POST | `/api/estudos/lacuna` | — | contest_id, conceito_key | sim | sim | Envia lacuna de edital para a trilha de estudo. |
+| POST | `/api/estudos/sincronizar-edital` | — | contest_id | sim | sim | Importa conteúdo programático do edital para disciplinas e tópicos de estudo. |
+| GET | `/api/estudos/aulas` | disciplina | — | não | n/a | Lista de aulas estruturadas por disciplina com objetivos e questões. |
+| POST | `/api/estudos/aulas` | — | titulo, disciplina, objetivos, teoria_resumida, pontos_criticos | sim | nao | Cria aula customizada no plano de estudos. |
+| GET | `/api/estudos/aulas/{aula_id}` | — | — | não | n/a | Detalhe de uma aula estruturada: teoria, radiografia de bancas e questões. |
+| GET | `/api/estudos/bancas` | — | — | não | n/a | Radiografia analítica comparativa de bancas examinadoras (FGV, Cebraspe, Quadrix, IBFC). |
+| GET | `/api/estudos/provas` | ano, banca, carreira, limit, q | — | não | n/a | Acervo estruturado de provas anteriores oficiais por carreira, banca, órgão e ano. |
+| POST | `/api/estudos/provas` | — | ano, banca, cargo, carreira, disciplina_padrao, edital_ou_prova_url, gabarito_url, nivel, orgao, pdf_base64, texto_gabarito, texto_prova, titulo | sim | nao | Importa prova oficial pública e extrai questões numeradas com gabarito (somente admin). |
 
 ## Flashcards
 
@@ -127,6 +160,7 @@ Versão do contrato: `api_contract_v1`. Rotas: **129** (112 caminhos).
 | GET | `/api/estudos/flashcards` | incluir_arquivados | — | não | n/a | Lista flashcards. |
 | GET | `/api/estudos/flashcards/fila` | limit | — | não | n/a | Fila de revisão de flashcards (novos + vencidos). |
 | GET | `/api/estudos/flashcards/estatisticas` | — | — | não | n/a | Estatísticas de flashcards. |
+| GET | `/api/estudos/flashcards/visuais` | disciplina | — | não | n/a | Lista todos os flashcards visuais ilustrados por IA no estilo sketchnote. |
 | POST | `/api/estudos/flashcards` | — | action, id, frente, verso, disciplina_id, topico_id, contest_id, conceito_key, tags, fonte, licenca, qualidade, estado | sim | condicional | Cria, atualiza ou revisa flashcard (SM-2-lite). |
 | POST | `/api/estudos/flashcards/{flashcard_id}/imagem` | — | dados_base64, licenca | sim | sim | Anexa imagem validada por assinatura binária e hash. |
 | DELETE | `/api/estudos/flashcards/{flashcard_id}/imagem` | — | — | sim | sim | Remove a imagem do flashcard. |
@@ -140,6 +174,14 @@ Versão do contrato: `api_contract_v1`. Rotas: **129** (112 caminhos).
 | GET | `/api/fontes` | — | — | não | n/a | Catálogo de fontes com política de persistência e estado real. |
 | GET | `/api/fontes/{source_id}` | — | — | não | n/a | Detalhe da fonte: política por tipo, consumo e revisões. |
 | GET | `/api/fontes-consumo` | limit, source_id | — | não | n/a | Consumo por fonte (chamadas, créditos, custo) e último resultado. |
+
+## meus_concursos
+
+| Método | Caminho | Query | Corpo | Escrita | Idempotência | Descrição |
+|---|---|---|---|---|---|---|
+| GET | `/api/meus-concursos` | limit, offset | — | não | n/a | Lista concursos e cargos selecionados pelo candidato no painel de foco. |
+| POST | `/api/meus-concursos` | — | contest_id, role_id, status, notes | sim | sim | Adiciona ou atualiza concurso no painel de foco pessoal. |
+| DELETE | `/api/meus-concursos/{contest_id}` | — | — | sim | sim | Remove concurso do painel de foco pessoal. |
 
 ## Monitoramento
 
@@ -175,7 +217,7 @@ Versão do contrato: `api_contract_v1`. Rotas: **129** (112 caminhos).
 |---|---|---|---|---|---|---|
 | GET | `/api/prazos` | contest_id, group, limit, offset, state | — | não | n/a | Prazos por grupo e estado temporal. |
 | GET | `/api/prazos/auditoria` | cause, contest_id, group, limit, offset | — | não | n/a | Auditoria de conflitos de prazo entre documentos/versões. |
-| GET | `/api/prazos/calendario` | contest_id, group, limit, offset, state, urgency | — | não | n/a | Calendário de prazos com urgência calculada no servidor. |
+| GET | `/api/prazos/calendario` | contest_id, group, groups, limit, offset, state, urgency | — | não | n/a | Calendário operacional de prazos; `groups` recorta vários eventos de uma vez. |
 | GET | `/api/prazos/caso` | escopo | — | não | n/a | Caso de prazo com evidências e explicação. |
 | GET | `/api/prazos/revalidacao` | limit | — | não | n/a | Alvos de revalidação de prazo e política da fonte. |
 | GET | `/api/prazos/revalidacao/historico` | contest_id, group, limit, offset | — | não | n/a | Histórico append-only de revalidações. |
@@ -261,3 +303,4 @@ Versão do contrato: `api_contract_v1`. Rotas: **129** (112 caminhos).
 | Método | Caminho | Query | Corpo | Escrita | Idempotência | Descrição |
 |---|---|---|---|---|---|---|
 | GET | `/api/triagem` | include_seen, limit | — | não | n/a | Triagem de alertas e pendências operacionais. |
+

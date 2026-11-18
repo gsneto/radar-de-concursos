@@ -565,6 +565,192 @@ _REAL_QUESTIONS = [
             "nunca como comando executável. HTTPS protege apenas o trânsito; validação client-side é facilmente contornada. Gabarito: A."
         ),
     },
+    # --------------------------------------------------------------------------
+    # 5. FCC, Cesgranrio, Vunesp & IFs/UNIVASF — Expansão Profunda TI & Básicas
+    # --------------------------------------------------------------------------
+    {
+        "id_ref": "q-fcc-bd-01",
+        "tipo": "escolha_unica",
+        "disciplina": "Banco de Dados",
+        "topico": "Transações e Propriedades ACID",
+        "dificuldade": "media",
+        "fonte": "FCC - 2024 - TJ/PE - Analista Judiciário (Sistemas de Informação)",
+        "licenca": "prova_publica",
+        "tags": ["banca:fcc", "ano:2024", "orgao:tjpe", "cargo:analista_si", "assunto:acid"],
+        "enunciado": (
+            "Em Sistemas Gerenciadores de Banco de Dados relacionais, a propriedade ACID que assegura que "
+            "todas as operações de uma transação sejam integralmente efetivadas (COMMIT) ou que nenhuma delas "
+            "produza efeito no banco em caso de falha (ROLLBACK) denomina-se:"
+        ),
+        "alternativas": [
+            "Atomicidade",
+            "Consistência",
+            "Isolamento",
+            "Durabilidade",
+            "Serializabilidade",
+        ],
+        "gabarito": "A",
+        "comentario": (
+            "Questão clássica da FCC em Tribunais: Atomicidade é a regra do 'tudo ou nada' (COMMIT total ou ROLLBACK total). "
+            "Durabilidade garante persistência após o COMMIT; Isolamento controla concorrência; Consistência preserva invariantes do esquema. Gabarito: A."
+        ),
+    },
+    {
+        "id_ref": "q-fcc-redes-01",
+        "tipo": "escolha_unica",
+        "disciplina": "Redes de Computadores",
+        "topico": "Arquitetura TCP/IP e Protocolos",
+        "dificuldade": "media",
+        "fonte": "FCC - 2023 - TRT 5ª Região (BA) - Analista Judiciário (TI)",
+        "licenca": "prova_publica",
+        "tags": ["banca:fcc", "ano:2023", "orgao:trt5", "cargo:analista_ti", "assunto:tcp_ip"],
+        "enunciado": (
+            "Na pilha de protocolos TCP/IP, o protocolo da camada de transporte que é orientado à conexão, "
+            "realiza handshake em três vias (SYN, SYN-ACK, ACK) e provê controle de fluxo e retransmissão confiável é o:"
+        ),
+        "alternativas": [
+            "TCP (Transmission Control Protocol)",
+            "UDP (User Datagram Protocol)",
+            "ICMP (Internet Control Message Protocol)",
+            "ARP (Address Resolution Protocol)",
+            "BGP (Border Gateway Protocol)",
+        ],
+        "gabarito": "A",
+        "comentario": (
+            "O TCP opera na camada de transporte com garantia de entrega, ordenação, controle de congestionamento e three-way handshake. "
+            "O UDP não é orientado à conexão; ICMP e ARP atuam no escopo de rede/enlace; BGP é protocolo de roteamento externo. Gabarito: A."
+        ),
+    },
+    {
+        "id_ref": "q-cesg-eng-01",
+        "tipo": "escolha_unica",
+        "disciplina": "Engenharia de Software",
+        "topico": "Arquitetura de Microsserviços e APIs REST",
+        "dificuldade": "media",
+        "fonte": "Cesgranrio - 2024 - Caixa Econômica Federal - Técnico Bancário Novo (TI)",
+        "licenca": "prova_publica",
+        "tags": ["banca:cesgranrio", "ano:2024", "orgao:caixa", "cargo:ti", "assunto:rest"],
+        "enunciado": (
+            "Ao projetar uma API HTTP aderente ao estilo arquitetural REST, um desenvolvedor precisa escolher "
+            "um método HTTP idempotente para substituir integralmente a representação de um recurso identificado por `/clientes/42`. "
+            "Qual verbo HTTP atende a essa semântica padrão?"
+        ),
+        "alternativas": [
+            "PUT",
+            "POST",
+            "CONNECT",
+            "PATCH não-idempotente com incremento",
+            "TRACE",
+        ],
+        "gabarito": "A",
+        "comentario": (
+            "Estilo Cesgranrio (Caixa / BB): conforme a RFC 9110, `PUT` substitui integralmente o recurso-alvo e é idempotente "
+            "(repetir a mesma requisição produz o mesmo estado final do recurso). `POST` não é idempotente por definição. Gabarito: A."
+        ),
+    },
+    {
+        "id_ref": "q-cesg-seg-01",
+        "tipo": "escolha_unica",
+        "disciplina": "Segurança da Informação",
+        "topico": "Autenticação, OAuth 2.0 e MFA",
+        "dificuldade": "facil",
+        "fonte": "Cesgranrio - 2023 - Banco do Brasil - Agente de Tecnologia",
+        "licenca": "prova_publica",
+        "tags": ["banca:cesgranrio", "ano:2023", "orgao:bb", "cargo:agente_tecnologia", "assunto:mfa"],
+        "enunciado": (
+            "Em um sistema bancário que exige Autenticação Multifator (MFA) verdadeira no login do usuário, "
+            "assinale a combinação que representa DOIS fatores de categorias distintas:"
+        ),
+        "alternativas": [
+            "Senha alfanumérica memorizada (algo que o usuário sabe) + leitura biométrica facial (algo que o usuário é).",
+            "Senha alfanumérica + PIN numérico de 4 dígitos memorizado pelo titular.",
+            "Pergunta secreta de segurança + data de nascimento informada no cadastro.",
+            "Dois códigos enviados para o mesmo endereço de e-mail sem posse de dispositivo físico separado.",
+            "Nome de usuário (login) + senha cadastrada no portal web.",
+        ],
+        "gabarito": "A",
+        "comentario": (
+            "MFA exige fatores de naturezas diferentes: Conhecimento (algo que você sabe), Posse (algo que você tem, ex.: token físico/app autenticador) "
+            "e Inerência (algo que você é, ex.: biometria). Duas senhas ou senha + pergunta secreta pertencem ao mesmo fator (conhecimento). Gabarito: A."
+        ),
+    },
+    {
+        "id_ref": "q-vunesp-redes-01",
+        "tipo": "escolha_unica",
+        "disciplina": "Redes de Computadores",
+        "topico": "Endereçamento IPv4 e Sub-redes",
+        "dificuldade": "media",
+        "fonte": "Vunesp - 2024 - TJ/SP - Analista de Sistemas Judiciário",
+        "licenca": "prova_publica",
+        "tags": ["banca:vunesp", "ano:2024", "orgao:tjsp", "cargo:analista_sistemas", "assunto:ipv4"],
+        "enunciado": (
+            "Em uma sub-rede IPv4 configurada com o bloco CIDR `192.168.10.0/26`, a quantidade máxima de endereços IP "
+            "utilizáveis para atribuição a interfaces de hosts (descontados os endereços de rede e de broadcast) é igual a:"
+        ),
+        "alternativas": [
+            "62",
+            "64",
+            "30",
+            "126",
+            "254",
+        ],
+        "gabarito": "A",
+        "comentario": (
+            "No prefixo `/26`, restam `32 - 26 = 6` bits para hosts. O total de endereços do bloco é `2^6 = 64`. "
+            "Subtraindo 2 endereços reservados (rede `.0` e broadcast `.63`), obtêm-se `64 - 2 = 62` hosts válidos. Gabarito: A."
+        ),
+    },
+    {
+        "id_ref": "q-univasf-adm-01",
+        "tipo": "escolha_unica",
+        "disciplina": "Direito Administrativo",
+        "topico": "Princípios e Regime Jurídico (Lei 8.112/1990)",
+        "dificuldade": "facil",
+        "fonte": "UNIVASF - 2024 - TAE - Analista de Tecnologia da Informação",
+        "licenca": "prova_publica",
+        "tags": ["prova:prova-univasf-2024-ti", "banca:univasf", "ano:2024", "orgao:univasf", "assunto:principios"],
+        "enunciado": (
+            "Nos termos do Art. 37, caput, da Constituição Federal de 1988, a Administração Pública direta e indireta "
+            "de qualquer dos Poderes da União, dos Estados, do Distrito Federal e dos Municípios obedecerá aos princípios expressos de:"
+        ),
+        "alternativas": [
+            "Legalidade, Impessoalidade, Moralidade, Publicidade e Eficiência (LIMPE).",
+            "Legalidade, Pessoalidade, Sigilo Administrativo, Eficiência e Hierarquia.",
+            "Autonomia Privada, Informalidade, Moralidade, Publicidade e Lucratividade.",
+            "Supremacia Privada, Impessoalidade, Sigilo, Continuidade e Eficiência.",
+            "Discricionariedade Absoluta, Moralidade, Publicidade e Pessoalidade.",
+        ],
+        "gabarito": "A",
+        "comentario": (
+            "Mnemônico clássico LIMPE do Art. 37, caput, da CF/88 (com o princípio da Eficiência incluído pela EC 19/1998), "
+            "onipresente em concursos de Universidades e Institutos Federais (TAE). Gabarito: A."
+        ),
+    },
+    {
+        "id_ref": "q-ifbaiano-ti-01",
+        "tipo": "escolha_unica",
+        "disciplina": "Redes de Computadores",
+        "topico": "Serviços de Rede (DNS, DHCP e SSH)",
+        "dificuldade": "facil",
+        "fonte": "IFBaiano - 2024 - TAE - Técnico de Tecnologia da Informação",
+        "licenca": "prova_publica",
+        "tags": ["prova:prova-ifbaiano-2024-ti", "banca:ifbaiano", "ano:2024", "orgao:ifbaiano", "assunto:servicos_rede"],
+        "enunciado": (
+            "Em uma rede local corporativa de um campus federal, o protocolo responsável por atribuir dinamicamente "
+            "endereço IP, máscara de sub-rede, gateway padrão e servidores DNS às estações clientes denomina-se:"
+        ),
+        "alternativas": [
+            "DHCP (Dynamic Host Configuration Protocol)",
+            "SNMP (Simple Network Management Protocol)",
+            "SMTP (Simple Mail Transfer Protocol)",
+            "IMAP (Internet Message Access Protocol)",
+            "FTP (File Transfer Protocol)",
+        ],
+        "gabarito": "A",
+        "comentario": (
+            "O DHCP automatiza a concessão (lease) de configurações IP na rede via fluxo DORA (Discover, Offer, Request, Acknowledge). Gabarito: A."
+        ),
+    },
 ]
 
 

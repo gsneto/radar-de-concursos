@@ -407,7 +407,10 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             return True
         if path in self._PUBLIC_API_PATHS:
             return True
-        if self.command == "GET" and path.startswith("/api/estudos/aulas/"):
+        if self.command == "GET" and (
+            path.startswith("/api/estudos/aulas/")
+            or path in ("/api/organizadoras", "/api/estudos/provas")
+        ):
             return True
         if self._current_user() is not None:
             return True
@@ -793,6 +796,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         "/api/lacunas": "_get_core_and_ops",
         "/api/preferencias": "_get_core_and_ops",
         "/api/meus-concursos": "_get_core_and_ops",
+        "/api/organizadoras": "_get_core_and_ops",
         # Pipeline documental e aquisição
         "/api/pipeline": "_get_pipeline_and_documents",
         "/api/pipeline/continuidade": "_get_pipeline_and_documents",
@@ -858,6 +862,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         "/api/estudos/simulados": "_get_studies_and_practice",
         "/api/estudos/aulas": "_get_studies_and_practice",
         "/api/estudos/bancas": "_get_studies_and_practice",
+        "/api/estudos/provas": "_get_studies_and_practice",
         # Autenticação, planos e gestão comercial SaaS
         "/api/auth/me": "_get_auth_and_admin",
         "/api/admin/users": "_get_auth_and_admin",
@@ -1121,6 +1126,33 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 else len(items)
             )
             self._send_json({"total": total, "itens": items})
+        elif path == "/api/organizadoras":
+            query = parse_qs(parts.query)
+            if set(query) - {"q", "letra", "grupo", "com_raio_x", "limit"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["500"])[0])
+            except ValueError:
+                self._bad_request("limit inválido")
+                return
+            if limit < 1:
+                self._bad_request("limit inválido")
+                return
+            from radar import organizers_catalog
+            com_raio_x_raw = query.get("com_raio_x", [None])[0]
+            com_raio_x = (
+                True if com_raio_x_raw in ("1", "true", "yes")
+                else (False if com_raio_x_raw in ("0", "false", "no") else None)
+            )
+            self._serve_study(
+                organizers_catalog.list_organizers,
+                q=query.get("q", [None])[0],
+                letra=query.get("letra", [None])[0],
+                grupo=query.get("grupo", [None])[0],
+                com_raio_x=com_raio_x,
+                limit=limit,
+            )
 
     def _get_auth_and_admin(self, path: str, parts):
         from radar import accounts
@@ -1894,6 +1926,30 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         elif path == "/api/estudos/bancas":
             from radar import lesson_plan
             self._send_json({"bancas": lesson_plan.get_banca_profiles()})
+        elif path == "/api/estudos/provas":
+            query = parse_qs(parts.query)
+            if set(query) - {"q", "banca", "carreira", "ano", "limit"}:
+                self._bad_request("parâmetros inválidos")
+                return
+            try:
+                limit = int(query.get("limit", ["200"])[0])
+                ano_raw = query.get("ano", [None])[0]
+                ano = int(ano_raw) if ano_raw not in (None, "") else None
+            except ValueError:
+                self._bad_request("parâmetros numéricos inválidos")
+                return
+            if limit < 1:
+                self._bad_request("limit inválido")
+                return
+            from radar import exam_papers
+            self._serve_study(
+                exam_papers.list_exam_papers,
+                q=query.get("q", [None])[0],
+                banca=query.get("banca", [None])[0],
+                carreira=query.get("carreira", [None])[0],
+                ano=ano,
+                limit=limit,
+            )
 
     def _get_dynamic_routes(self, path: str, parts) -> bool:
         from radar import practice_store
@@ -2731,6 +2787,23 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 return
             self._send_json({"ok": True, "aula": created}, status=HTTPStatus.CREATED)
             return
+        if path == "/api/estudos/provas":
+            if not self._require_admin():
+                return
+            if parts.query:
+                self._send_no_content(HTTPStatus.BAD_REQUEST)
+                return
+            body = self._read_json(max_len=15_000_000)
+            if body is None:
+                return
+            from radar import exam_papers
+            try:
+                created = exam_papers.import_exam_paper(self.server.db_path, body)
+            except ValueError as err:
+                self._bad_request(str(err))
+                return
+            self._send_json(created, status=HTTPStatus.CREATED)
+            return
         if path == "/api/estudos/tentativas":
             if parts.query:
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
@@ -2929,6 +3002,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                       "/api/estudos/perfil", "/api/estudos/lacuna", "/api/estudos/importar",
                       "/api/estudos/sincronizar-edital",
                       "/api/estudos/flashcards", "/api/estudos/questoes", "/api/estudos/aulas",
+                      "/api/estudos/provas",
                       "/api/estudos/tentativas", "/api/estudos/simulados",
                       "/api/auth/register", "/api/auth/login", "/api/auth/logout",
                       "/api/admin/users/plan", "/api/billing/webhook",
