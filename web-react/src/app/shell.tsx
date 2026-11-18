@@ -1,9 +1,14 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
+import { ErrorBoundary } from '@/components/ui/error-boundary';
+import { SkeletonRows } from '@/components/ui/states';
 import { cn } from '@/lib/cn';
 import { Sidebar } from './sidebar';
 import { Topbar } from './topbar';
-import { CommandPalette } from './command-palette';
+
+const CommandPalette = lazy(() =>
+  import('./command-palette').then((m) => ({ default: m.CommandPalette })),
+);
 
 const COLLAPSE_KEY = 'radar.sidebar.collapsed';
 
@@ -19,7 +24,12 @@ export function Shell() {
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteMounted, setPaletteMounted] = useState(false);
   const location = useLocation();
+
+  useEffect(() => {
+    if (paletteOpen) setPaletteMounted(true);
+  }, [paletteOpen]);
 
   useEffect(() => {
     setMobileOpen(false);
@@ -31,6 +41,16 @@ export function Shell() {
       document.body.style.overflow = '';
     };
   }, [mobileOpen]);
+
+  useEffect(() => {
+    const syncSidebar = () => setCollapsed(readCollapsed());
+    window.addEventListener('radar:sidebar', syncSidebar);
+    window.addEventListener('storage', syncSidebar);
+    return () => {
+      window.removeEventListener('radar:sidebar', syncSidebar);
+      window.removeEventListener('storage', syncSidebar);
+    };
+  }, []);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -97,7 +117,11 @@ export function Shell() {
           tabIndex={-1}
           className="mx-auto w-full max-w-[1400px] flex-1 overflow-x-clip px-4 py-5 outline-none lg:px-6 lg:py-6"
         >
-          <Outlet />
+          <ErrorBoundary key={location.pathname}>
+            <Suspense fallback={<SkeletonRows rows={6} />}>
+              <Outlet />
+            </Suspense>
+          </ErrorBoundary>
         </main>
         <footer className="border-t border-line px-4 py-4 text-[10px] text-fg-3 lg:px-6">
           GSN Concursos — dados de fonte pública, sem garantia de atualidade. Informação
@@ -105,7 +129,11 @@ export function Shell() {
         </footer>
       </div>
 
-      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+      {paletteMounted && (
+        <Suspense fallback={null}>
+          <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+        </Suspense>
+      )}
     </div>
   );
 }

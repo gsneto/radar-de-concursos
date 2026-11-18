@@ -418,38 +418,78 @@ export function StudyScheduleView() {
     };
   }, [schedule, completedBlocks]);
 
-  // Exportar Calendário .ICS para Google Agenda / Apple Calendar
+  // Exportar Calendário .ICS compatível com RFC 5545 (Google Agenda / Apple Calendar / Outlook)
   const handleExportICS = () => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const toIcsUtc = (d: Date) =>
+      `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(
+        d.getUTCHours(),
+      )}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`;
+    const escapeIcs = (text: string) =>
+      text.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+
+    const now = new Date();
+    const dtstamp = toIcsUtc(now);
     const calendarEvents: string[] = [];
 
     schedule.forEach((dia) => {
+      const target = new Date(now);
+      const diff = (dia.dayId - now.getDay() + 7) % 7;
+      target.setDate(now.getDate() + diff);
+      target.setHours(19, 0, 0, 0);
+      let cursorMin = 0;
+
       dia.blocos.forEach((bloco) => {
-        calendarEvents.push(`BEGIN:VEVENT
-SUMMARY:Estudo: ${bloco.disciplina} (${bloco.topico})
-DESCRIPTION:${bloco.dicaBanca || 'Bloco de estudo gerado pelo Radar de Concursos'}
-TRIGGER:-PT15M
-DURATION:PT${bloco.duracaoMin}M
-END:VEVENT`);
+        const start = new Date(target.getTime() + cursorMin * 60_000);
+        cursorMin += bloco.duracaoMin + 10;
+        const uid = `${bloco.id}-${start.getTime()}@gsnconcursos.local`;
+        const summary = escapeIcs(`Estudo: ${bloco.disciplina} (${bloco.topico})`);
+        const desc = escapeIcs(bloco.dicaBanca || 'Bloco de estudo gerado pelo GSN Concursos');
+        calendarEvents.push(
+          [
+            'BEGIN:VEVENT',
+            `UID:${uid}`,
+            `DTSTAMP:${dtstamp}`,
+            `DTSTART:${toIcsUtc(start)}`,
+            `DURATION:PT${bloco.duracaoMin}M`,
+            `SUMMARY:${summary}`,
+            `DESCRIPTION:${desc}`,
+            'BEGIN:VALARM',
+            'ACTION:DISPLAY',
+            'DESCRIPTION:Hora do bloco de estudos',
+            'TRIGGER:-PT15M',
+            'END:VALARM',
+            'END:VEVENT',
+          ].join('\r\n'),
+        );
       });
     });
 
-    const icsContent = `BEGIN:VCALENDAR
-VERSION:2.0
-PRODID:-//Radar de Concursos//Ciclo Semanal Inteligente//PT
-CALSCALE:GREGORIAN
-METHOD:PUBLISH
-X-WR-CALNAME:Ciclo de Estudos - ${activeContest?.orgao || 'Radar de Concursos'}
-${calendarEvents.join('\n')}
-END:VCALENDAR`;
+    const calName = escapeIcs(`Ciclo de Estudos - ${activeContest?.orgao || 'GSN Concursos'}`);
+    const icsContent = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//GSN Concursos//Ciclo Semanal Inteligente//PT',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
+      `X-WR-CALNAME:${calName}`,
+      ...calendarEvents,
+      'END:VCALENDAR',
+      '',
+    ].join('\r\n');
 
     const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `ciclo-estudos-${activeContest?.competition_id || 'semana'}.ics`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `ciclo-estudos-${activeContest?.competition_id || 'semana'}.ics`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } finally {
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
   };
 
   const handlePrint = () => {

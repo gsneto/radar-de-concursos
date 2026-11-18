@@ -19,6 +19,29 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     sourcemap: false,
-    chunkSizeWarningLimit: 900,
+    chunkSizeWarningLimit: 500,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined;
+          if (id.includes('framer-motion')) return 'vendor-motion';
+          if (id.includes('@tanstack/react-query')) return 'vendor-query';
+          if (id.includes('lucide-react') || id.includes('cmdk') || id.includes('@radix-ui')) {
+            return 'vendor-ui';
+          }
+          if (
+            id.includes('/react/') ||
+            id.includes('/react-dom/') ||
+            id.includes('/react-router') ||
+            id.includes('\\react\\') ||
+            id.includes('\\react-dom\\') ||
+            id.includes('\\react-router')
+          ) {
+            return 'vendor-react';
+          }
+          return undefined;
+        },
+      },
+    },
   },
 });

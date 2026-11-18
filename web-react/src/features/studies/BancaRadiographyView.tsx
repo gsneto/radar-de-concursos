@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useBancas } from '@/app/queries';
 import { GlowCard, type Accent } from '@/components/21st/glow-card';
-import { SkeletonRows } from '@/components/ui/states';
+import { EmptyState, SkeletonRows } from '@/components/ui/states';
 import {
   AlertTriangle,
   Award,
@@ -87,9 +87,19 @@ export function BancaRadiographyView({
     return matchesCategory && matchesSearch;
   });
 
-  const activeBanca: BancaProfile = bancas[activeBancaId] ?? filteredBancas[0] ?? bancaList[0];
-  const compareBanca: BancaProfile = bancas[compareBancaId] ?? (activeBancaId === 'fgv' ? bancas['cebraspe'] : bancas['fgv']);
-  const activeTheme = BANCA_THEMES[activeBanca?.id] ?? BANCA_THEMES['fgv'];
+  const activeBanca: BancaProfile | undefined = bancas[activeBancaId] ?? filteredBancas[0] ?? bancaList[0];
+  const compareBanca: BancaProfile | undefined =
+    bancas[compareBancaId] ?? (activeBancaId === 'fgv' ? bancas['cebraspe'] : bancas['fgv']);
+  const activeTheme = BANCA_THEMES[activeBanca?.id ?? 'fgv'] ?? BANCA_THEMES['fgv'];
+
+  if (!activeBanca) {
+    return (
+      <EmptyState
+        title="Perfis de bancas indisponíveis"
+        description="Não foi possível carregar os dados comparativos das bancas no momento."
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">

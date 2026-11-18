@@ -227,13 +227,13 @@ class ImportTest(PackageBase):
 
     def test_flashcard_com_disciplina_e_portavel(self):
         import sqlite3
-        conn = sqlite3.connect(self.db)
-        conn.execute("INSERT INTO estudo_disciplinas(id,nome,created_at) VALUES('d1','Português',"
-                     "'2026-10-17T00:00:00+00:00')")
-        conn.execute("INSERT INTO estudo_topicos(id,disciplina_id,parent_id,nome,created_at) "
-                     "VALUES('t1','d1',NULL,'Gramática','2026-10-17T00:00:00+00:00')")
-        conn.commit()
-        conn.close()
+        from contextlib import closing
+        with closing(sqlite3.connect(self.db)) as conn:
+            conn.execute("INSERT INTO estudo_disciplinas(id,nome,created_at) VALUES('d1','Português',"
+                         "'2026-10-17T00:00:00+00:00')")
+            conn.execute("INSERT INTO estudo_topicos(id,disciplina_id,parent_id,nome,created_at) "
+                         "VALUES('t1','d1',NULL,'Gramática','2026-10-17T00:00:00+00:00')")
+            conn.commit()
         practice_store.create_flashcard(self.db, frente="Vinculado?", verso="V",
                                         disciplina_id="d1", topico_id="t1")
         blob = packages.export_package(self.db)

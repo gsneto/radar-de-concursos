@@ -24,7 +24,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   keys,
@@ -53,10 +53,18 @@ import { api, syncProgramToStudy } from '@/lib/api';
 import { formatTitleCase } from '@/lib/domain';
 import { clock, dateTime, duration, integer, percent, shortDate } from '@/lib/format';
 import type { LessonFlashcard, StudyPanel, StudySession } from '@/lib/types';
-import { JottaFlashcardGrid } from './JottaFlashcardView';
-import { LessonsView } from './LessonsView';
-import { BancaRadiographyView } from './BancaRadiographyView';
-import { StudyScheduleView } from './StudyScheduleView';
+const JottaFlashcardGrid = lazy(() =>
+  import('./JottaFlashcardView').then((m) => ({ default: m.JottaFlashcardGrid })),
+);
+const LessonsView = lazy(() =>
+  import('./LessonsView').then((m) => ({ default: m.LessonsView })),
+);
+const BancaRadiographyView = lazy(() =>
+  import('./BancaRadiographyView').then((m) => ({ default: m.BancaRadiographyView })),
+);
+const StudyScheduleView = lazy(() =>
+  import('./StudyScheduleView').then((m) => ({ default: m.StudyScheduleView })),
+);
 
 const TABS = [
   { path: '', label: 'Visão geral', icon: LayoutDashboard, badge: null },
@@ -163,20 +171,22 @@ export function StudiesPage() {
         </>
       )}
 
-      {active === '' && <Overview />}
-      {active === '/cronograma' && <StudyScheduleView />}
-      {active === '/aulas' && <LessonsView />}
-      {active === '/bancas' && (
-        <BancaRadiographyView
-          onSelectBancaSimulado={(_banca) => {
-            navigate('/estudos/simulados');
-          }}
-        />
-      )}
-      {active === '/sessoes' && <SessionsTab />}
-      {active === '/questoes' && <QuestionsTab />}
-      {active === '/flashcards' && <FlashcardsTab />}
-      {active === '/simulados' && <ExamsTab />}
+      <Suspense fallback={<SkeletonRows rows={5} />}>
+        {active === '' && <Overview />}
+        {active === '/cronograma' && <StudyScheduleView />}
+        {active === '/aulas' && <LessonsView />}
+        {active === '/bancas' && (
+          <BancaRadiographyView
+            onSelectBancaSimulado={(_banca) => {
+              navigate('/estudos/simulados');
+            }}
+          />
+        )}
+        {active === '/sessoes' && <SessionsTab />}
+        {active === '/questoes' && <QuestionsTab />}
+        {active === '/flashcards' && <FlashcardsTab />}
+        {active === '/simulados' && <ExamsTab />}
+      </Suspense>
     </>
   );
 }
@@ -783,6 +793,7 @@ function AddTopic({ disciplineId }: { disciplineId: string }) {
 function QuestionsTab() {
   const questions = useQuestions();
   const performance = usePerformance();
+  const [visibleCount, setVisibleCount] = useState(12);
 
   if (questions.isLoading) return <SkeletonRows rows={4} />;
   if (questions.isError)
@@ -793,6 +804,7 @@ function QuestionsTab() {
     );
 
   const geral = performance.data?.geral;
+  const totalQuestions = questions.data?.length ?? 0;
 
   return (
     <div className="space-y-3">
@@ -804,16 +816,27 @@ function QuestionsTab() {
       </section>
 
       <Card title="Praticar questões" subtitle="Correção no servidor; o gabarito aparece só após responder.">
-        {!questions.data?.length ? (
+        {!totalQuestions ? (
           <EmptyState
             title="Nenhuma questão cadastrada"
             description="Crie questões na Operação para praticar aqui. Nenhum conteúdo de terceiros é importado."
           />
         ) : (
           <div className="space-y-2.5">
-            {questions.data.slice(0, 8).map((question) => (
+            {questions.data!.slice(0, visibleCount).map((question) => (
               <QuestionCard key={question.id} question={question} />
             ))}
+            {visibleCount < totalQuestions && (
+              <div className="pt-2 flex justify-center">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setVisibleCount((prev) => prev + 12)}
+                >
+                  Carregar mais questões ({totalQuestions - visibleCount} restantes)
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </Card>
@@ -842,6 +865,7 @@ function QuestionsTab() {
 }
 
 function QuestionCard({ question }: { question: Question }) {
+  const queryClient = useQueryClient();
   const [answer, setAnswer] = useState<string | null>(null);
   const [result, setResult] = useState<{ correta: boolean; gabarito: string } | null>(null);
   const submit = useMutation({
@@ -850,7 +874,11 @@ function QuestionCard({ question }: { question: Question }) {
         questao_id: question.id,
         resposta,
       }),
-    onSuccess: (data) => setResult(data),
+    onSuccess: (data) => {
+      setResult(data);
+      void queryClient.invalidateQueries({ queryKey: keys.performance() });
+      void queryClient.invalidateQueries({ queryKey: keys.study() });
+    },
   });
 
   return (
@@ -925,14 +953,15 @@ function FlashcardsTab() {
   }, [queue.data]);
 
   const totalCards = cards.length;
-  const currentCard = cards[currentIndex] ?? cards[0];
+  const safeIndex = totalCards > 0 ? Math.min(currentIndex, totalCards - 1) : 0;
+  const currentCard = cards[safeIndex];
 
   const review = useMutation({
     mutationFn: (qualidade: number) =>
       api.post('/api/estudos/flashcards', { action: 'review', id: currentCard.id, qualidade }),
     onSuccess: () => {
       setRevealed(false);
-      if (currentIndex >= cards.length - 1) {
+      if (safeIndex >= cards.length - 1) {
         setCurrentIndex(0);
       }
       void queryClient.invalidateQueries({ queryKey: keys.flashQueue() });
@@ -978,10 +1007,10 @@ function FlashcardsTab() {
   const availableDisciplines = [
     'Banco de Dados',
     'Engenharia de Software',
-    'Língua Portuguesa',
-    'Direito Administrativo e Constitucional',
-    'Redação Discursiva',
+    'Redes de Computadores',
     'Segurança da Informação',
+    'Língua Portuguesa',
+    'Direito Constitucional',
   ];
 
   return (
@@ -992,7 +1021,7 @@ function FlashcardsTab() {
           feature
           tone="accent"
           label="Mapas Visuais Estilo Jotta"
-          value={<NumberTicker value={visualCards.length || 25} />}
+          value={<NumberTicker value={visualCards.length} />}
           context="Esquemas gráficos prontos de todas as aulas"
         />
         <Kpi
@@ -1020,7 +1049,7 @@ function FlashcardsTab() {
             }`}
           >
             <Sparkles size={15} />
-            Mapas & Flashcards Visuais (Estilo Jotta) ({visualCards.length || 25})
+            Mapas & Flashcards Visuais (Estilo Jotta) ({visualCards.length})
           </button>
           <button
             type="button"
@@ -1200,7 +1229,7 @@ function FlashcardsTab() {
             {/* Topbar do Flashcard */}
             <div className="flex items-center justify-between border-b border-line px-5 py-3 text-xs bg-surface-2/40">
               <span className="font-mono text-2xs font-semibold text-fg-3">
-                Cartão {currentIndex + 1} de {totalCards} na fila SM-2
+                Cartão {safeIndex + 1} de {totalCards} na fila SM-2
               </span>
               <div className="flex items-center gap-1.5">
                 {((currentCard.tags ?? []) as string[]).slice(0, 3).map((tag: string) => (
@@ -1304,10 +1333,10 @@ function FlashcardsTab() {
           <div className="flex items-center justify-between text-xs text-fg-3 px-1">
             <button
               type="button"
-              disabled={currentIndex <= 0}
+              disabled={safeIndex <= 0}
               onClick={() => {
                 setRevealed(false);
-                setCurrentIndex((i) => Math.max(0, i - 1));
+                setCurrentIndex(Math.max(0, safeIndex - 1));
               }}
               className="flex items-center gap-1 hover:text-fg disabled:opacity-30 disabled:pointer-events-none"
             >
@@ -1315,10 +1344,10 @@ function FlashcardsTab() {
             </button>
             <button
               type="button"
-              disabled={currentIndex >= totalCards - 1}
+              disabled={safeIndex >= totalCards - 1}
               onClick={() => {
                 setRevealed(false);
-                setCurrentIndex((i) => Math.min(totalCards - 1, i + 1));
+                setCurrentIndex(Math.min(totalCards - 1, safeIndex + 1));
               }}
               className="flex items-center gap-1 hover:text-fg disabled:opacity-30 disabled:pointer-events-none"
             >
@@ -1436,6 +1465,7 @@ function ExamsTab() {
 
       {openExam && (
         <ExamRunner
+          key={openExam.id}
           exam={openExam}
           onClose={() => {
             setOpenExam(null);
@@ -1448,6 +1478,7 @@ function ExamsTab() {
 }
 
 function ExamRunner({ exam, onClose }: { exam: Exam; onClose: () => void }) {
+  const queryClient = useQueryClient();
   const [items, setItems] = useState<
     { ordem: number; questao_id: string; enunciado: string; alternativas: { letra: string; texto: string }[]; resposta?: string }[]
     | null
@@ -1455,37 +1486,70 @@ function ExamRunner({ exam, onClose }: { exam: Exam; onClose: () => void }) {
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
+    setError(null);
+    if (exam.estado === 'finalizado' || exam.estado === 'expirado') {
+      api
+        .get<{ resultado?: Record<string, unknown> }>(
+          `/api/estudos/simulados/${encodeURIComponent(exam.id)}/resultado`,
+        )
+        .then((payload) => {
+          if (!alive) return;
+          setResult((payload.resultado ?? payload) as Record<string, unknown>);
+        })
+        .catch((err: Error) => alive && setError(err.message));
+      return () => {
+        alive = false;
+      };
+    }
+
     api
       .get<{ questoes: typeof items }>(`/api/estudos/simulados/${encodeURIComponent(exam.id)}/questoes`)
       .then((payload) => {
         if (!alive) return;
-        setItems(payload.questoes ?? []);
+        const list = payload.questoes ?? [];
+        setItems(list);
+        const initial: Record<number, string> = {};
+        for (const item of list) {
+          if (item.resposta) initial[item.ordem] = item.resposta;
+        }
+        setAnswers(initial);
       })
       .catch((err: Error) => alive && setError(err.message));
     return () => {
       alive = false;
     };
-  }, [exam.id]);
+  }, [exam.id, exam.estado]);
 
   const finish = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    setError(null);
     try {
-      for (const [ordem, resposta] of Object.entries(answers)) {
-        await api.post(`/api/estudos/simulados/${encodeURIComponent(exam.id)}/responder`, {
-          ordem: Number(ordem),
-          resposta,
-        });
-      }
+      await Promise.all(
+        Object.entries(answers).map(([ordem, resposta]) =>
+          api.post(`/api/estudos/simulados/${encodeURIComponent(exam.id)}/responder`, {
+            ordem: Number(ordem),
+            resposta,
+          }),
+        ),
+      );
       await api.post(`/api/estudos/simulados/${encodeURIComponent(exam.id)}/finalizar`, {});
-      const payload = await api.get<{ resultado: Record<string, unknown> }>(
+      const payload = await api.get<{ resultado?: Record<string, unknown> }>(
         `/api/estudos/simulados/${encodeURIComponent(exam.id)}/resultado`,
       );
-      setResult(payload.resultado ?? payload);
+      setResult((payload.resultado ?? payload) as Record<string, unknown>);
+      void queryClient.invalidateQueries({ queryKey: keys.performance() });
+      void queryClient.invalidateQueries({ queryKey: keys.study() });
+      void queryClient.invalidateQueries({ queryKey: keys.exams() });
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -1569,8 +1633,8 @@ function ExamRunner({ exam, onClose }: { exam: Exam; onClose: () => void }) {
             >
               Próxima
             </Button>
-            <Button size="sm" variant="primary" onClick={finish}>
-              <Clock3 size={12} /> Finalizar
+            <Button size="sm" variant="primary" disabled={submitting} onClick={finish}>
+              <Clock3 size={12} /> {submitting ? 'Finalizando...' : 'Finalizar'}
             </Button>
           </div>
         </div>

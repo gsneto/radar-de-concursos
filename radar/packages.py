@@ -128,11 +128,13 @@ def read_package(data, *, max_members=MAX_MEMBERS, max_member_bytes=MAX_MEMBER_B
             return payload
 
         total_real = 0
-        manifest = _load_json(_read(MANIFEST, MAX_JSON_BYTES), "manifest.json")
-        registros = _load_json(_read(RECORDS, MAX_JSON_BYTES), "registros.json")
-        total_real += len(_read(MANIFEST, MAX_JSON_BYTES)) + len(_read(RECORDS, MAX_JSON_BYTES))
+        raw_manifest = _read(MANIFEST, MAX_JSON_BYTES)
+        raw_records = _read(RECORDS, MAX_JSON_BYTES)
+        total_real += len(raw_manifest) + len(raw_records)
         if total_real > max_total_bytes:
             raise PackageError("pacote acima do limite total")
+        manifest = _load_json(raw_manifest, "manifest.json")
+        registros = _load_json(raw_records, "registros.json")
 
         midias = {}
         for safe in names:
@@ -284,7 +286,8 @@ def validate_manifest(manifest: dict) -> dict:
 
 def export_package(db_path, *, nome="Pacote", tipo="misto", licenca="propria",
                    procedencia=None, incluir_questoes=True, incluir_flashcards=True,
-                   incluir_midias=True, question_ids=None, flashcard_ids=None) -> bytes:
+                   incluir_midias=True, question_ids=None, flashcard_ids=None,
+                   user_id: str | None = None) -> bytes:
     """Monta o pacote ZIP em memória. Só exporta conteúdo próprio/autorizado."""
     licenca = (licenca or "propria").strip().lower()
     if licenca not in LICENSE_STATES:
@@ -321,12 +324,23 @@ def export_package(db_path, *, nome="Pacote", tipo="misto", licenca="propria",
             query = ("SELECT id,disciplina_id,topico_id,contest_id,conceito_key,frente,verso,tags,"
                      "fonte,licenca,estado,ease,intervalo,repeticoes,proxima_revisao,"
                      "ultima_revisao,revisoes,imagem_id FROM pratica_flashcards")
-            params = ()
+            clauses: list[str] = []
+            params_list: list = []
             if flashcard_ids:
                 placeholders = ",".join("?" for _ in flashcard_ids)
-                query += f" WHERE id IN ({placeholders})"
-                params = tuple(flashcard_ids)
-            for row in conn.execute(query, params).fetchall():
+                clauses.append(f"id IN ({placeholders})")
+                params_list.extend(flashcard_ids)
+            if user_id is not None:
+                has_uid = any(
+                    r[1] == "user_id"
+                    for r in conn.execute("PRAGMA table_info(pratica_flashcards)").fetchall()
+                )
+                if has_uid:
+                    clauses.append("COALESCE(user_id,'')=?")
+                    params_list.append(str(user_id or ""))
+            if clauses:
+                query += " WHERE " + " AND ".join(clauses)
+            for row in conn.execute(query, tuple(params_list)).fetchall():
                 keys = ("id", "disciplina_id", "topico_id", "contest_id", "conceito_key", "frente",
                         "verso", "tags", "fonte", "licenca", "estado", "ease", "intervalo",
                         "repeticoes", "proxima_revisao", "ultima_revisao", "revisoes", "imagem_id")

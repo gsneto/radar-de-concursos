@@ -1,24 +1,59 @@
+import { lazy } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { RouteErrorFallback } from '@/components/ui/error-boundary';
 import { Shell } from './shell';
-import { MyContestsPage } from '@/features/my-contests/MyContestsPage';
-import { OverviewPage } from '@/features/overview/OverviewPage';
-import { OpportunitiesPage } from '@/features/opportunities/OpportunitiesPage';
-import { DossierPage } from '@/features/dossier/DossierPage';
-import { DeadlinesPage } from '@/features/deadlines/DeadlinesPage';
-import { StudiesPage } from '@/features/studies/StudiesPage';
-import { HistoryPage } from '@/features/history/HistoryPage';
-import { SettingsPage } from '@/features/settings/SettingsPage';
-import { OperationPage } from '@/features/operation/OperationPage';
-import { ReviewPage } from '@/features/review/ReviewPage';
-import { IdentityPage } from '@/features/identity/IdentityPage';
-import { PipelinePage } from '@/features/pipeline/PipelinePage';
-import { MesaPage } from '@/features/mesa/MesaPage';
-import { AccountPage, PlansPage } from '@/features/account/PlansAndAuthPage';
+
+const MyContestsPage = lazy(() =>
+  import('@/features/my-contests/MyContestsPage').then((m) => ({ default: m.MyContestsPage })),
+);
+const OverviewPage = lazy(() =>
+  import('@/features/overview/OverviewPage').then((m) => ({ default: m.OverviewPage })),
+);
+const OpportunitiesPage = lazy(() =>
+  import('@/features/opportunities/OpportunitiesPage').then((m) => ({ default: m.OpportunitiesPage })),
+);
+const DossierPage = lazy(() =>
+  import('@/features/dossier/DossierPage').then((m) => ({ default: m.DossierPage })),
+);
+const DeadlinesPage = lazy(() =>
+  import('@/features/deadlines/DeadlinesPage').then((m) => ({ default: m.DeadlinesPage })),
+);
+const StudiesPage = lazy(() =>
+  import('@/features/studies/StudiesPage').then((m) => ({ default: m.StudiesPage })),
+);
+const HistoryPage = lazy(() =>
+  import('@/features/history/HistoryPage').then((m) => ({ default: m.HistoryPage })),
+);
+const SettingsPage = lazy(() =>
+  import('@/features/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })),
+);
+const OperationPage = lazy(() =>
+  import('@/features/operation/OperationPage').then((m) => ({ default: m.OperationPage })),
+);
+const ReviewPage = lazy(() =>
+  import('@/features/review/ReviewPage').then((m) => ({ default: m.ReviewPage })),
+);
+const IdentityPage = lazy(() =>
+  import('@/features/identity/IdentityPage').then((m) => ({ default: m.IdentityPage })),
+);
+const PipelinePage = lazy(() =>
+  import('@/features/pipeline/PipelinePage').then((m) => ({ default: m.PipelinePage })),
+);
+const MesaPage = lazy(() =>
+  import('@/features/mesa/MesaPage').then((m) => ({ default: m.MesaPage })),
+);
+const PlansPage = lazy(() =>
+  import('@/features/account/PlansAndAuthPage').then((m) => ({ default: m.PlansPage })),
+);
+const AccountPage = lazy(() =>
+  import('@/features/account/PlansAndAuthPage').then((m) => ({ default: m.AccountPage })),
+);
 
 export const router = createBrowserRouter([
   {
     path: '/',
     element: <Shell />,
+    errorElement: <RouteErrorFallback />,
     children: [
       { index: true, element: <MyContestsPage />, handle: { title: 'Meus Concursos' } },
       { path: 'visao-geral', element: <OverviewPage />, handle: { title: 'Visão geral & Métricas' } },

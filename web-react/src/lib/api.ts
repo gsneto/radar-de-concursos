@@ -28,10 +28,24 @@ async function request<T>(
   timeout = DEFAULT_TIMEOUT,
 ): Promise<T> {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), timeout);
+  let timedOut = false;
+  const callerSignal = init.signal;
+  const onCallerAbort = () => controller.abort();
+  if (callerSignal) {
+    if (callerSignal.aborted) {
+      controller.abort();
+    } else {
+      callerSignal.addEventListener('abort', onCallerAbort, { once: true });
+    }
+  }
+  const timer = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeout);
   try {
     const response = await fetch(path, {
       ...init,
+      credentials: 'same-origin',
       cache: 'no-store',
       signal: controller.signal,
       headers: {
@@ -63,11 +77,17 @@ async function request<T>(
   } catch (error) {
     if (error instanceof ApiError) throw error;
     if (error instanceof DOMException && error.name === 'AbortError') {
+      if (!timedOut && callerSignal?.aborted) {
+        throw error;
+      }
       throw new ApiError('A consulta demorou demais para responder.', 0, 'timeout');
     }
     throw new ApiError('Não foi possível falar com o servidor local.', 0, 'rede');
   } finally {
     window.clearTimeout(timer);
+    if (callerSignal) {
+      callerSignal.removeEventListener('abort', onCallerAbort);
+    }
   }
 }
 

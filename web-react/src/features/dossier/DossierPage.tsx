@@ -1,10 +1,11 @@
 import { ArrowLeft, ExternalLink, FileText } from 'lucide-react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { useContestDetails, useDossier } from '@/app/queries';
+import { useAuthMe, useContestDetails, useDossier } from '@/app/queries';
 import { Badge } from '@/components/ui/badge';
 import { LinkButton } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { EmptyState, ErrorState, SkeletonRows } from '@/components/ui/states';
+import { useWorkspaceMode } from '@/lib/auth';
 import {
   documentTypes,
   extractionLabels,
@@ -107,8 +108,11 @@ function formatGap(gap: string): string {
 export function DossierPage() {
   const { contestId } = useParams<{ contestId: string }>();
   const [params, setParams] = useSearchParams();
+  const authMe = useAuthMe();
+  const [workspaceMode] = useWorkspaceMode(authMe.data?.user?.role);
   const scope = params.get('scope');
-  const tab = (params.get('tab') as TabId) ?? 'resumo';
+  const rawTab = params.get('tab');
+  const tab: TabId = TABS.some(([id]) => id === rawTab) ? (rawTab as TabId) : 'resumo';
   const dossier = useDossier(contestId, scope);
   const details = useContestDetails(contestId);
 
@@ -188,9 +192,11 @@ export function DossierPage() {
                 <FileText size={13} /> Documento oficial
               </a>
             )}
-            <LinkButton to="/operacao" variant="ghost" size="md">
-              Operação
-            </LinkButton>
+            {workspaceMode === 'admin' && (
+              <LinkButton to="/operacao" variant="ghost" size="md">
+                Operação
+              </LinkButton>
+            )}
           </div>
         </div>
       </header>

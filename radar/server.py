@@ -276,13 +276,25 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 evidence["path"] = PurePath(evidence["path"]).name
         return payload
 
-    def _serve_priorities(self, limit):
-        from radar import preferences, priority
+    def _load_effective_preferences(self):
+        from radar import accounts, preferences
         from radar.ops_config import load_config
+
+        base = preferences.load(load_config(self.server.config_path))
+        user = self._current_user()
+        if user and user.get("role") == "student":
+            try:
+                stored = accounts.get_user_preferences(self.server.db_path, str(user["id"]))
+                if isinstance(stored, dict) and stored:
+                    return preferences.validate({**base, **stored})
+            except Exception:
+                pass
+        return base
+
+    def _serve_priorities(self, limit):
+        from radar import priority
         try:
-            config = load_config(self.server.config_path)
-            config["db_path"] = self.server.db_path
-            prefs = preferences.load(config)
+            prefs = self._load_effective_preferences()
             payload = priority.prioritize(self.server.db_path, prefs, limit=limit)
         except (ValueError, sqlite3.Error):
             self._send(HTTPStatus.SERVICE_UNAVAILABLE, "application/json; charset=utf-8",
@@ -292,15 +304,13 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         self._send(HTTPStatus.OK, "application/json; charset=utf-8", body)
 
     def _serve_preferences(self):
-        from radar import preferences
-        from radar.ops_config import load_config
-        payload = preferences.load(load_config(self.server.config_path))
+        payload = self._load_effective_preferences()
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self._send(HTTPStatus.OK, "application/json; charset=utf-8", body)
 
     def _save_preferences(self):
-        """POST /api/preferencias: valida e grava as preferências geográficas locais."""
-        from radar import preferences
+        """POST /api/preferencias: valida e grava as preferências (por aluno ou global local)."""
+        from radar import accounts, preferences
         from radar.ops_config import update_preferences
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -320,9 +330,13 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             body = json.dumps({"error": str(error)}, ensure_ascii=False).encode("utf-8")
             self._send(HTTPStatus.BAD_REQUEST, "application/json; charset=utf-8", body)
             return
+        user = self._current_user()
         try:
-            update_preferences(saved, self.server.config_path)
-        except (OSError, ValueError) as error:
+            if user and user.get("role") == "student":
+                accounts.save_user_preferences(self.server.db_path, str(user["id"]), saved)
+            else:
+                update_preferences(saved, self.server.config_path)
+        except (OSError, ValueError, sqlite3.Error) as error:
             body = json.dumps({"error": f"não foi possível gravar as preferências: {type(error).__name__}"},
                               ensure_ascii=False).encode("utf-8")
             self._send(HTTPStatus.INTERNAL_SERVER_ERROR, "application/json; charset=utf-8", body)
@@ -338,6 +352,18 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
 
     _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
     _SESSION_COOKIE = "gsn_session"
+    _PUBLIC_API_PATHS = {
+        "/api/auth/me",
+        "/api/auth/login",
+        "/api/auth/register",
+        "/api/auth/logout",
+        "/api/billing/webhook",
+        "/api/saude",
+        "/api/concursos",
+        "/api/estudos/aulas",
+        "/api/estudos/bancas",
+        "/api/estudos/flashcards/visuais",
+    }
 
     @staticmethod
     def _public_mode_enabled() -> bool:
@@ -351,6 +377,58 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
     def _public_hosts() -> set[str]:
         raw = os.environ.get("RADAR_PUBLIC_HOSTS", "")
         return {h.strip().lower() for h in raw.split(",") if h.strip()}
+
+    def _request_hostname(self) -> str:
+        host = self.headers.get("Host") or ""
+        if host.startswith("["):
+            hostname, _, _ = host[1:].partition("]")
+            return hostname.lower()
+        return host.partition(":")[0].lower()
+
+    def _client_ip(self) -> str:
+        forwarded = (self.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+        if forwarded and self._public_mode_enabled():
+            return forwarded
+        return str(self.client_address[0]) if self.client_address else "local"
+
+    def _drain_pending_body(self) -> None:
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except (TypeError, ValueError):
+            length = 0
+        if length > 0:
+            self._drain(length)
+
+    def _auth_guard(self, path: str) -> bool:
+        """Em modo público ou RADAR_REQUIRE_AUTH=1, exige sessão autenticada nas rotas protegidas."""
+        if not self._public_mode_enabled() and not self._require_auth_enabled():
+            return True
+        if not _is_api_path(path):
+            return True
+        if path in self._PUBLIC_API_PATHS:
+            return True
+        if self.command == "GET" and path.startswith("/api/estudos/aulas/"):
+            return True
+        if self._current_user() is not None:
+            return True
+        self._drain_pending_body()
+        self._send(
+            HTTPStatus.UNAUTHORIZED,
+            "application/json; charset=utf-8",
+            b'{"error":"autenticacao obrigatoria"}',
+        )
+        return False
+
+    def _require_admin(self) -> bool:
+        if self._is_admin_allowed():
+            return True
+        self._drain_pending_body()
+        self._send(
+            HTTPStatus.FORBIDDEN,
+            "application/json; charset=utf-8",
+            b'{"error":"acesso restrito ao administrador"}',
+        )
+        return False
 
     def _host_allowed(self) -> bool:
         """Aceita apenas Host loopback ou hosts públicos configurados (anti DNS rebinding)."""
@@ -424,12 +502,20 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
     def _current_user_id(self) -> str:
         """Escopo pessoal: aluno logado usa seu id; admin/local preserva dados '' do fundador."""
         user = self._current_user()
-        if user and user.get("role") == "student":
-            return str(user["id"])
+        if user:
+            if user.get("role") == "student":
+                return str(user["id"])
+            return ""
+        if self._public_mode_enabled() or self._require_auth_enabled():
+            return "__anon__"
         return ""
 
     def _session_cookie_header(self, token: str, *, max_age: int = 30 * 86400) -> dict[str, str]:
-        secure = "; Secure" if self.headers.get("X-Forwarded-Proto", "").lower() == "https" else ""
+        is_https = self.headers.get("X-Forwarded-Proto", "").lower() == "https"
+        non_loopback_public = self._public_mode_enabled() and (
+            self._request_hostname() not in self._LOOPBACK_HOSTS
+        )
+        secure = "; Secure" if (is_https or non_loopback_public) else ""
         return {
             "Set-Cookie": (
                 f"{self._SESSION_COOKIE}={token}; HttpOnly; Path=/; "
@@ -444,9 +530,10 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         # Em modo estritamente local sem login obrigatório e sem usuário logado como aluno, preserva acesso admin local
         return not self._public_mode_enabled() and not self._require_auth_enabled()
 
-    def _guard_write(self, *, body_expected: bool = True) -> bool:
+    def _guard_write(self, *, body_expected: bool = True, skip_origin: bool = False) -> bool:
         """Recusa origem estranha e corpo que não se declara JSON (CSRF local)."""
-        if not self._origin_allowed():
+        if not skip_origin and not self._origin_allowed():
+            self._drain_pending_body()
             self._send(HTTPStatus.FORBIDDEN, "application/json; charset=utf-8",
                        b'{"error":"origem nao autorizada"}')
             return False
@@ -474,12 +561,14 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 break
             remaining -= len(chunk)
 
-    def _read_json(self, max_len=8192):
+    def _read_json(self, max_len=8192, *, allow_empty: bool = False):
         """Lê e valida o corpo JSON da requisição; devolve ``dict`` ou ``None`` (já responde 400)."""
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except (TypeError, ValueError):
             length = 0
+        if length == 0 and allow_empty:
+            return {}
         if length <= 0 or length > max_len:
             if length > max_len:
                 self._drain(length)
@@ -783,6 +872,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         self._expensive_acquired = False
         parts = urlsplit(self.path)
         path = parts.path
+        if not self._auth_guard(path):
+            return
         if path in _EXPENSIVE_PATHS:
             # Espera uma vaga curta antes de recusar: navegar entre telas não deve
             # produzir 429 para o próprio usuário.
@@ -1002,12 +1093,34 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             else:
                 self._serve_preferences()
         elif path == "/api/meus-concursos":
-            if parts.query:
+            query = parse_qs(parts.query)
+            if set(query) - {"limit", "offset"}:
                 self._bad_request("parâmetros inválidos")
-            else:
-                from radar import my_contests
-                items = my_contests.list_my_contests(self.server.db_path, user_id=self._current_user_id())
-                self._send_json({"total": len(items), "itens": items})
+                return
+            limit = None
+            offset = 0
+            try:
+                if "limit" in query:
+                    limit = int(query["limit"][0])
+                if "offset" in query:
+                    offset = int(query["offset"][0])
+            except ValueError:
+                self._bad_request("parâmetros inválidos")
+                return
+            if (limit is not None and limit < 0) or offset < 0:
+                self._bad_request("parâmetros inválidos")
+                return
+            from radar import my_contests
+            uid = self._current_user_id()
+            items = my_contests.list_my_contests(
+                self.server.db_path, user_id=uid, limit=limit, offset=offset
+            )
+            total = (
+                my_contests.count_my_contests(self.server.db_path, user_id=uid)
+                if (limit is not None or offset > 0)
+                else len(items)
+            )
+            self._send_json({"total": total, "itens": items})
 
     def _get_auth_and_admin(self, path: str, parts):
         from radar import accounts
@@ -1043,6 +1156,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             self._serve_study(accounts.list_billing_events, limit=50)
 
     def _get_pipeline_and_documents(self, path: str, parts):
+        if not self._require_admin():
+            return
         if path == "/api/pipeline":
             if parts.query:
                 self._bad_request("parâmetros inválidos")
@@ -1208,6 +1323,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                               version_id=query.get("version_id", [None])[0])
 
     def _get_review_and_reconciliation(self, path: str, parts):
+        if not self._require_admin():
+            return
         if path == "/api/reconciliacao":
             query = parse_qs(parts.query)
             allowed = {"limit", "offset", "contest_id", "nature", "state", "min_candidates"}
@@ -1655,7 +1772,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             if parts.query:
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
             else:
-                self._serve_study(knowledge_store.list_profile)
+                self._serve_study(knowledge_store.list_profile, user_id=uid)
         elif path == "/api/estudos/conteudo":
             query = parse_qs(parts.query)
             contest_id = query.get("contest_id", [None])[0]
@@ -1669,12 +1786,12 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             if set(query) - {"contest_id"} or not contest_id:
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
             else:
-                self._serve_study(knowledge_store.preparation_report, contest_id)
+                self._serve_study(knowledge_store.preparation_report, contest_id, user_id=uid)
         elif path == "/api/estudos/exportar":
             if parts.query:
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
             else:
-                self._serve_study(study_backup.export_study_data)
+                self._serve_study(study_backup.export_study_data, user_id=uid)
         elif path == "/api/estudos/flashcards":
             query = parse_qs(parts.query)
             if set(query) - {"incluir_arquivados"}:
@@ -1752,7 +1869,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 return
             try:
                 blob = packages.export_package(self.server.db_path, nome=nome, tipo=tipo,
-                                               licenca=licenca)
+                                               licenca=licenca, user_id=uid)
             except ValueError as error:
                 self._bad_request(str(error))
                 return
@@ -1842,6 +1959,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             self._serve_study(detail)
             return True
         if path.startswith("/api/revisao/proposta/"):
+            if not self._require_admin():
+                return True
             proposal_id = path[len("/api/revisao/proposta/"):]
             if not proposal_id or "/" in proposal_id or parts.query:
                 self._bad_request("proposta inválida")
@@ -1850,6 +1969,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             self._serve_study(review.proposal_detail, proposal_id)
             return True
         if path.startswith("/api/revisao/lotes/"):
+            if not self._require_admin():
+                return True
             remainder = path[len("/api/revisao/lotes/"):]
             if remainder.endswith("/exportar"):
                 lote_id = remainder[:-len("/exportar")]
@@ -1881,24 +2002,33 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             if parts.query:
                 self._bad_request("rota dinâmica de simulado não aceita parâmetros")
                 return True
+            uid = self._current_user_id()
             rest = path[len("/api/estudos/simulados/"):]
             if rest.endswith("/resultado"):
                 exam_id = rest[:-len("/resultado")]
                 if exam_id and "/" not in exam_id:
-                    self._serve_exam(lambda: practice_store.exam_result(self.server.db_path, exam_id))
+                    self._serve_exam(
+                        lambda: practice_store.exam_result(self.server.db_path, exam_id, user_id=uid)
+                    )
                     return True
             elif rest.endswith("/questoes"):
                 exam_id = rest[:-len("/questoes")]
                 if exam_id and "/" not in exam_id:
-                    self._serve_exam(lambda: practice_store.exam_questions(self.server.db_path, exam_id))
+                    self._serve_exam(
+                        lambda: practice_store.exam_questions(self.server.db_path, exam_id, user_id=uid)
+                    )
                     return True
             elif rest.endswith("/resumo"):
                 exam_id = rest[:-len("/resumo")]
                 if exam_id and "/" not in exam_id:
-                    self._serve_exam(lambda: practice_store.exam_summary(self.server.db_path, exam_id))
+                    self._serve_exam(
+                        lambda: practice_store.exam_summary(self.server.db_path, exam_id, user_id=uid)
+                    )
                     return True
             elif rest and "/" not in rest:
-                self._serve_exam(lambda: practice_store.get_exam(self.server.db_path, rest))
+                self._serve_exam(
+                    lambda: practice_store.get_exam(self.server.db_path, rest, user_id=uid)
+                )
                 return True
             self._send_no_content(HTTPStatus.NOT_FOUND)
             return True
@@ -1916,20 +2046,27 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if not self._host_allowed():
+            self._drain_pending_body()
             self._send(HTTPStatus.FORBIDDEN, "application/json; charset=utf-8",
                        b'{"error":"host nao autorizado"}')
             return
-        if not self._guard_write():
-            return
-        from radar import study_store, knowledge_store, study_backup, practice_store, packages, media
         parts = urlsplit(self.path)
         path = parts.path
+        if not self._auth_guard(path):
+            return
+        if not self._guard_write(skip_origin=(path == "/api/billing/webhook")):
+            return
+        from radar import study_store, knowledge_store, study_backup, practice_store, packages, media
         if path.startswith("/api/alertas/") and not parts.query:
+            if not self._require_admin():
+                return
             alert_id = path[len("/api/alertas/"):]
             if alert_id and "/" not in alert_id:
                 self._alert_action(alert_id)
                 return
         if path.startswith("/api/associacoes/") and not parts.query:
+            if not self._require_admin():
+                return
             document_id = path[len("/api/associacoes/"):]
             if not document_id or "/" in document_id:
                 self._send_no_content(HTTPStatus.NOT_FOUND)
@@ -1949,6 +2086,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                               dry_run=bool(body.get("dry_run", False)))
             return
         if path == "/api/identidade/reparar":
+            if not self._require_admin():
+                return
             if parts.query:
                 self._bad_request("parâmetros inválidos")
                 return
@@ -1962,6 +2101,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                               dry_run=bool(body.get("dry_run", True)))
             return
         if path.startswith("/api/revisao/proposta/") and not parts.query:
+            if not self._require_admin():
+                return
             proposal_id = path[len("/api/revisao/proposta/"):]
             if not proposal_id or "/" in proposal_id:
                 self._bad_request("proposta inválida")
@@ -1983,6 +2124,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                               expected_scope_snapshot=body.get("scope_snapshot"))
             return
         if path == "/api/reconciliacao":
+            if not self._require_admin():
+                return
             if parts.query:
                 self._bad_request("parâmetros inválidos")
                 return
@@ -2000,17 +2143,30 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                               dry_run=body.get("dry_run", True) is not False)
             return
         if path == "/api/curadoria/executar":
+            if not self._require_admin():
+                return
             if parts.query:
                 self._bad_request("parâmetros inválidos")
                 return
             from radar import autonomous_curator
-            body = self._read_json() or {}
+            body = self._read_json(allow_empty=True)
+            if body is None:
+                return
             dry_run = bool(body.get("dry_run", False))
-            limit = int(body.get("limit", 1000))
+            try:
+                limit = int(body.get("limit", 1000))
+            except (TypeError, ValueError):
+                self._bad_request("limit inválido")
+                return
+            if limit < 1:
+                self._bad_request("limit inválido")
+                return
             self._serve_study(autonomous_curator.run_curation_cycle,
                               dry_run=dry_run, limit_per_phase=limit)
             return
         if path == "/api/prazos/verificar-documento":
+            if not self._require_admin():
+                return
             if parts.query:
                 self._bad_request("parâmetros inválidos")
                 return
@@ -2030,6 +2186,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                               checked_by=body.get("checked_by") or "operador local")
             return
         if path == "/api/prazos/revalidacao":
+            if not self._require_admin():
+                return
             if parts.query:
                 self._bad_request("parâmetros inválidos")
                 return
@@ -2053,6 +2211,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                               checked_by=body.get("checked_by") or "operador local")
             return
         if path == "/api/revisao/selecionar":
+            if not self._require_admin():
+                return
             if parts.query:
                 self._bad_request("parâmetros inválidos")
                 return
@@ -2065,6 +2225,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                               origin="interface")
             return
         if path == "/api/revisao/lotes":
+            if not self._require_admin():
+                return
             if parts.query:
                 self._bad_request("parâmetros inválidos")
                 return
@@ -2078,6 +2240,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                               note=body.get("note"))
             return
         if path.startswith("/api/revisao/lotes/") and not parts.query:
+            if not self._require_admin():
+                return
             lote_id = path[len("/api/revisao/lotes/"):]
             if not lote_id or "/" in lote_id:
                 self._bad_request("lote inválido")
@@ -2089,6 +2253,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             self._serve_study(review.batch_step, lote_id, body.get("action"))
             return
         if path == "/api/revisao/importar":
+            if not self._require_admin():
+                return
             if parts.query:
                 self._bad_request("parâmetros inválidos")
                 return
@@ -2102,6 +2268,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                               dry_run=bool(body.get("dry_run", True)))
             return
         if path == "/api/documentos/importar":
+            if not self._require_admin():
+                return
             if parts.query:
                 self._bad_request("parâmetros inválidos")
                 return
@@ -2109,11 +2277,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             body = self._read_json(max_len=32 * 1024 * 1024)
             if body is None:
                 return
-            import base64
-            try:
-                content = base64.b64decode(body.get("content_base64") or "", validate=True)
-            except (ValueError, TypeError):
-                self._bad_request("conteúdo base64 inválido")
+            content = self._decode_base64(body.get("content_base64"), max_bytes=24 * 1024 * 1024)
+            if content is None:
                 return
             self._serve_study(document_ingest.ingest_manual_document,
                               body.get("document_id"), content,
@@ -2125,6 +2290,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                               dry_run=bool(body.get("dry_run", True)))
             return
         if path == "/api/documentos/tipos":
+            if not self._require_admin():
+                return
             if parts.query:
                 self._bad_request("parâmetros inválidos")
                 return
@@ -2136,6 +2303,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                               dry_run=bool(body.get("dry_run", True)))
             return
         if path == "/api/documentos/reprocessar":
+            if not self._require_admin():
+                return
             if parts.query:
                 self._bad_request("parâmetros inválidos")
                 return
@@ -2148,6 +2317,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                               limit=body.get("limit"))
             return
         if path == "/api/cobertura/papeis":
+            if not self._require_admin():
+                return
             if parts.query:
                 self._bad_request("parâmetros inválidos")
                 return
@@ -2169,6 +2340,14 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._bad_request("parâmetros inválidos")
                 return
             from radar import accounts
+            if not accounts.check_auth_rate_limit(f"{self._client_ip()}:register"):
+                self._drain_pending_body()
+                self._send(
+                    HTTPStatus.TOO_MANY_REQUESTS,
+                    "application/json; charset=utf-8",
+                    b'{"error":"muitas tentativas; aguarde um minuto"}',
+                )
+                return
             body = self._read_json()
             if body is None:
                 return
@@ -2196,6 +2375,14 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._bad_request("parâmetros inválidos")
                 return
             from radar import accounts
+            if not accounts.check_auth_rate_limit(f"{self._client_ip()}:login"):
+                self._drain_pending_body()
+                self._send(
+                    HTTPStatus.TOO_MANY_REQUESTS,
+                    "application/json; charset=utf-8",
+                    b'{"error":"muitas tentativas; aguarde um minuto"}',
+                )
+                return
             body = self._read_json()
             if body is None:
                 return
@@ -2228,9 +2415,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             if parts.query:
                 self._bad_request("parâmetros inválidos")
                 return
-            if not self._is_admin_allowed():
-                self._send(HTTPStatus.FORBIDDEN, "application/json; charset=utf-8",
-                           b'{"error":"acesso restrito ao administrador"}')
+            if not self._require_admin():
                 return
             from radar import accounts
             body = self._read_json()
@@ -2252,6 +2437,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/billing/webhook":
             expected_secret = os.environ.get("RADAR_BILLING_SECRET", "").strip()
             if not expected_secret:
+                self._drain_pending_body()
                 self._send(
                     HTTPStatus.SERVICE_UNAVAILABLE,
                     "application/json; charset=utf-8",
@@ -2263,10 +2449,12 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             provided = (
                 self.headers.get("X-Webhook-Secret")
                 or self.headers.get("X-Kiwify-Signature")
+                or self.headers.get("X-Hotmart-Hottok")
                 or bearer
                 or parse_qs(parts.query).get("token", [""])[0]
             ).strip()
             if not provided or not hmac.compare_digest(provided, expected_secret):
+                self._drain_pending_body()
                 self._send(
                     HTTPStatus.FORBIDDEN,
                     "application/json; charset=utf-8",
@@ -2314,16 +2502,23 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._bad_request("contest_id é obrigatório")
                 return
             from radar import my_contests
-            res = my_contests.add_my_contest(
-                self.server.db_path,
-                contest_id=contest_id,
-                role_id=body.get("role_id"),
-                notes=body.get("notes"),
-                user_id=self._current_user_id(),
-            )
+            try:
+                res = my_contests.add_my_contest(
+                    self.server.db_path,
+                    contest_id=contest_id,
+                    role_id=body.get("role_id"),
+                    notes=body.get("notes"),
+                    status=body.get("status") or "ativo",
+                    user_id=self._current_user_id(),
+                )
+            except ValueError as error:
+                self._bad_request(str(error))
+                return
             self._send_json(res, status=HTTPStatus.CREATED)
             return
         if path == "/api/estudos/disciplinas":
+            if not self._require_admin():
+                return
             if parts.query:
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
                 return
@@ -2332,6 +2527,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._serve_study(study_store.create_disciplina, body.get("nome"))
             return
         if path == "/api/estudos/topicos":
+            if not self._require_admin():
+                return
             if parts.query:
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
                 return
@@ -2384,7 +2581,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             body = self._read_json()
             if body is not None:
                 self._serve_study(study_store.mark_revision_done, body.get("progresso_id"),
-                                  resultado=body.get("resultado"))
+                                  resultado=body.get("resultado"),
+                                  user_id=self._current_user_id())
             return
         if path == "/api/estudos/perfil":
             if parts.query:
@@ -2398,9 +2596,12 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                                   revisar=bool(body.get("revisar")),
                                   confianca=body.get("confianca"),
                                   observacoes=body.get("observacoes"),
-                                  origem=body.get("origem") or "usuario")
+                                  origem=body.get("origem") or "usuario",
+                                  user_id=self._current_user_id())
             return
         if path == "/api/estudos/lacuna":
+            if not self._require_admin():
+                return
             if parts.query:
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
                 return
@@ -2419,6 +2620,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                                   user_id=self._current_user_id())
             return
         if path == "/api/estudos/importar":
+            if not self._require_admin():
+                return
             if parts.query:
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
                 return
@@ -2449,6 +2652,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             body = self._read_json(max_len=32768)
             if body is None:
                 return
+            uid = self._current_user_id()
             action = body.get("action") or "create"
             if action == "create":
                 self._serve_study(practice_store.create_flashcard,
@@ -2459,18 +2663,21 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                                   conceito_key=body.get("conceito_key"),
                                   tags=body.get("tags"), fonte=body.get("fonte"),
                                   licenca=body.get("licenca"),
-                                  user_id=self._current_user_id())
+                                  user_id=uid)
             elif action == "update":
                 self._serve_study(practice_store.update_flashcard, body.get("id"),
                                   frente=body.get("frente"), verso=body.get("verso"),
-                                  tags=body.get("tags"), estado=body.get("estado"))
+                                  tags=body.get("tags"), estado=body.get("estado"),
+                                  user_id=uid)
             elif action == "review":
                 self._serve_study(practice_store.review_flashcard, body.get("id"),
-                                  body.get("qualidade"))
+                                  body.get("qualidade"), user_id=uid)
             else:
                 self._bad_request("ação de flashcard inválida")
             return
         if path == "/api/estudos/questoes":
+            if not self._require_admin():
+                return
             if parts.query:
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
                 return
@@ -2508,6 +2715,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._bad_request("ação de questão inválida")
             return
         if path == "/api/estudos/aulas":
+            if not self._require_admin():
+                return
             if parts.query:
                 self._send_no_content(HTTPStatus.BAD_REQUEST)
                 return
@@ -2529,26 +2738,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             body = self._read_json(max_len=32768)
             if body is None:
                 return
-            qid = body.get("questao_id")
-            if isinstance(qid, str) and qid.startswith("q-"):
-                # Resolve id_ref de questão da aula para o UUID real no banco
-                from radar.document_store import connect_documents
-                conn = connect_documents(self.server.db_path)
-                try:
-                    row = conn.execute("SELECT id FROM pratica_questoes WHERE procedencia=?", (qid,)).fetchone()
-                finally:
-                    conn.close()
-                if not row:
-                    from radar.real_exam_questions import seed_real_questions
-                    seed_real_questions(self.server.db_path)
-                    conn = connect_documents(self.server.db_path)
-                    try:
-                        row = conn.execute("SELECT id FROM pratica_questoes WHERE procedencia=?", (qid,)).fetchone()
-                    finally:
-                        conn.close()
-                if row:
-                    qid = row[0]
-            self._serve_study(practice_store.answer_question, qid,
+            self._serve_study(practice_store.answer_question, body.get("questao_id"),
                               body.get("resposta"),
                               duracao_segundos=body.get("duracao_segundos"),
                               origem="pratica",
@@ -2561,13 +2751,16 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             body = self._read_json(max_len=32768)
             if body is None:
                 return
+            uid = self._current_user_id()
             modo = body.get("modo") or "tradicional"
             if modo in ("adaptativa", "revisao_erros", "personalizada"):
                 self._serve_study(practice_store.create_adaptive_session,
-                                  nome=body.get("nome"), limit=body.get("limit") if body.get("limit") is not None else 10,
+                                  nome=body.get("nome"),
+                                  limit=body.get("limit") if body.get("limit") is not None else 10,
                                   modo=modo, duracao_segundos=body.get("duracao_segundos"),
                                   seed=body.get("seed"), disciplina=body.get("disciplina"),
-                                  topico=body.get("topico"))
+                                  topico=body.get("topico"),
+                                  user_id=uid)
                 return
             self._serve_study(practice_store.create_exam,
                               nome=body.get("nome"),
@@ -2578,7 +2771,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                               exclude_answered=body.get("exclude_answered", True),
                               disciplina=body.get("disciplina"), topico=body.get("topico"),
                               dificuldade=body.get("dificuldade"), tags=body.get("tags"),
-                              user_id=self._current_user_id())
+                              user_id=uid)
             return
         if path.startswith("/api/estudos/simulados/") and not parts.query:
             rest = path[len("/api/estudos/simulados/"):]
@@ -2589,19 +2782,20 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 body = self._read_json(max_len=32768)
                 if body is None:
                     return
+                uid = self._current_user_id()
                 if verb == "responder":
                     self._serve_study(practice_store.save_exam_answer, exam_id,
-                                      body.get("ordem"), body.get("resposta"))
+                                      body.get("ordem"), body.get("resposta"), user_id=uid)
                 elif verb == "marcar":
                     self._serve_study(practice_store.set_exam_mark, exam_id,
-                                      body.get("ordem"), bool(body.get("marcada")))
+                                      body.get("ordem"), bool(body.get("marcada")), user_id=uid)
                 elif verb == "posicao":
                     self._serve_study(practice_store.set_exam_position, exam_id,
-                                      body.get("ordem"))
+                                      body.get("ordem"), user_id=uid)
                 elif verb == "proxima":
-                    self._serve_study(practice_store.next_adaptive_question, exam_id)
+                    self._serve_study(practice_store.next_adaptive_question, exam_id, user_id=uid)
                 else:
-                    self._serve_study(practice_store.finish_exam, exam_id)
+                    self._serve_study(practice_store.finish_exam, exam_id, user_id=uid)
                 return
         if path.startswith("/api/estudos/flashcards/") and not parts.query:
             rest = path[len("/api/estudos/flashcards/"):]
@@ -2616,9 +2810,12 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 if payload is None:
                     return
                 self._serve_study(practice_store.attach_flashcard_image, flashcard_id, payload,
-                                  licenca=body.get("licenca"))
+                                  licenca=body.get("licenca"),
+                                  user_id=self._current_user_id())
                 return
         if path == "/api/estudos/pacotes/previa":
+            if not self._require_admin():
+                return
             if parts.query:
                 self._bad_request("parâmetros inválidos")
                 return
@@ -2641,6 +2838,8 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                        json.dumps(preview, ensure_ascii=False, default=str).encode("utf-8"))
             return
         if path == "/api/estudos/pacotes/importar":
+            if not self._require_admin():
+                return
             if parts.query:
                 self._bad_request("parâmetros inválidos")
                 return
@@ -2677,10 +2876,13 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             self._send(HTTPStatus.FORBIDDEN, "application/json; charset=utf-8",
                        b'{"error":"host nao autorizado"}')
             return
+        parts = urlsplit(self.path)
+        if not self._auth_guard(parts.path):
+            return
         if not self._guard_write(body_expected=False):
             return
         from radar import knowledge_store, practice_store
-        parts = urlsplit(self.path)
+        uid = self._current_user_id()
         if parts.path.startswith("/api/meus-concursos/") and not parts.query:
             contest_id = parts.path[len("/api/meus-concursos/"):]
             if not contest_id:
@@ -2688,7 +2890,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 return
             from radar import my_contests
             removed = my_contests.remove_my_contest(
-                self.server.db_path, contest_id, user_id=self._current_user_id()
+                self.server.db_path, contest_id, user_id=uid
             )
             self._send_json({"ok": True, "removed": removed})
             return
@@ -2696,7 +2898,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
             rest = parts.path[len("/api/estudos/flashcards/"):]
             pieces = rest.split("/")
             if len(pieces) == 2 and pieces[0] and pieces[1] == "imagem":
-                self._serve_study(practice_store.remove_flashcard_image, pieces[0])
+                self._serve_study(practice_store.remove_flashcard_image, pieces[0], user_id=uid)
                 return
         if parts.path == "/api/estudos/perfil":
             query = parse_qs(parts.query)
@@ -2705,7 +2907,7 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                 self._bad_request("conceito_key obrigatório")
                 return
             try:
-                removed = knowledge_store.delete_profile(self.server.db_path, key)
+                removed = knowledge_store.delete_profile(self.server.db_path, key, user_id=uid)
             except sqlite3.Error:
                 self._send(HTTPStatus.SERVICE_UNAVAILABLE, "application/json; charset=utf-8",
                            b'{"error":"Migracao documental pendente"}')
@@ -2726,11 +2928,11 @@ class _RadarRequestHandler(BaseHTTPRequestHandler):
                       "/api/estudos/progresso", "/api/estudos/sessoes", "/api/estudos/revisoes",
                       "/api/estudos/perfil", "/api/estudos/lacuna", "/api/estudos/importar",
                       "/api/estudos/sincronizar-edital",
-                      "/api/estudos/flashcards", "/api/estudos/questoes",
+                      "/api/estudos/flashcards", "/api/estudos/questoes", "/api/estudos/aulas",
                       "/api/estudos/tentativas", "/api/estudos/simulados",
                       "/api/auth/register", "/api/auth/login", "/api/auth/logout",
                       "/api/admin/users/plan", "/api/billing/webhook",
-                      "/api/reconciliacao", "/api/prazos/revalidacao",
+                      "/api/curadoria/executar", "/api/reconciliacao", "/api/prazos/revalidacao",
                       "/api/prazos/verificar-documento")
         allow = "GET, POST" if path in post_paths else "GET"
         if path in ("/api/estudos/perfil", "/api/meus-concursos") or path.startswith("/api/meus-concursos/"):

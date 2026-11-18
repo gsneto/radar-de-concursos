@@ -28,6 +28,9 @@ export function CommandPalette({
   }, [open]);
 
   const term = search.trim();
+  const filteredNav = visibleNav.filter(
+    (item) => !term || item.label.toLowerCase().includes(term.toLowerCase()),
+  );
   const results = useQuery({
     queryKey: ['palette', term],
     queryFn: () => api.get<Portfolio>(`/api/carteira${qs({ search: term, limit: 6 })}`),
@@ -70,26 +73,28 @@ export function CommandPalette({
               : 'Digite ao menos 2 caracteres para buscar oportunidades.'}
         </Command.Empty>
 
-        <Command.Group
-          heading="Navegar"
-          className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[9px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:tracking-[0.12em] [&_[cmdk-group-heading]]:text-fg-3 [&_[cmdk-group-heading]]:uppercase"
-        >
-          {visibleNav.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Command.Item
-                key={item.to}
-                value={`nav ${item.label}`}
-                onSelect={() => go(item.to)}
-                className="flex cursor-pointer items-center gap-2.5 rounded-sm px-2 py-2 text-xs text-fg-2 data-[selected=true]:bg-accent-soft data-[selected=true]:text-fg"
-              >
-                <Icon size={14} className="text-fg-3" />
-                {item.label}
-                <ArrowRight size={12} className="ml-auto text-fg-3/50" />
-              </Command.Item>
-            );
-          })}
-        </Command.Group>
+        {filteredNav.length > 0 && (
+          <Command.Group
+            heading="Navegar"
+            className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[9px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:tracking-[0.12em] [&_[cmdk-group-heading]]:text-fg-3 [&_[cmdk-group-heading]]:uppercase"
+          >
+            {filteredNav.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Command.Item
+                  key={item.to}
+                  value={`nav ${item.label}`}
+                  onSelect={() => go(item.to)}
+                  className="flex cursor-pointer items-center gap-2.5 rounded-sm px-2 py-2 text-xs text-fg-2 data-[selected=true]:bg-accent-soft data-[selected=true]:text-fg"
+                >
+                  <Icon size={14} className="text-fg-3" />
+                  {item.label}
+                  <ArrowRight size={12} className="ml-auto text-fg-3/50" />
+                </Command.Item>
+              );
+            })}
+          </Command.Group>
+        )}
 
         {term.length >= 2 && (results.data?.itens.length ?? 0) > 0 && (
           <Command.Group

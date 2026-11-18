@@ -127,10 +127,10 @@ export function useCoverage() {
   });
 }
 
-export function useTimeline() {
+export function useTimeline(limit = 50) {
   return useQuery({
-    queryKey: keys.timeline(),
-    queryFn: () => api.get<Timeline>('/api/linha-do-tempo?limit=1'),
+    queryKey: [...keys.timeline(), limit] as const,
+    queryFn: () => api.get<Timeline>(`/api/linha-do-tempo?limit=${limit}`),
     staleTime: 5 * 60_000,
   });
 }

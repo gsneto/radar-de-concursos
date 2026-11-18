@@ -159,6 +159,7 @@ class TestServerMyContests(unittest.TestCase):
         self.assertEqual(res.status, 200)
         data = json.loads(res.read().decode())
         self.assertEqual(data["total"], 0)
+        conn.close()
 
 
 if __name__ == "__main__":

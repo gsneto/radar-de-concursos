@@ -40,90 +40,148 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _rows(conn, sql, keys):
-    return [dict(zip(keys, row)) for row in conn.execute(sql).fetchall()]
+def _rows(conn, sql, keys, params=()):
+    return [dict(zip(keys, row)) for row in conn.execute(sql, params).fetchall()]
+
+
+def _has_user_id(conn, table: str) -> bool:
+    return any(row[1] == "user_id" for row in conn.execute(f"PRAGMA table_info({table})").fetchall())
 
 
 # --- Exportação --------------------------------------------------------------
 
-def export_study_data(db_path) -> dict:
+def export_study_data(db_path, *, user_id: str | None = None) -> dict:
     """Exporta os dados pessoais de estudo num JSON versionado e validável.
 
     Tolerante a banco ainda **v11** (sem as tabelas de prática): exporta só o núcleo de
-    estudo em vez de falhar.
+    estudo em vez de falhar. Quando ``user_id`` é informado, filtra registros pessoais
+    (progresso, sessões, revisões, perfil, flashcards, tentativas e simulados) por usuário.
     """
     conn = connect_documents(db_path)
     try:
         schema = conn.execute("PRAGMA user_version").fetchone()[0]
         present = {row[0] for row in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table'")}
+        uid = None if user_id is None else str(user_id or "")
+
+        prog_where = ""
+        prog_params: tuple = ()
+        rev_where = ""
+        rev_params: tuple = ()
+        if uid is not None and _has_user_id(conn, "estudo_progresso"):
+            prog_where = " WHERE COALESCE(user_id,'')=?"
+            prog_params = (uid,)
+            rev_where = " WHERE progresso_id IN (SELECT id FROM estudo_progresso WHERE COALESCE(user_id,'')=?)"
+            rev_params = (uid,)
+
+        sess_where = ""
+        sess_params: tuple = ()
+        if uid is not None and _has_user_id(conn, "estudo_sessoes"):
+            sess_where = " WHERE COALESCE(user_id,'')=?"
+            sess_params = (uid,)
+
+        perfil_where = ""
+        perfil_params: tuple = ()
+        if uid is not None and _has_user_id(conn, "estudo_perfil"):
+            perfil_where = " WHERE COALESCE(user_id,'')=?"
+            perfil_params = (uid,)
+
+        has_practice = "pratica_flashcards" in present
+        fc_where = ""
+        fc_params: tuple = ()
+        fcrev_where = ""
+        fcrev_params: tuple = ()
+        if has_practice and uid is not None and _has_user_id(conn, "pratica_flashcards"):
+            fc_where = " WHERE COALESCE(user_id,'')=?"
+            fc_params = (uid,)
+            fcrev_where = " WHERE flashcard_id IN (SELECT id FROM pratica_flashcards WHERE COALESCE(user_id,'')=?)"
+            fcrev_params = (uid,)
+
+        tent_where = ""
+        tent_params: tuple = ()
+        if has_practice and uid is not None and _has_user_id(conn, "pratica_tentativas"):
+            tent_where = " WHERE COALESCE(user_id,'')=?"
+            tent_params = (uid,)
+
+        sim_where = ""
+        sim_params: tuple = ()
+        simq_where = ""
+        simq_params: tuple = ()
+        if has_practice and uid is not None and _has_user_id(conn, "pratica_simulados"):
+            sim_where = " WHERE COALESCE(user_id,'')=?"
+            sim_params = (uid,)
+            simq_where = " WHERE simulado_id IN (SELECT id FROM pratica_simulados WHERE COALESCE(user_id,'')=?)"
+            simq_params = (uid,)
+
         data = {
             "disciplinas": _rows(conn, "SELECT id,nome,created_at FROM estudo_disciplinas",
                                  ("id", "nome", "created_at")),
             "topicos": _rows(conn, "SELECT id,disciplina_id,parent_id,nome,created_at FROM estudo_topicos",
                              ("id", "disciplina_id", "parent_id", "nome", "created_at")),
-            "progresso": _rows(conn, "SELECT id,contest_id,topico_id,state,data_conclusao,adiamentos,"
-                                     "created_at,updated_at FROM estudo_progresso",
+            "progresso": _rows(conn, f"SELECT id,contest_id,topico_id,state,data_conclusao,adiamentos,"
+                                     f"created_at,updated_at FROM estudo_progresso{prog_where}",
                                ("id", "contest_id", "topico_id", "state", "data_conclusao",
-                                "adiamentos", "created_at", "updated_at")),
-            "sessoes": _rows(conn, "SELECT id,disciplina_id,topico_id,contest_id,inicio,fim,"
-                                   "duracao_segundos,estado,modo,notas,created_at FROM estudo_sessoes",
+                                "adiamentos", "created_at", "updated_at"), prog_params),
+            "sessoes": _rows(conn, f"SELECT id,disciplina_id,topico_id,contest_id,inicio,fim,"
+                                   f"duracao_segundos,estado,modo,notas,created_at FROM estudo_sessoes{sess_where}",
                              ("id", "disciplina_id", "topico_id", "contest_id", "inicio", "fim",
-                              "duracao_segundos", "estado", "modo", "notas", "created_at")),
-            "revisoes": _rows(conn, "SELECT id,progresso_id,agendada_para,feita_em,resultado,created_at "
-                                    "FROM estudo_revisoes",
-                              ("id", "progresso_id", "agendada_para", "feita_em", "resultado", "created_at")),
-            "perfil": _rows(conn, "SELECT id,conceito_key,disciplina,rotulo,nivel,revisar,confianca,"
-                                  "observacoes,origem,created_at,updated_at FROM estudo_perfil",
+                              "duracao_segundos", "estado", "modo", "notas", "created_at"), sess_params),
+            "revisoes": _rows(conn, f"SELECT id,progresso_id,agendada_para,feita_em,resultado,created_at "
+                                    f"FROM estudo_revisoes{rev_where}",
+                              ("id", "progresso_id", "agendada_para", "feita_em", "resultado", "created_at"), rev_params),
+            "perfil": _rows(conn, f"SELECT id,conceito_key,disciplina,rotulo,nivel,revisar,confianca,"
+                                  f"observacoes,origem,created_at,updated_at FROM estudo_perfil{perfil_where}",
                             ("id", "conceito_key", "disciplina", "rotulo", "nivel", "revisar",
-                             "confianca", "observacoes", "origem", "created_at", "updated_at")),
-            # --- Prática (v2) ---
-            "flashcards": _rows(conn, "SELECT id,disciplina_id,topico_id,contest_id,conceito_key,"
-                                      "frente,verso,tags,fonte,licenca,estado,ease,intervalo,"
-                                      "repeticoes,proxima_revisao,ultima_revisao,revisoes,"
-                                      "created_at,updated_at FROM pratica_flashcards",
-                                ("id", "disciplina_id", "topico_id", "contest_id", "conceito_key",
-                                 "frente", "verso", "tags", "fonte", "licenca", "estado", "ease",
-                                 "intervalo", "repeticoes", "proxima_revisao", "ultima_revisao",
-                                 "revisoes", "created_at", "updated_at")),
-            "flashcard_revisoes": _rows(conn, "SELECT id,flashcard_id,qualidade,ease,intervalo,"
-                                              "repeticoes,revisado_em,proxima_revisao "
-                                              "FROM pratica_flashcard_revisoes",
-                                        ("id", "flashcard_id", "qualidade", "ease", "intervalo",
-                                         "repeticoes", "revisado_em", "proxima_revisao")),
-            "questoes": _rows(conn, "SELECT id,versao,disciplina,topico,conceito_key,enunciado,"
-                                    "alternativas_json,gabarito,comentario,dificuldade,tags,fonte,"
-                                    "licenca,procedencia,estado,created_at,updated_at "
-                                    "FROM pratica_questoes",
-                              ("id", "versao", "disciplina", "topico", "conceito_key", "enunciado",
-                               "alternativas_json", "gabarito", "comentario", "dificuldade", "tags",
-                               "fonte", "licenca", "procedencia", "estado", "created_at", "updated_at")),
-            "questao_versoes": _rows(conn, "SELECT id,questao_id,versao,enunciado,alternativas_json,"
-                                           "gabarito,comentario,registrado_em "
-                                           "FROM pratica_questao_versoes",
-                                     ("id", "questao_id", "versao", "enunciado", "alternativas_json",
-                                      "gabarito", "comentario", "registrado_em")),
-            "tentativas": _rows(conn, "SELECT id,questao_id,questao_versao,resposta,correta,respondida,"
-                                      "duracao_segundos,origem,simulado_id,disciplina,topico,"
-                                      "conceito_key,created_at FROM pratica_tentativas",
-                                ("id", "questao_id", "questao_versao", "resposta", "correta",
-                                 "respondida", "duracao_segundos", "origem", "simulado_id",
-                                 "disciplina", "topico", "conceito_key", "created_at")),
-            "simulados": _rows(conn, "SELECT id,nome,duracao_segundos,iniciado_em,finalizado_em,"
-                                     "estado,created_at FROM pratica_simulados",
-                               ("id", "nome", "duracao_segundos", "iniciado_em", "finalizado_em",
-                                "estado", "created_at")),
-            "simulado_questoes": _rows(conn, "SELECT simulado_id,ordem,questao_id,questao_versao,"
-                                             "resposta,respondida_em FROM pratica_simulado_questoes",
-                                       ("simulado_id", "ordem", "questao_id", "questao_versao",
-                                        "resposta", "respondida_em")),
+                             "confianca", "observacoes", "origem", "created_at", "updated_at"), perfil_params),
         }
+        if has_practice:
+            data.update({
+                # --- Prática (v2) ---
+                "flashcards": _rows(conn, f"SELECT id,disciplina_id,topico_id,contest_id,conceito_key,"
+                                          f"frente,verso,tags,fonte,licenca,estado,ease,intervalo,"
+                                          f"repeticoes,proxima_revisao,ultima_revisao,revisoes,"
+                                          f"created_at,updated_at FROM pratica_flashcards{fc_where}",
+                                    ("id", "disciplina_id", "topico_id", "contest_id", "conceito_key",
+                                     "frente", "verso", "tags", "fonte", "licenca", "estado", "ease",
+                                     "intervalo", "repeticoes", "proxima_revisao", "ultima_revisao",
+                                     "revisoes", "created_at", "updated_at"), fc_params),
+                "flashcard_revisoes": _rows(conn, f"SELECT id,flashcard_id,qualidade,ease,intervalo,"
+                                                  f"repeticoes,revisado_em,proxima_revisao "
+                                                  f"FROM pratica_flashcard_revisoes{fcrev_where}",
+                                            ("id", "flashcard_id", "qualidade", "ease", "intervalo",
+                                             "repeticoes", "revisado_em", "proxima_revisao"), fcrev_params),
+                "questoes": _rows(conn, "SELECT id,versao,disciplina,topico,conceito_key,enunciado,"
+                                        "alternativas_json,gabarito,comentario,dificuldade,tags,fonte,"
+                                        "licenca,procedencia,estado,created_at,updated_at "
+                                        "FROM pratica_questoes",
+                                  ("id", "versao", "disciplina", "topico", "conceito_key", "enunciado",
+                                   "alternativas_json", "gabarito", "comentario", "dificuldade", "tags",
+                                   "fonte", "licenca", "procedencia", "estado", "created_at", "updated_at")),
+                "questao_versoes": _rows(conn, "SELECT id,questao_id,versao,enunciado,alternativas_json,"
+                                               "gabarito,comentario,registrado_em "
+                                               "FROM pratica_questao_versoes",
+                                         ("id", "questao_id", "versao", "enunciado", "alternativas_json",
+                                          "gabarito", "comentario", "registrado_em")),
+                "tentativas": _rows(conn, f"SELECT id,questao_id,questao_versao,resposta,correta,respondida,"
+                                          f"duracao_segundos,origem,simulado_id,disciplina,topico,"
+                                          f"conceito_key,created_at FROM pratica_tentativas{tent_where}",
+                                    ("id", "questao_id", "questao_versao", "resposta", "correta",
+                                     "respondida", "duracao_segundos", "origem", "simulado_id",
+                                     "disciplina", "topico", "conceito_key", "created_at"), tent_params),
+                "simulados": _rows(conn, f"SELECT id,nome,duracao_segundos,iniciado_em,finalizado_em,"
+                                         f"estado,created_at FROM pratica_simulados{sim_where}",
+                                   ("id", "nome", "duracao_segundos", "iniciado_em", "finalizado_em",
+                                    "estado", "created_at"), sim_params),
+                "simulado_questoes": _rows(conn, f"SELECT simulado_id,ordem,questao_id,questao_versao,"
+                                                 f"resposta,respondida_em FROM pratica_simulado_questoes{simq_where}",
+                                           ("simulado_id", "ordem", "questao_id", "questao_versao",
+                                            "resposta", "respondida_em"), simq_params),
+            })
+        else:
+            for name in _PRACTICE_ENTITIES:
+                data[name] = []
     finally:
         conn.close()
-    if 'pratica_flashcards' not in present:
-        # Banco v11: sem tabelas de prática, exporta apenas o núcleo (formato v2, listas vazias).
-        for name in _PRACTICE_ENTITIES:
-            data[name] = []
     counts = {name: len(data.get(name) or []) for name in _ENTITIES}
     return {"format": FORMAT, "format_version": FORMAT_VERSION, "exported_at": _now(),
             "schema_version": schema, "counts": counts, "data": data}

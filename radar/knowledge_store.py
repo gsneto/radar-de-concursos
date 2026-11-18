@@ -28,10 +28,14 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _has_user_id(conn, table: str) -> bool:
+    return any(row[1] == "user_id" for row in conn.execute(f"PRAGMA table_info({table})").fetchall())
+
+
 # --- Perfil de conhecimentos -------------------------------------------------
 
 def set_profile(db_path, *, disciplina, rotulo, nivel="nao_avaliado", revisar=False,
-                confianca=None, observacoes=None, origem="usuario") -> dict:
+                confianca=None, observacoes=None, origem="usuario", user_id: str = "") -> dict:
     """Cria/atualiza a familiaridade declarada de um conceito (chave normalizada)."""
     if not isinstance(rotulo, str) or not rotulo.strip():
         raise ValueError("rótulo do conceito obrigatório")
@@ -42,11 +46,22 @@ def set_profile(db_path, *, disciplina, rotulo, nivel="nao_avaliado", revisar=Fa
     if origem not in preparation.ORIGINS:
         raise ValueError("origem inválida")
     key = preparation.conceito_key(disciplina, rotulo)
+    uid = str(user_id or "")
+    if uid:
+        from radar.accounts import ensure_accounts_schema
+        ensure_accounts_schema(db_path)
     now = _now()
     conn = connect_documents(db_path)
     try:
         conn.execute("BEGIN IMMEDIATE")
-        row = conn.execute("SELECT id FROM estudo_perfil WHERE conceito_key=?", (key,)).fetchone()
+        has_uid = _has_user_id(conn, "estudo_perfil")
+        if has_uid:
+            row = conn.execute(
+                "SELECT id FROM estudo_perfil WHERE COALESCE(user_id,'')=? AND conceito_key=?",
+                (uid, key),
+            ).fetchone()
+        else:
+            row = conn.execute("SELECT id FROM estudo_perfil WHERE conceito_key=?", (key,)).fetchone()
         if row:
             pid = row[0]
             conn.execute(
@@ -56,11 +71,18 @@ def set_profile(db_path, *, disciplina, rotulo, nivel="nao_avaliado", revisar=Fa
                  (observacoes or None), origem, now, pid))
         else:
             pid = str(uuid4())
-            conn.execute(
-                "INSERT INTO estudo_perfil(id,conceito_key,disciplina,rotulo,nivel,revisar,"
-                "confianca,observacoes,origem,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                (pid, key, disciplina, rotulo.strip()[:200], nivel, 1 if revisar else 0,
-                 confianca, (observacoes or None), origem, now, now))
+            if has_uid:
+                conn.execute(
+                    "INSERT INTO estudo_perfil(id,user_id,conceito_key,disciplina,rotulo,nivel,revisar,"
+                    "confianca,observacoes,origem,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (pid, uid, key, disciplina, rotulo.strip()[:200], nivel, 1 if revisar else 0,
+                     confianca, (observacoes or None), origem, now, now))
+            else:
+                conn.execute(
+                    "INSERT INTO estudo_perfil(id,conceito_key,disciplina,rotulo,nivel,revisar,"
+                    "confianca,observacoes,origem,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    (pid, key, disciplina, rotulo.strip()[:200], nivel, 1 if revisar else 0,
+                     confianca, (observacoes or None), origem, now, now))
         conn.commit()
     except BaseException:
         conn.rollback()
@@ -70,13 +92,22 @@ def set_profile(db_path, *, disciplina, rotulo, nivel="nao_avaliado", revisar=Fa
     return {"id": pid, "conceito_key": key, "nivel": nivel, "revisar": bool(revisar)}
 
 
-def list_profile(db_path) -> list[dict]:
+def list_profile(db_path, *, user_id: str = "") -> list[dict]:
+    uid = str(user_id or "")
     conn = connect_documents(db_path)
     try:
-        rows = conn.execute(
-            "SELECT id,conceito_key,disciplina,rotulo,nivel,revisar,confianca,observacoes,origem,"
-            "created_at,updated_at FROM estudo_perfil ORDER BY disciplina COLLATE NOCASE, rotulo COLLATE NOCASE"
-        ).fetchall()
+        if _has_user_id(conn, "estudo_perfil"):
+            rows = conn.execute(
+                "SELECT id,conceito_key,disciplina,rotulo,nivel,revisar,confianca,observacoes,origem,"
+                "created_at,updated_at FROM estudo_perfil WHERE COALESCE(user_id,'')=? "
+                "ORDER BY disciplina COLLATE NOCASE, rotulo COLLATE NOCASE",
+                (uid,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id,conceito_key,disciplina,rotulo,nivel,revisar,confianca,observacoes,origem,"
+                "created_at,updated_at FROM estudo_perfil ORDER BY disciplina COLLATE NOCASE, rotulo COLLATE NOCASE"
+            ).fetchall()
         keys = ("id", "conceito_key", "disciplina", "rotulo", "nivel", "revisar", "confianca",
                 "observacoes", "origem", "created_at", "updated_at")
         return [dict(zip(keys, row)) for row in rows]
@@ -84,18 +115,28 @@ def list_profile(db_path) -> list[dict]:
         conn.close()
 
 
-def profile_map(db_path) -> dict:
+def profile_map(db_path, *, user_id: str = "") -> dict:
     return {item["conceito_key"]: {"nivel": item["nivel"], "revisar": bool(item["revisar"])}
-            for item in list_profile(db_path)}
+            for item in list_profile(db_path, user_id=user_id)}
 
 
-def delete_profile(db_path, conceito_key: str) -> bool:
+def delete_profile(db_path, conceito_key: str, *, user_id: str = "") -> bool:
+    uid = str(user_id or "")
     conn = connect_documents(db_path)
     try:
         conn.execute("BEGIN IMMEDIATE")
-        cur = conn.execute("DELETE FROM estudo_perfil WHERE conceito_key=?", (conceito_key,))
+        if _has_user_id(conn, "estudo_perfil"):
+            cur = conn.execute(
+                "DELETE FROM estudo_perfil WHERE COALESCE(user_id,'')=? AND conceito_key=?",
+                (uid, conceito_key),
+            )
+        else:
+            cur = conn.execute("DELETE FROM estudo_perfil WHERE conceito_key=?", (conceito_key,))
         conn.commit()
         return cur.rowcount > 0
+    except BaseException:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
@@ -195,14 +236,25 @@ def _coverage_state(items) -> str:
 
 # --- Progresso de estudo mapeado por conceito --------------------------------
 
-def _progresso_map(conn, contest_id: str = "") -> dict:
+def _progresso_map(conn, contest_id: str = "", *, user_id: str = "") -> dict:
     """Progresso de estudo mapeado por conceito, incluindo o geral e o do edital informado."""
-    rows = conn.execute(
-        """SELECT d.nome, t.nome, p.state
-        FROM estudo_progresso p
-        JOIN estudo_topicos t ON t.id=p.topico_id
-        JOIN estudo_disciplinas d ON d.id=t.disciplina_id
-        WHERE p.contest_id IN ('', ?)""", (contest_id or "",)).fetchall()
+    uid = str(user_id or "")
+    if _has_user_id(conn, "estudo_progresso"):
+        rows = conn.execute(
+            """SELECT d.nome, t.nome, p.state
+            FROM estudo_progresso p
+            JOIN estudo_topicos t ON t.id=p.topico_id
+            JOIN estudo_disciplinas d ON d.id=t.disciplina_id
+            WHERE COALESCE(p.user_id,'')=? AND p.contest_id IN ('', ?)""",
+            (uid, contest_id or ""),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """SELECT d.nome, t.nome, p.state
+            FROM estudo_progresso p
+            JOIN estudo_topicos t ON t.id=p.topico_id
+            JOIN estudo_disciplinas d ON d.id=t.disciplina_id
+            WHERE p.contest_id IN ('', ?)""", (contest_id or "",)).fetchall()
     out = {}
     for disc, topico, state in rows:
         out[preparation.conceito_key(disc, topico)] = {"state": state}
@@ -249,13 +301,13 @@ def _formal_status(conn, contest_id: str) -> tuple[str, bool]:
     return state, exceptional
 
 
-def preparation_report(db_path, contest_id: str) -> dict:
+def preparation_report(db_path, contest_id: str, *, user_id: str = "") -> dict:
     """Cobertura de preparação de um concurso (explicável, com lacunas e perspectiva)."""
     program = resolve_program(db_path, contest_id)
-    profile = profile_map(db_path)
+    profile = profile_map(db_path, user_id=user_id)
     conn = connect_documents(db_path)
     try:
-        progresso = _progresso_map(conn, contest_id)
+        progresso = _progresso_map(conn, contest_id, user_id=user_id)
         formal_state, exceptional = _formal_status(conn, contest_id)
     finally:
         conn.close()

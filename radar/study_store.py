@@ -271,14 +271,30 @@ def progresso_por_topico(db_path, contest_id: str = "", *, user_id: str = "") ->
 
 # --- Revisão espaçada (agenda persistida) ------------------------------------
 
-def mark_revision_done(db_path, progresso_id: str, *, resultado: str | None = None) -> dict:
+def mark_revision_done(
+    db_path,
+    progresso_id: str,
+    *,
+    resultado: str | None = None,
+    user_id: str | None = None,
+) -> dict:
     """Marca como feita a revisão pendente mais antiga do progresso (grava ``feita_em``)."""
     conn = connect_documents(db_path)
     try:
         conn.execute("BEGIN IMMEDIATE")
-        row = conn.execute(
-            "SELECT id,agendada_para FROM estudo_revisoes WHERE progresso_id=? AND feita_em IS NULL "
-            "ORDER BY agendada_para, id LIMIT 1", (progresso_id,)).fetchone()
+        if user_id is not None and _has_user_id(conn, "estudo_progresso"):
+            uid = str(user_id or "")
+            row = conn.execute(
+                "SELECT r.id, r.agendada_para FROM estudo_revisoes r "
+                "JOIN estudo_progresso p ON p.id=r.progresso_id "
+                "WHERE r.progresso_id=? AND COALESCE(p.user_id,'')=? AND r.feita_em IS NULL "
+                "ORDER BY r.agendada_para, r.id LIMIT 1",
+                (progresso_id, uid),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT id,agendada_para FROM estudo_revisoes WHERE progresso_id=? AND feita_em IS NULL "
+                "ORDER BY agendada_para, id LIMIT 1", (progresso_id,)).fetchone()
         if not row:
             conn.rollback()
             raise ValueError("não há revisão pendente para este progresso")
@@ -457,14 +473,21 @@ def resume_session(db_path, session_id: str | None = None, *, user_id: str = "")
 
 
 def finish_session(db_path, session_id: str | None = None, *, user_id: str = "") -> dict:
+    uid = str(user_id or "")
     conn = connect_documents(db_path)
     try:
         conn.execute("BEGIN IMMEDIATE")
-        row = _open_row(conn, session_id, user_id=user_id)
+        row = _open_row(conn, session_id, user_id=uid)
         if not row:
             if session_id:
-                existing = conn.execute(
-                    "SELECT estado FROM estudo_sessoes WHERE id=?", (session_id,)).fetchone()
+                if _has_user_id(conn, "estudo_sessoes"):
+                    existing = conn.execute(
+                        "SELECT estado FROM estudo_sessoes WHERE id=? AND COALESCE(user_id,'')=?",
+                        (session_id, uid),
+                    ).fetchone()
+                else:
+                    existing = conn.execute(
+                        "SELECT estado FROM estudo_sessoes WHERE id=?", (session_id,)).fetchone()
                 if existing and existing[0] == "concluida":
                     conn.rollback()
                     return _session_by_id(db_path, session_id)

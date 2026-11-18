@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { keys, usePreferences } from '@/app/queries';
+import { keys, useAuthMe, usePreferences } from '@/app/queries';
 import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -21,14 +21,21 @@ const priorities: Record<string, string> = {
 
 export function SettingsPage() {
   const queryClient = useQueryClient();
+  const authMe = useAuthMe();
+  const isStudent = authMe.data?.user?.role === 'student';
   const preferences = usePreferences();
   const [saved, setSaved] = useState<string | null>(null);
 
   const save = useMutation({
     mutationFn: (body: Preferences) => api.post<Preferences>('/api/preferencias', body),
     onSuccess: () => {
-      setSaved('Preferências salvas no arquivo local.');
+      setSaved(
+        isStudent
+          ? 'Preferências salvas na sua conta.'
+          : 'Preferências salvas no arquivo local.',
+      );
       void queryClient.invalidateQueries({ queryKey: keys.preferences() });
+      void queryClient.invalidateQueries({ queryKey: ['portfolio'] });
     },
     onError: () => setSaved(null),
   });
@@ -162,9 +169,19 @@ export function SettingsPage() {
               </span>
               <input
                 type="checkbox"
-                defaultChecked={localStorage.getItem('radar.sidebar.collapsed') === '1'}
+                defaultChecked={(() => {
+                  try {
+                    return localStorage.getItem('radar.sidebar.collapsed') === '1';
+                  } catch {
+                    return false;
+                  }
+                })()}
                 onChange={(event) => {
-                  localStorage.setItem('radar.sidebar.collapsed', event.target.checked ? '1' : '0');
+                  try {
+                    localStorage.setItem('radar.sidebar.collapsed', event.target.checked ? '1' : '0');
+                  } catch {
+                    /* armazenamento indisponível */
+                  }
                   window.dispatchEvent(new Event('radar:sidebar'));
                 }}
                 className="size-4 accent-[var(--color-accent)]"
@@ -178,15 +195,15 @@ export function SettingsPage() {
           <Card title="Sobre esta versão" subtitle="Contrato e limites do produto.">
             <dl className="grid grid-cols-[110px_1fr] gap-y-2 text-2xs">
               <dt className="text-fg-3">Interface</dt>
-              <dd className="text-fg-2">Radar de Concursos — frontend de produto (Fase 46)</dd>
+              <dd className="text-fg-2">GSN Concursos — Radar & Plataforma de Estudos</dd>
               <dt className="text-fg-3">Dados</dt>
-              <dd className="text-fg-2">SQLite local; nenhuma confirmação automática de campo</dd>
+              <dd className="text-fg-2">SQLite isolado por usuário; nenhuma confirmação automática de campo</dd>
               <dt className="text-fg-3">API</dt>
               <dd className="text-fg-2">Contrato v1 preservado em GET /api/concursos</dd>
               <dt className="text-fg-3">Privacidade</dt>
-              <dd className="text-fg-2">Sem conta, sem telemetria e sem envio a terceiros</dd>
+              <dd className="text-fg-2">Sessão HttpOnly segura e preferências por perfil</dd>
               <dt className="text-fg-3">Operação</dt>
-              <dd className="text-fg-2">Painéis técnicos preservados em /legacy/</dd>
+              <dd className="text-fg-2">Painel editorial disponível no modo Administrador (/operacao)</dd>
             </dl>
           </Card>
         </div>

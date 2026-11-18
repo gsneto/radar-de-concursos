@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Bot, Check, Crown, Loader2, Menu, Moon, Search, Settings2, Sun, UserCheck } from 'lucide-react';
 import { Link, useLocation, useMatches } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -21,12 +21,20 @@ interface RouteHandle {
 export function CuradoriaButton() {
   const [running, setRunning] = useState(false);
   const [resultMsg, setResultMsg] = useState<string | null>(null);
+  const timerRef = useRef<number | null>(null);
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    };
+  }, []);
 
   async function handleCurar() {
     if (running) return;
     setRunning(true);
     setResultMsg(null);
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
     try {
       const res = await executeCuradoria(false);
       const total = (res.novas_revisoes ?? 0) + (res.novas_reconciliacoes ?? 0);
@@ -36,7 +44,7 @@ export function CuradoriaButton() {
       setResultMsg('Falha ao curar');
     } finally {
       setRunning(false);
-      setTimeout(() => setResultMsg(null), 4000);
+      timerRef.current = window.setTimeout(() => setResultMsg(null), 4000);
     }
   }
 
@@ -191,8 +199,8 @@ export function Topbar({ onOpenMobile, onOpenPalette }: TopbarProps) {
           type="button"
           onClick={onOpenPalette}
           className={cn(
-            'hidden h-8 items-center gap-2 rounded-sm border border-line bg-surface px-2.5 text-xs text-fg-3',
-            'transition-colors hover:border-line-strong hover:text-fg-2 sm:flex',
+            'flex h-8 items-center gap-2 rounded-sm border border-line bg-surface px-2.5 text-xs text-fg-3',
+            'transition-colors hover:border-line-strong hover:text-fg-2',
           )}
           aria-label="Abrir busca global"
         >

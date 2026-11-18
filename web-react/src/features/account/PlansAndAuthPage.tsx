@@ -14,8 +14,8 @@ import {
   UserPlus,
   Webhook,
 } from 'lucide-react';
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { keys, useAdminBilling, useAdminUsers, useAuthMe } from '@/app/queries';
 import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
@@ -249,31 +249,52 @@ export function PlansPage() {
 export function AccountPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const selectedPlanParam = searchParams.get('plano');
   const authMe = useAuthMe();
   const user = authMe.data?.user ?? null;
   const hasAdmin = authMe.data?.has_admin ?? true;
   const publicMode = authMe.data?.public_mode ?? false;
   const [workspaceMode, updateWorkspaceMode] = useWorkspaceMode(user?.role);
 
-  const [authTab, setAuthTab] = useState<'login' | 'register'>('login');
+  const [authTab, setAuthTab] = useState<'login' | 'register'>(() =>
+    selectedPlanParam ? 'register' : 'login',
+  );
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [bootstrapAdmin, setBootstrapAdmin] = useState(!hasAdmin && !publicMode);
+  const [bootstrapAdmin, setBootstrapAdmin] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authMsg, setAuthMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (selectedPlanParam) {
+      setAuthTab('register');
+    }
+  }, [selectedPlanParam]);
+
+  useEffect(() => {
+    if (authMe.data) {
+      setBootstrapAdmin(!authMe.data.has_admin && !authMe.data.public_mode);
+    }
+  }, [authMe.data]);
 
   const canUseAdmin =
     user?.role === 'admin' || (!user && !publicMode && !authMe.data?.require_auth);
   const adminUsers = useAdminUsers(Boolean(canUseAdmin && workspaceMode === 'admin'));
   const adminBilling = useAdminBilling(Boolean(canUseAdmin && workspaceMode === 'admin'));
 
+  const resetUserScopedCache = async () => {
+    queryClient.clear();
+    await queryClient.invalidateQueries({ queryKey: keys.authMe() });
+  };
+
   const loginMutation = useMutation({
     mutationFn: () => api.post<{ ok: boolean; user: AppUser }>('/api/auth/login', { email, password }),
     onSuccess: async () => {
       setAuthError(null);
       setAuthMsg('Sessão iniciada com sucesso!');
-      await queryClient.invalidateQueries();
+      await resetUserScopedCache();
     },
     onError: (err: Error) => {
       setAuthMsg(null);
@@ -292,7 +313,7 @@ export function AccountPage() {
     onSuccess: async () => {
       setAuthError(null);
       setAuthMsg('Conta criada e sessão aberta!');
-      await queryClient.invalidateQueries();
+      await resetUserScopedCache();
     },
     onError: (err: Error) => {
       setAuthMsg(null);
@@ -305,7 +326,7 @@ export function AccountPage() {
     onSuccess: async () => {
       updateWorkspaceMode('student');
       setAuthMsg('Você saiu da conta.');
-      await queryClient.invalidateQueries();
+      await resetUserScopedCache();
     },
   });
 
@@ -391,6 +412,14 @@ export function AccountPage() {
             </div>
           ) : (
             <div className="space-y-4">
+              {selectedPlanParam && PLAN_LABELS[selectedPlanParam] && (
+                <div className="flex items-center gap-2 rounded-xl border border-amber-400/40 bg-amber-400/10 px-3.5 py-2.5 text-xs font-semibold text-amber-300">
+                  <Crown size={14} className="shrink-0 text-amber-400" />
+                  <span>
+                    Plano selecionado: <strong>{PLAN_LABELS[selectedPlanParam]}</strong> — crie ou entre na sua conta com o mesmo e-mail do pagamento.
+                  </span>
+                </div>
+              )}
               <div className="flex gap-1.5 rounded-xl border border-line bg-surface-2 p-1">
                 <button
                   type="button"

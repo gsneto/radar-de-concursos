@@ -145,11 +145,12 @@ class ExtractionStateTest(unittest.TestCase):
 
         document_id = self._document()
         version_id = self._version(document_id)
-        pdf = pymupdf.open()
-        for page in range(3):
-            sheet = pdf.new_page()
-            sheet.insert_text((72, 72), f"Pagina {page + 1} do edital")
-        extracted = extract_document(pdf.tobytes(), "application/pdf", max_pages=1, prefix_pages=1)
+        with pymupdf.open() as pdf:
+            for page in range(3):
+                sheet = pdf.new_page()
+                sheet.insert_text((72, 72), f"Pagina {page + 1} do edital")
+            pdf_bytes = pdf.tobytes()
+        extracted = extract_document(pdf_bytes, "application/pdf", max_pages=1, prefix_pages=1)
         self.assertTrue(extracted["truncated"])
         record_analysis(self.db, version_id, extracted["blocks"], [],
                         partial=bool(extracted["truncated"]))
@@ -271,9 +272,11 @@ class ContractMethodTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             target = os.path.join(tmp, "server.py")
             shutil.copy2(source, target)
-            text = io.open(target, encoding="utf-8").read()
+            with io.open(target, encoding="utf-8") as fh:
+                text = fh.read()
             text = text.replace('elif path == "/api/saude":', 'elif path == "/api/saude-ausente":', 1)
-            io.open(target, "w", encoding="utf-8").write(text)
+            with io.open(target, "w", encoding="utf-8") as fh:
+                fh.write(text)
             result = api_contract.verify(target)
         self.assertFalse(result["ok"])
         self.assertIn("GET /api/saude", result["sobrando_no_contrato"])

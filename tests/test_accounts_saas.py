@@ -8,7 +8,7 @@ import urllib.request
 from pathlib import Path
 from threading import Thread
 
-from radar import accounts, my_contests, practice_store, study_store
+from radar import accounts, knowledge_store, my_contests, practice_store, study_backup, study_store
 from radar.document_store import connect_documents, ensure_observation, migrate_document_schema
 from radar.server import create_server
 
@@ -195,6 +195,134 @@ class TestAuthAndBillingHTTP(unittest.TestCase):
         # Student plan is now Pro
         status, me3, _ = self._req("GET", "/api/auth/me", headers={"Cookie": cookie})
         self.assertEqual(me3["user"]["plan"], "pro")
+
+    def test_idor_rbac_require_auth_and_webhook_origin(self):
+        # Register Alice and Bob
+        _, reg_a, h_a = self._req(
+            "POST",
+            "/api/auth/register",
+            {"name": "Alice", "email": "alice.idor@teste.com", "password": "Password123"},
+        )
+        cookie_a = h_a.get("Set-Cookie", "").split(";", 1)[0]
+        alice_id = reg_a["user"]["id"]
+
+        _, reg_b, h_b = self._req(
+            "POST",
+            "/api/auth/register",
+            {"name": "Bob", "email": "bob.idor@teste.com", "password": "Password123"},
+        )
+        cookie_b = h_b.get("Set-Cookie", "").split(";", 1)[0]
+
+        # 1. Flashcard IDOR defense: Bob cannot update or review Alice's flashcard
+        st_fc, fc_a, _ = self._req(
+            "POST",
+            "/api/estudos/flashcards",
+            {"action": "create", "frente": "Segredo Alice", "verso": "Resposta"},
+            headers={"Cookie": cookie_a},
+        )
+        self.assertEqual(st_fc, 200)
+        st_idor_upd, _, _ = self._req(
+            "POST",
+            "/api/estudos/flashcards",
+            {"action": "update", "id": fc_a["id"], "frente": "Hackeado"},
+            headers={"Cookie": cookie_b},
+        )
+        self.assertEqual(st_idor_upd, 400)
+        st_idor_rev, _, _ = self._req(
+            "POST",
+            "/api/estudos/flashcards",
+            {"action": "review", "id": fc_a["id"], "qualidade": 5},
+            headers={"Cookie": cookie_b},
+        )
+        self.assertEqual(st_idor_rev, 400)
+
+        # 2. Exam IDOR defense: Bob cannot read or finish Alice's simulado
+        practice_store.create_question(
+            self.db_path,
+            enunciado="Qual a porta padrão do HTTPS?",
+            alternativas=[{"letra": "A", "texto": "443"}, {"letra": "B", "texto": "80"}],
+            gabarito="A",
+            disciplina="Redes de Computadores",
+        )
+        st_ex, exam_a, _ = self._req(
+            "POST",
+            "/api/estudos/simulados",
+            {"nome": "Simulado Alice", "limit": 1},
+            headers={"Cookie": cookie_a},
+        )
+        self.assertEqual(st_ex, 200)
+        st_idor_get, _, _ = self._req(
+            "GET",
+            f"/api/estudos/simulados/{exam_a['id']}",
+            headers={"Cookie": cookie_b},
+        )
+        self.assertEqual(st_idor_get, 404)
+        st_idor_fin, _, _ = self._req(
+            "POST",
+            f"/api/estudos/simulados/{exam_a['id']}/finalizar",
+            {},
+            headers={"Cookie": cookie_b},
+        )
+        self.assertEqual(st_idor_fin, 400)
+
+        # 3. Knowledge profile & export isolation
+        knowledge_store.set_profile(
+            self.db_path, disciplina="Redes", rotulo="TCP", nivel="avancado", user_id=alice_id
+        )
+        self.assertEqual(len(knowledge_store.list_profile(self.db_path, user_id=alice_id)), 1)
+        self.assertEqual(len(knowledge_store.list_profile(self.db_path, user_id=reg_b["user"]["id"])), 0)
+        exp_b = study_backup.export_study_data(self.db_path, user_id=reg_b["user"]["id"])
+        self.assertEqual(exp_b["counts"]["flashcards"], 0)
+        self.assertEqual(exp_b["counts"]["simulados"], 0)
+        self.assertEqual(exp_b["counts"]["perfil"], 0)
+
+        # 4. RBAC: Student gets 403 on admin/editorial routes
+        for method, route, payload in [
+            ("POST", "/api/curadoria/executar", {"dry_run": True}),
+            ("POST", "/api/estudos/aulas", {"titulo": "Aula X", "disciplina": "Redes"}),
+            ("POST", "/api/estudos/questoes", {"action": "create", "enunciado": "Q"}),
+            ("GET", "/api/pipeline", None),
+            ("GET", "/api/revisao/grupos", None),
+        ]:
+            st_rbac, _, _ = self._req(method, route, payload, headers={"Cookie": cookie_a})
+            self.assertEqual(st_rbac, 403, f"Esperado 403 em {method} {route}")
+
+        # 5. Per-user preferences: Alice saving UF="SP" does not overwrite Bob's preferences
+        st_pref_a, pref_a, _ = self._req(
+            "POST",
+            "/api/preferencias",
+            {"reference_uf": "SP"},
+            headers={"Cookie": cookie_a},
+        )
+        self.assertEqual(st_pref_a, 200)
+        self.assertEqual(pref_a["reference_uf"], "SP")
+        _, pref_b, _ = self._req("GET", "/api/preferencias", headers={"Cookie": cookie_b})
+        self.assertNotEqual(pref_b["reference_uf"], "SP")
+
+        # 6. Webhook with external Origin + X-Hotmart-Hottok succeeds, and RADAR_REQUIRE_AUTH=1 blocks anon
+        old_req = os.environ.get("RADAR_REQUIRE_AUTH")
+        os.environ["RADAR_REQUIRE_AUTH"] = "1"
+        try:
+            st_anon, _, _ = self._req("GET", "/api/meus-concursos")
+            self.assertEqual(st_anon, 401)
+            st_pub_health, _, _ = self._req("GET", "/api/saude")
+            self.assertIn(st_pub_health, (200, 503))
+            st_wh_ext, wh_ext, _ = self._req(
+                "POST",
+                "/api/billing/webhook",
+                {"email": "bob.idor@teste.com", "plan": "pro", "provider": "hotmart"},
+                headers={
+                    "Origin": "https://pay.hotmart.com",
+                    "X-Hotmart-Hottok": "segredo-webhook-teste",
+                },
+            )
+            self.assertEqual(st_wh_ext, 200)
+            self.assertTrue(wh_ext["user_updated"])
+        finally:
+            if old_req is None:
+                os.environ.pop("RADAR_REQUIRE_AUTH", None)
+            else:
+                os.environ["RADAR_REQUIRE_AUTH"] = old_req
 
 
 if __name__ == "__main__":

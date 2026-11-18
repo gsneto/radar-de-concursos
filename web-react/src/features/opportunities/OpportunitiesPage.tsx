@@ -15,7 +15,7 @@ import {
   Table2,
   X,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useMyContests, usePortfolio, useToggleMyContest, type PortfolioFilters } from '@/app/queries';
 import { OpportunityGlowCard } from '@/components/21st/opportunity-glow-card';
@@ -78,11 +78,16 @@ function locationText(item: Opportunity): string {
 
 export function OpportunitiesPage() {
   const [params, setParams] = useSearchParams();
-  const [searchDraft, setSearchDraft] = useState(params.get('q') ?? '');
+  const qParam = params.get('q') ?? '';
+  const [searchDraft, setSearchDraft] = useState(qParam);
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
   const [advanced, setAdvanced] = useState(
     Boolean(params.get('documental') || params.get('conflito')),
   );
+
+  useEffect(() => {
+    setSearchDraft(qParam);
+  }, [qParam]);
 
   const filters: PortfolioFilters = useMemo(
     () => ({
@@ -144,6 +149,7 @@ export function OpportunitiesPage() {
   };
 
   const clearAll = () => {
+    setOnlySelected(false);
     setSearchDraft('');
     setParams(new URLSearchParams(), { replace: true });
   };
@@ -175,7 +181,7 @@ export function OpportunitiesPage() {
         title="Oportunidades"
         description="Cada linha é um concurso e cargo com documento oficial, lacunas explícitas e próxima ação. A busca nacional não é limitada pelas preferências regionais."
         actions={
-          activeChips.length > 0 ? (
+          activeChips.length > 0 || onlySelected ? (
             <Button variant="ghost" size="sm" onClick={clearAll}>
               <X size={13} /> Limpar filtros
             </Button>

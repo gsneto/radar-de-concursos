@@ -13,6 +13,7 @@ Fornece:
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -1315,7 +1316,13 @@ def enrich_lesson_detail(lesson: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+_CUSTOM_LESSONS_LOCK = threading.Lock()
 _CUSTOM_LESSONS: list[dict[str, Any]] = []
+
+
+def _snapshot_custom_lessons() -> list[dict[str, Any]]:
+    with _CUSTOM_LESSONS_LOCK:
+        return list(_CUSTOM_LESSONS)
 
 
 def summarize_lesson(l: dict[str, Any]) -> dict[str, Any]:
@@ -1340,7 +1347,7 @@ def summarize_lesson(l: dict[str, Any]) -> dict[str, Any]:
 
 
 def list_lessons_enriched(base_lessons: list[dict[str, Any]], disciplina: str | None = None) -> list[dict[str, Any]]:
-    all_items = list(base_lessons) + _CUSTOM_LESSONS
+    all_items = list(base_lessons) + _snapshot_custom_lessons()
     if not disciplina:
         return [summarize_lesson(l) for l in all_items]
     disc_norm = disciplina.strip().lower()
@@ -1352,7 +1359,7 @@ def list_lessons_enriched(base_lessons: list[dict[str, Any]], disciplina: str | 
 
 
 def get_lesson_enriched(base_lessons: list[dict[str, Any]], lesson_id: str) -> dict[str, Any] | None:
-    for l in list(base_lessons) + _CUSTOM_LESSONS:
+    for l in list(base_lessons) + _snapshot_custom_lessons():
         if l["id"] == lesson_id:
             return enrich_lesson_detail(l)
     return None
@@ -1362,7 +1369,7 @@ def list_all_visual_flashcards(base_lessons: list[dict[str, Any]], disciplina: s
     """Retorna todos os Flashcards Visuais Estilo Jotta de todas as aulas (unificando Aulas e menu lateral Flashcards)."""
     cards: list[dict[str, Any]] = []
     disc_norm = disciplina.strip().lower() if disciplina else None
-    for l in list(base_lessons) + _CUSTOM_LESSONS:
+    for l in list(base_lessons) + _snapshot_custom_lessons():
         if disc_norm and l["disciplina"].strip().lower() != disc_norm:
             continue
         cards.extend(_enrich_flashcards(l))
@@ -1370,11 +1377,16 @@ def list_all_visual_flashcards(base_lessons: list[dict[str, Any]], disciplina: s
     return cards
 
 
-def seed_default_flashcards(db_path: Path | str, base_lessons: list[dict[str, Any]]) -> int:
+def seed_default_flashcards(
+    db_path: Path | str,
+    base_lessons: list[dict[str, Any]],
+    *,
+    user_id: str = "",
+) -> int:
     """Popula o deck SM-2 (pratica_flashcards) com os cartões essenciais caso esteja vazio."""
     from radar.practice_store import create_flashcard, flashcard_stats
 
-    stats = flashcard_stats(db_path)
+    stats = flashcard_stats(db_path, user_id=user_id)
     if stats.get("total", 0) > 0:
         return 0
 
@@ -1387,6 +1399,7 @@ def seed_default_flashcards(db_path: Path | str, base_lessons: list[dict[str, An
                 verso=f"{fc['verso']}\n\n💡 Mnemônico: {fc.get('mnemonico', '')}",
                 tags=[l["disciplina"], fc.get("tag", "Visual")],
                 fonte=l["titulo"],
+                user_id=user_id,
             )
             inserted += 1
     return inserted
@@ -1395,38 +1408,80 @@ def seed_default_flashcards(db_path: Path | str, base_lessons: list[dict[str, An
 def create_custom_lesson(base_lessons: list[dict[str, Any]], payload: dict[str, Any]) -> dict[str, Any]:
     from uuid import uuid4
 
-    titulo = str(payload.get("titulo") or "").strip()
-    disciplina = str(payload.get("disciplina") or "").strip()
+    if not isinstance(payload, dict):
+        raise ValueError("payload de aula deve ser um objeto JSON")
+
+    titulo = str(payload.get("titulo") or "").strip()[:200]
+    disciplina = str(payload.get("disciplina") or "").strip()[:120]
     if not titulo or not disciplina:
         raise ValueError("titulo e disciplina são obrigatórios para criar uma aula")
 
-    lesson_id = str(payload.get("id") or f"custom-{uuid4().hex[:8]}").strip()
+    def _safe_int(raw: Any, default: int, *, min_val: int = 1, max_val: int = 5000) -> int:
+        if raw is None or raw == "":
+            return default
+        if isinstance(raw, bool):
+            raise ValueError("valor numérico inválido")
+        try:
+            parsed = int(raw)
+        except (TypeError, ValueError) as err:
+            raise ValueError("valor numérico inválido") from err
+        return max(min_val, min(max_val, parsed))
+
+    def _safe_list(raw: Any, default: list[Any], field_label: str) -> list[Any]:
+        if raw is None:
+            return default
+        if not isinstance(raw, list):
+            raise ValueError(f"{field_label} deve ser uma lista")
+        return list(raw)
+
+    raw_radio = payload.get("radiografia_bancas")
+    if raw_radio is not None and not isinstance(raw_radio, dict):
+        raise ValueError("radiografia_bancas deve ser um objeto")
+
+    raw_tabela = payload.get("tabela_resumo")
+    if raw_tabela is not None and not isinstance(raw_tabela, dict):
+        raise ValueError("tabela_resumo deve ser um objeto")
+
+    lesson_id = str(payload.get("id") or f"custom-{uuid4().hex[:8]}").strip()[:80]
+    if "/" in lesson_id or not lesson_id:
+        raise ValueError("id de aula inválido")
+
     new_lesson: dict[str, Any] = {
         "id": lesson_id,
         "disciplina": disciplina,
-        "modulo": str(payload.get("modulo") or f"Módulo Customizado: {disciplina}").strip(),
-        "assunto": str(payload.get("assunto") or titulo).strip(),
-        "nivel": str(payload.get("nivel") or "Essencial").strip(),
-        "tempo_estimado_min": int(payload.get("tempo_estimado_min") or 45),
-        "xp_recompensa": int(payload.get("xp_recompensa") or 120),
+        "modulo": str(payload.get("modulo") or f"Módulo Customizado: {disciplina}").strip()[:160],
+        "assunto": str(payload.get("assunto") or titulo).strip()[:200],
+        "nivel": str(payload.get("nivel") or "Essencial").strip()[:40],
+        "tempo_estimado_min": _safe_int(payload.get("tempo_estimado_min"), 45, min_val=5, max_val=480),
+        "xp_recompensa": _safe_int(payload.get("xp_recompensa"), 120, min_val=10, max_val=2000),
         "titulo": titulo,
-        "objetivos": list(payload.get("objetivos") or [f"Dominar os fundamentos de {titulo}."]),
+        "objetivos": _safe_list(payload.get("objetivos"), [f"Dominar os fundamentos de {titulo}."], "objetivos"),
         "teoria_resumida": str(payload.get("teoria_resumida") or f"Resumo estruturado sobre {titulo}."),
-        "pontos_criticos": list(payload.get("pontos_criticos") or ["Atenção à literalidade e aos casos práticos da banca."]),
-        "radiografia_bancas": dict(payload.get("radiografia_bancas") or {
+        "pontos_criticos": _safe_list(
+            payload.get("pontos_criticos"),
+            ["Atenção à literalidade e aos casos práticos da banca."],
+            "pontos_criticos",
+        ),
+        "radiografia_bancas": dict(raw_radio or {
             "fgv": "Cobra aplicação contextual em cenários práticos.",
             "cebraspe": "Avalia assertivas sobre conceitos e exceções.",
         }),
-        "tabela_resumo": payload.get("tabela_resumo") or {
+        "tabela_resumo": raw_tabela or {
             "titulo": f"Síntese Comparativa: {titulo}",
             "colunas": ["Conceito", "Definição", "Aplicação", "Alerta de Prova"],
             "linhas": [
                 [titulo, "Conceito central da aula", "Aplicado em provas de alto nível", "Evitar extrapolações"],
             ],
         },
-        "videoaulas": list(payload.get("videoaulas") or []),
-        "flashcards": list(payload.get("flashcards") or []),
-        "questoes_ids": list(payload.get("questoes_ids") or []),
+        "videoaulas": _safe_list(payload.get("videoaulas"), [], "videoaulas"),
+        "flashcards": _safe_list(payload.get("flashcards"), [], "flashcards"),
+        "questoes_ids": _safe_list(payload.get("questoes_ids"), [], "questoes_ids"),
     }
-    _CUSTOM_LESSONS.append(new_lesson)
+
+    with _CUSTOM_LESSONS_LOCK:
+        existing_ids = {l["id"] for l in base_lessons} | {l["id"] for l in _CUSTOM_LESSONS}
+        if lesson_id in existing_ids:
+            raise ValueError("id de aula já existente")
+        _CUSTOM_LESSONS.append(new_lesson)
+
     return get_lesson_enriched(base_lessons, lesson_id) or new_lesson

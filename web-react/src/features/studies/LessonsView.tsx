@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { keys, useLesson, useLessons, useQuestions } from '@/app/queries';
+import { keys, useAuthMe, useLesson, useLessons, useQuestions } from '@/app/queries';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SkeletonRows } from '@/components/ui/states';
 import { api } from '@/lib/api';
+import { useWorkspaceMode } from '@/lib/auth';
 import { clock } from '@/lib/format';
 import type {
   LessonFlashcard,
@@ -85,6 +86,8 @@ function parseStructuredTheory(raw: string): { title: string; body: string }[] {
 
 export function LessonsView() {
   const queryClient = useQueryClient();
+  const authMe = useAuthMe();
+  const [workspaceMode] = useWorkspaceMode(authMe.data?.user?.role);
   const [searchParams, setSearchParams] = useSearchParams();
   const aulaParam = searchParams.get('aula');
 
@@ -163,10 +166,12 @@ export function LessonsView() {
   const [labExerciseState, setLabExerciseState] = useState<Record<string, string>>({});
   const [labExerciseRevealed, setLabExerciseRevealed] = useState<Record<string, boolean>>({});
 
-  // Sincroniza URL ?aula=...
+  // Sincroniza URL ?aula=... preservando demais parâmetros (?concurso=...)
   useEffect(() => {
     if (aulaParam !== activeLessonId) {
       setActiveLessonId(aulaParam);
+      setActiveTab('resumo');
+      setStudySeconds(0);
     }
   }, [aulaParam, activeLessonId]);
 
@@ -177,12 +182,15 @@ export function LessonsView() {
     setActiveSlideIdx(0);
     setActiveVisualStep(0);
     setSelectedMindMapNodeId(null);
+    setStudySeconds(0);
     setActiveTab('resumo');
+    const next = new URLSearchParams(searchParams);
     if (id) {
-      setSearchParams({ aula: id });
+      next.set('aula', id);
     } else {
-      setSearchParams({});
+      next.delete('aula');
     }
+    setSearchParams(next);
   };
 
   // Aulas concluídas
@@ -329,10 +337,22 @@ export function LessonsView() {
     });
   };
 
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!showCreateModal) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowCreateModal(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showCreateModal]);
+
   const handleSaveFlashcard = async (fc: LessonFlashcard, customQualityLabel?: string) => {
     if (customQualityLabel) {
       setCardDifficultyRatings((prev) => ({ ...prev, [fc.id]: customQualityLabel }));
     }
+    setActionError(null);
     try {
       await api.post('/api/estudos/flashcards', {
         frente: fc.frente,
@@ -343,8 +363,8 @@ export function LessonsView() {
       setSavedFlashcards((prev) => ({ ...prev, [fc.id]: true }));
       void queryClient.invalidateQueries({ queryKey: keys.flashQueue() });
       void queryClient.invalidateQueries({ queryKey: keys.flashStats() });
-    } catch {
-      setSavedFlashcards((prev) => ({ ...prev, [fc.id]: true }));
+    } catch (err) {
+      setActionError((err as Error).message || 'Não foi possível salvar o flashcard na fila SM-2.');
     }
   };
 
@@ -364,11 +384,12 @@ export function LessonsView() {
         void queryClient.invalidateQueries({ queryKey: keys.study() });
       })
       .catch(() => {
-        // fallback silencioso
+        // tentativa permanece visível localmente
       });
   };
 
   const handleConvertQuestionToFlashcard = async (q: LessonQuestionDetail) => {
+    setActionError(null);
     try {
       await api.post('/api/estudos/flashcards', {
         frente: `[Questão de Prova - ${q.banca_sigla || 'Oficial'}] ${q.enunciado}`,
@@ -379,8 +400,8 @@ export function LessonsView() {
       setQuestionConvertedToCard((prev) => ({ ...prev, [q.id]: true }));
       void queryClient.invalidateQueries({ queryKey: keys.flashQueue() });
       void queryClient.invalidateQueries({ queryKey: keys.flashStats() });
-    } catch {
-      setQuestionConvertedToCard((prev) => ({ ...prev, [q.id]: true }));
+    } catch (err) {
+      setActionError((err as Error).message || 'Não foi possível converter a questão em flashcard.');
     }
   };
 
@@ -476,10 +497,27 @@ export function LessonsView() {
 
   return (
     <div className="space-y-6">
+      {actionError && (
+        <div role="alert" className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-2.5 text-xs font-medium text-rose-300 flex items-center justify-between gap-2">
+          <span>{actionError}</span>
+          <button type="button" onClick={() => setActionError(null)} className="text-rose-300 hover:text-white">
+            <X size={14} />
+          </button>
+        </div>
+      )}
       {/* MODAL DE NOVA AULA */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-xl rounded-2xl border border-line-strong bg-surface p-6 shadow-2xl space-y-4">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Criar Nova Aula Estruturada"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+          onClick={() => setShowCreateModal(false)}
+        >
+          <div
+            className="w-full max-w-xl rounded-2xl border border-line-strong bg-surface p-6 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between border-b border-line pb-3">
               <div className="flex items-center gap-2">
                 <span className="flex size-8 items-center justify-center rounded-lg bg-amber-400 text-slate-950">
@@ -613,16 +651,18 @@ export function LessonsView() {
                     {completedCount}/{totalLessonsCount} ({completionPercentage}%)
                   </p>
                 </div>
-                <div className="flex flex-col justify-center rounded-xl border border-line-strong bg-surface-2 p-3 text-center">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setShowCreateModal(true)}
-                    className="w-full gap-1.5 text-xs font-bold text-amber-300 border-amber-400/40"
-                  >
-                    <Plus size={14} /> Nova Aula
-                  </Button>
-                </div>
+                {workspaceMode === 'admin' && (
+                  <div className="flex flex-col justify-center rounded-xl border border-line-strong bg-surface-2 p-3 text-center">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setShowCreateModal(true)}
+                      className="w-full gap-1.5 text-xs font-bold text-amber-300 border-amber-400/40"
+                    >
+                      <Plus size={14} /> Nova Aula
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
 

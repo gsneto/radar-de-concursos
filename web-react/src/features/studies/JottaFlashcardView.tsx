@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Check,
   ChevronLeft,
@@ -102,6 +102,26 @@ export function JottaFlashcardGrid({
   };
 
   const activeLightboxCard = lightboxIndex !== null ? cards[lightboxIndex] : null;
+
+  useEffect(() => {
+    if (lightboxIndex === null) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setLightboxIndex(null);
+      } else if (e.key === 'ArrowLeft') {
+        setLightboxIndex((i) => (i !== null && i > 0 ? i - 1 : i));
+      } else if (e.key === 'ArrowRight') {
+        setLightboxIndex((i) => (i !== null && i < cards.length - 1 ? i + 1 : i));
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [lightboxIndex, cards.length]);
 
   return (
     <div className="space-y-5">
@@ -296,7 +316,10 @@ export function JottaFlashcardGrid({
                       role="button"
                       tabIndex={0}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') setLightboxIndex(idx);
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setLightboxIndex(idx);
+                        }
                       }}
                       className="group relative cursor-zoom-in overflow-hidden rounded-xl border-2 border-amber-950/20 bg-[#FAF6EC] shadow-md transition-transform duration-200 hover:scale-[1.01]"
                     >
