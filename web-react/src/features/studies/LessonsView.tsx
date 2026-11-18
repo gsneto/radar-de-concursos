@@ -29,29 +29,34 @@ export function LessonsView() {
   const [tutorOpen, setTutorOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  const authReady = !authMe.isLoading;
   const [completedLessons, setCompletedLessons] = useUserStorage<string[]>(
     'completed_lessons',
     [],
     userId,
     'radar_completed_lessons',
+    authReady,
   );
   const [completedChapters, setCompletedChapters] = useUserStorage<Record<string, boolean>>(
     'completed_video_chapters',
     {},
     userId,
     'radar_completed_video_chapters',
+    authReady,
   );
   const [lessonNotes, setLessonNotes] = useUserStorage<Record<string, SyncedVideoNote[]>>(
     'lesson_synced_notes',
     {},
     userId,
     'radar_lesson_synced_notes',
+    authReady,
   );
   const [favoriteFlashcards, setFavoriteFlashcards] = useUserStorage<Record<string, boolean>>(
     'favorite_flashcards',
     {},
     userId,
     'radar_favorite_flashcards',
+    authReady,
   );
 
   const [savedFlashcards, setSavedFlashcards] = useState<Record<string, boolean>>({});
@@ -70,13 +75,8 @@ export function LessonsView() {
     if (aulaParam !== activeLessonId) {
       setActiveLessonId(aulaParam);
       setActiveTab('resumo');
-      setLocalSeconds(0);
     }
   }, [aulaParam, activeLessonId]);
-
-  useEffect(() => {
-    setLocalRunning(Boolean(activeLessonId));
-  }, [activeLessonId]);
 
   useEffect(() => {
     setServerElapsed(openSession?.elapsed_seconds ?? 0);
@@ -267,6 +267,7 @@ export function LessonsView() {
           onSelectTab={setActiveTab}
           studySeconds={openSession ? serverElapsed : localSeconds}
           timerRunning={openSession ? openSession.estado === 'em_andamento' : localRunning}
+          hasSession={Boolean(openSession || localRunning || localSeconds > 0)}
           onToggleTimer={() => void handleToggleTimer()}
           onResetTimer={() => void handleResetTimer()}
           tutorOpen={tutorOpen}

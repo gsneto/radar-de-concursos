@@ -9,22 +9,34 @@ interface StudentOnboardingChecklistProps {
 
 export function StudentOnboardingChecklist({ selectedContestsCount }: StudentOnboardingChecklistProps) {
   const authMe = useAuthMe();
+  const authReady = !authMe.isLoading;
   const userId = authMe.data?.user?.id ?? null;
-  const [dismissed, setDismissed] = useUserStorage<boolean>('onboarding_dismissed', false, userId);
+  const [dismissed, setDismissed] = useUserStorage<boolean>('onboarding_dismissed', false, userId, undefined, authReady);
   const [completedSchedule] = useUserStorage<Record<string, boolean>>(
     'weekly_schedule_completed',
     {},
     userId,
     'radar_weekly_study_schedule_completed',
+    authReady,
+  );
+  const [completedLessons] = useUserStorage<string[]>(
+    'completed_lessons',
+    [],
+    userId,
+    'radar_completed_lessons',
+    authReady,
   );
   const studyPanel = useStudyPanel();
   const flashStats = useFlashStats();
 
-  if (authMe.isLoading || dismissed) return null;
+  if (!authReady || dismissed) return null;
 
   const step1Done = selectedContestsCount > 0;
   const step2Done = Object.values(completedSchedule).some(Boolean);
-  const step3Done = (studyPanel.data?.sessoes_concluidas ?? 0) > 0 || (flashStats.data?.revisoes ?? 0) > 0;
+  const step3Done =
+    completedLessons.length > 0 ||
+    (studyPanel.data?.sessoes_concluidas ?? 0) > 0 ||
+    (flashStats.data?.revisoes ?? 0) > 0;
 
   const steps = [
     {

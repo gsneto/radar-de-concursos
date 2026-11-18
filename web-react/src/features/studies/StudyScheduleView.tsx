@@ -78,7 +78,7 @@ export function StudyScheduleView() {
   // Estado dos blocos concluídos isolado por usuário no localStorage
   const [completedBlocks, setCompletedBlocks, clearCompletedBlocks] = useUserStorage<
     Record<string, boolean>
-  >('weekly_schedule_completed', {}, userId, 'radar_weekly_study_schedule_completed');
+  >('weekly_schedule_completed', {}, userId, 'radar_weekly_study_schedule_completed', !authMe.isLoading);
 
   const toggleBlock = (blockId: string) => {
     setCompletedBlocks((prev) => ({ ...prev, [blockId]: !prev[blockId] }));
@@ -488,13 +488,13 @@ export function StudyScheduleView() {
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-400/15 text-amber-400 border border-amber-400/30">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-400/15 text-accent-ink border border-amber-400/30">
                 <Compass size={13} />
                 Ciclo de Estudos Automatizado
               </span>
               {activeBanca && (
                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-surface-2 border border-line text-fg-2">
-                  <Award size={12} className="text-amber-400" />
+                  <Award size={12} className="text-accent-ink" />
                   Calibrado para {activeBanca.nome}
                 </span>
               )}
@@ -698,7 +698,7 @@ export function StudyScheduleView() {
                           </span>
                         )}
                         {diaConcluido && (
-                          <span className="text-emerald-400 text-xs flex items-center gap-1 font-medium">
+                          <span className="text-ok-ink text-xs flex items-center gap-1 font-medium">
                             <CheckCircle2 size={13} /> 100%
                           </span>
                         )}
@@ -727,7 +727,7 @@ export function StudyScheduleView() {
                         key={bloco.id}
                         className={`group rounded-xl border p-3 transition-all flex items-start gap-3 ${
                           isDone
-                            ? 'bg-emerald-950/15 border-emerald-500/30 text-fg-3'
+                            ? 'bg-emerald-500/10 border-emerald-500/30 text-fg-3'
                             : 'bg-surface-2/40 border-line/60 hover:bg-surface-2/80 hover:border-line text-fg'
                         }`}
                       >
@@ -737,7 +737,7 @@ export function StudyScheduleView() {
                           onClick={() => toggleBlock(bloco.id)}
                           aria-label={isDone ? 'Marcar como não concluído' : 'Marcar como concluído'}
                           className={`mt-0.5 shrink-0 transition-colors ${
-                            isDone ? 'text-emerald-400' : 'text-fg-3 hover:text-amber-400'
+                            isDone ? 'text-ok-ink' : 'text-fg-3 hover:text-accent-ink'
                           }`}
                         >
                           {isDone ? <CheckCircle2 size={18} /> : <Circle size={18} />}
@@ -750,12 +750,12 @@ export function StudyScheduleView() {
                               <span
                                 className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm ${
                                   bloco.tipo === 'teoria'
-                                    ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                                    ? 'bg-sky-500/10 text-info-ink border border-sky-500/25'
                                     : bloco.tipo === 'questoes'
-                                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                    ? 'bg-emerald-500/10 text-ok-ink border border-emerald-500/25'
                                     : bloco.tipo === 'simulado'
-                                    ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                                    : 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+                                    ? 'bg-amber-500/15 text-accent-ink border border-amber-500/30'
+                                    : 'bg-rose-500/10 text-risk-ink border border-rose-500/25'
                                 }`}
                               >
                                 {bloco.tipo}
@@ -776,7 +776,7 @@ export function StudyScheduleView() {
                           </p>
 
                           {bloco.dicaBanca && !isDone && (
-                            <p className="text-[11px] text-amber-400/90 bg-amber-400/5 px-2 py-1 rounded-md border border-amber-400/15 leading-relaxed">
+                            <p className="text-[11px] text-accent-ink bg-amber-400/5 px-2 py-1 rounded-md border border-amber-400/20 leading-relaxed">
                               💡 <strong>Banca:</strong> {bloco.dicaBanca}
                             </p>
                           )}
@@ -788,7 +788,7 @@ export function StudyScheduleView() {
                             variant="secondary"
                             size="sm"
                             onClick={() => navigate(bloco.actionHref!)}
-                            className="shrink-0 gap-1.5 text-[11px] font-semibold text-amber-400 border border-amber-400/30 hover:bg-amber-400/10 hover:border-amber-400/60 shadow-xs"
+                            className="shrink-0 gap-1.5 text-[11px] font-semibold text-accent-ink border border-amber-400/30 hover:bg-amber-400/10 hover:border-amber-400/60 shadow-xs"
                             title={bloco.actionLabel || 'Estudar Agora'}
                           >
                             <Play size={11} className="fill-current" />

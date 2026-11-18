@@ -148,6 +148,7 @@ describe('OverviewPage', () => {
     expect(screen.queryByText(/radar ops-ciclo --auto/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/822 decisões registradas/i)).not.toBeInTheDocument();
     expect(screen.getByRole('region', { name: /integridade e rastro operacional/i })).toBeInTheDocument();
+    expect(screen.getAllByText('1 de 1 destaque(s)')).toHaveLength(2);
   });
 
   it('exibe estados vazios honestos quando não há itens na carteira ou ciclos', async () => {

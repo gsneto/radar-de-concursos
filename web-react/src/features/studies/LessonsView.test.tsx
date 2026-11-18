@@ -275,6 +275,108 @@ describe('LessonsView', () => {
     fireEvent.click(screen.getByRole('button', { name: /5\. Questões & Avaliação de Domínio/i }));
     expect(screen.getByText(/Qual forma normal exige valores atômicos\?/i)).toBeInTheDocument();
   });
+
+  it('inicia cronômetro parado em 00:00 (sem setInterval fantasma), aciona POST /api/estudos/sessoes ao clicar em Iniciar e valida modal acessível de Nova Aula', async () => {
+    const sessionPosts: unknown[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.includes('/api/auth/me')) {
+          return new Response(
+            JSON.stringify({
+              authenticated: true,
+              user: { id: 'admin-1', nome: 'Admin', email: 'adm@radar.dev', role: 'admin', plan: 'founder', status: 'active' },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('/api/estudos/sessoes') && init?.method === 'POST') {
+          sessionPosts.push(JSON.parse(String(init.body)));
+          return new Response(JSON.stringify({ ok: true }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (url.includes('/api/estudos/aulas') && init?.method === 'POST') {
+          return new Response(JSON.stringify({ error: 'Falha ao publicar aula no banco' }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (url.includes('/api/estudos/painel')) {
+          return new Response(
+            JSON.stringify({
+              total_segundos: 0,
+              semana_segundos: 0,
+              sessoes_concluidas: 0,
+              revisoes_pendentes: 0,
+              disciplinas: 1,
+              conteudo: { topics: { done: 0, total: 0, pct: 0 }, overall: { done: 0, total: 0, pct: 0 } },
+              minutos_por_disciplina: [],
+              revisoes: [],
+              sessao_aberta: null,
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('/api/estudos/aulas/bd-01')) {
+          return new Response(
+            JSON.stringify({
+              aula: {
+                id: 'bd-01',
+                disciplina: 'Banco de Dados',
+                titulo: 'Aula 01: Modelagem Conceitual',
+                objetivos: ['Compreender 1FN'],
+                teoria_resumida: '1FN: Valores atômicos.',
+                pontos_criticos: [],
+                radiografia_bancas: {},
+                questoes_ids: [],
+              },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('/api/estudos/aulas')) {
+          return new Response(
+            JSON.stringify({
+              aulas: [
+                {
+                  id: 'bd-01',
+                  disciplina: 'Banco de Dados',
+                  titulo: 'Aula 01: Modelagem Conceitual',
+                  objetivos: ['Compreender 1FN'],
+                  questoes_count: 0,
+                },
+              ],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }),
+    );
+
+    localStorage.setItem('gsn.workspace_mode', 'admin');
+    renderWithClient(<LessonsView />, ['/?aula=bd-01']);
+
+    expect(await screen.findByText('Aula 01: Modelagem Conceitual')).toBeInTheDocument();
+    const startBtn = screen.getByTitle('Iniciar sessão');
+    expect(startBtn).toBeInTheDocument();
+    expect(screen.getByText('00:00:00')).toBeInTheDocument();
+
+    fireEvent.click(startBtn);
+    expect(sessionPosts).toEqual([{ action: 'start', disciplina_id: null, modo: 'aula' }]);
+
+    fireEvent.click(screen.getByRole('button', { name: /Voltar para Todas as Aulas/i }));
+    const newLessonBtn = await screen.findByRole('button', { name: /Nova Aula/i });
+    fireEvent.click(newLessonBtn);
+
+    const titleInput = await screen.findByLabelText(/Título da Aula/i);
+    fireEvent.change(titleInput, { target: { value: 'Aula Teste Radix' } });
+    fireEvent.click(screen.getByRole('button', { name: /Publicar Aula/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Falha ao publicar aula no banco/i);
+  });
 });
 
 describe('BancaRadiographyView', () => {

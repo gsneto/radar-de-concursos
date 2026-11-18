@@ -205,7 +205,7 @@ export function JottaFlashcardGrid({
               <div>
                 <div className="flex items-center justify-between border-b-2 border-line bg-surface-2 px-4 py-2.5">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="inline-flex items-center gap-1 rounded-md border border-amber-400/50 bg-amber-400/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-300 shrink-0">
+                    <span className="inline-flex items-center gap-1 rounded-md border border-amber-400/50 bg-amber-400/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-accent-ink shrink-0">
                       <Sparkles size={11} /> IA
                     </span>
                     <span className="truncate rounded-md bg-surface-3 px-2 py-0.5 text-[11px] font-bold text-fg-2">
@@ -218,7 +218,7 @@ export function JottaFlashcardGrid({
                       <button
                         type="button"
                         onClick={() => onSelectLesson(fc.aula_id!)}
-                        className="rounded-md border border-line-strong bg-surface px-2 py-1 text-[10px] font-bold text-sky-300 hover:border-sky-400"
+                        className="rounded-md border border-line-strong bg-surface px-2 py-1 text-[10px] font-bold text-info-ink hover:border-sky-400"
                       >
                         Abrir Aula
                       </button>
@@ -237,7 +237,7 @@ export function JottaFlashcardGrid({
                       title="Favoritar ficha"
                       className={`rounded-lg p-1.5 transition-colors ${
                         isFav
-                          ? 'bg-amber-400/20 text-amber-400'
+                          ? 'bg-amber-400/20 text-accent-ink'
                           : 'text-fg-3 hover:bg-surface-3 hover:text-fg'
                       }`}
                     >
@@ -272,7 +272,7 @@ export function JottaFlashcardGrid({
                               setInteractiveGuesses((prev) => ({ ...prev, [fc.id]: opt }));
                               setRevealedQuizCards((prev) => ({ ...prev, [fc.id]: true }));
                             }}
-                            className="rounded-lg border border-amber-400/40 bg-amber-400/10 px-4 py-1.5 text-xs font-extrabold text-amber-300 hover:bg-amber-400 hover:text-slate-950 transition-all"
+                            className="rounded-lg border border-amber-400/40 bg-amber-400/10 px-4 py-1.5 text-xs font-extrabold text-accent-ink hover:bg-amber-400 hover:text-slate-950 transition-all"
                           >
                             {opt === 'V' ? 'CERTO (V)' : 'ERRADO (F)'}
                           </button>
@@ -293,8 +293,8 @@ export function JottaFlashcardGrid({
                       <div
                         className={`mb-2.5 rounded-xl border px-3 py-2 text-xs font-bold ${
                           guess === fc.resposta_vf
-                            ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
-                            : 'border-rose-500/40 bg-rose-500/15 text-rose-300'
+                            ? 'border-emerald-500/40 bg-emerald-500/15 text-ok-ink'
+                            : 'border-rose-500/40 bg-rose-500/15 text-risk-ink'
                         }`}
                       >
                         {guess === fc.resposta_vf
@@ -395,9 +395,9 @@ export function JottaFlashcardGrid({
                   <span className="text-[10px] font-bold text-fg-3 mr-0.5">Domínio:</span>
                   {(
                     [
-                      { key: 'Fácil', tone: 'hover:border-emerald-400 hover:text-emerald-300' },
-                      { key: 'Médio', tone: 'hover:border-amber-400 hover:text-amber-300' },
-                      { key: 'Difícil', tone: 'hover:border-rose-400 hover:text-rose-300' },
+                      { key: 'Fácil', tone: 'hover:border-emerald-400 hover:text-ok-ink' },
+                      { key: 'Médio', tone: 'hover:border-amber-400 hover:text-accent-ink' },
+                      { key: 'Difícil', tone: 'hover:border-rose-400 hover:text-risk-ink' },
                     ] as const
                   ).map((lvl) => (
                     <button
@@ -430,8 +430,8 @@ export function JottaFlashcardGrid({
                     onClick={() => onSaveCard(fc)}
                     className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-bold transition-all ${
                       isSaved
-                        ? 'border border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
-                        : 'border border-amber-400/50 bg-amber-400/15 text-amber-300 hover:bg-amber-400 hover:text-slate-950'
+                        ? 'border border-emerald-500/40 bg-emerald-500/15 text-ok-ink'
+                        : 'border border-amber-400/50 bg-amber-400/15 text-accent-ink hover:bg-amber-400 hover:text-slate-950'
                     }`}
                   >
                     {isSaved ? (

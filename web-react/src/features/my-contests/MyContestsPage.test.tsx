@@ -165,4 +165,61 @@ describe('MyContestsPage', () => {
     expect(localStorage.getItem('radar:u:usr-ana-1:onboarding_dismissed')).toBe('true');
     expect(screen.queryByText('1. Escolher Concurso Foco')).not.toBeInTheDocument();
   });
+
+  it('reconhece aula concluída no passo 3, não inventa banca alvo quando ausente e evita p-5 duplicado no GlowCard', async () => {
+    localStorage.setItem('radar:u:usr-ana-1:completed_lessons', JSON.stringify(['bd-01']));
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.includes('/api/auth/me')) {
+          return new Response(
+            JSON.stringify({
+              authenticated: true,
+              user: { id: 'usr-ana-1', nome: 'Ana', email: 'ana@radar.dev', role: 'student', plan: 'free', status: 'active' },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url === '/api/meus-concursos') {
+          return new Response(
+            JSON.stringify({
+              total: 1,
+              itens: [
+                {
+                  id: 'my-2',
+                  contest_id: 'contest-sem-banca',
+                  role_id: null,
+                  contest_label: 'Concurso Sem Banca Definida',
+                  orgao: 'Órgão Federal X',
+                  banca: null,
+                  si_compativel: false,
+                  competition_id: 'orgx',
+                  role_name: 'Analista de TI',
+                  role_specialty: null,
+                  remuneracao: null,
+                  vagas: null,
+                  proximo_prazo: null,
+                  selected_at: '2026-11-06T12:00:00Z',
+                  status: 'ativo',
+                  notes: null,
+                },
+              ],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }),
+    );
+
+    const { container } = renderPage();
+
+    expect(await screen.findByText(/Trilha de Ativação · 2\/3 concluídos/i)).toBeInTheDocument();
+    const bancasLabel = screen.getByText('Bancas Alvo');
+    expect(bancasLabel.parentElement?.querySelector('p')?.textContent).toBe('0');
+
+    const outerGlow = container.querySelector('.group\\/glow');
+    expect(outerGlow?.className).not.toMatch(/\bp-5\b/);
+  });
 });

@@ -42,6 +42,7 @@ export function FlashcardsDeckTab() {
     {},
     userId,
     'radar_favorite_flashcards',
+    !authMe.isLoading,
   );
   const [difficultyRatings, setDifficultyRatings] = useState<Record<string, string>>({});
   const [showCreate, setShowCreate] = useState(false);
@@ -72,7 +73,7 @@ export function FlashcardsDeckTab() {
       api.post('/api/estudos/flashcards', {
         action: 'create',
         frente: fc.frente,
-        verso: `${fc.verso}\n\n💡 Mnemônico: ${fc.mnemonico}`,
+        verso: `${fc.verso}${fc.mnemonico ? `\n\n💡 Mnemônico: ${fc.mnemonico}` : ''}`,
         tags: [fc.disciplina ?? 'Geral', fc.aula_titulo ?? 'Conceito', 'flashcard-visual-jotta'],
       }),
     onSuccess: (_, fc) => {

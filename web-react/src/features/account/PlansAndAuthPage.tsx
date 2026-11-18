@@ -86,7 +86,7 @@ export function PlansPage() {
 
         <div className="grid gap-8 lg:grid-cols-[1.25fr_1fr] items-center">
           <div className="space-y-4">
-            <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/40 bg-amber-400/10 px-3 py-1 text-xs font-extrabold text-amber-300">
+            <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/40 bg-amber-400/10 px-3 py-1 text-xs font-extrabold text-accent-ink">
               <Sparkles size={14} /> Feito sob medida para TI & Concursos Fiscais/Tribunais
             </div>
             <h2 className="font-display text-2xl sm:text-3xl font-extrabold tracking-tight text-fg leading-tight">
@@ -419,8 +419,8 @@ export function AccountPage() {
           ) : (
             <div className="space-y-4">
               {selectedPlanParam && PLAN_LABELS[selectedPlanParam] && (
-                <div className="flex items-center gap-2 rounded-xl border border-amber-400/40 bg-amber-400/10 px-3.5 py-2.5 text-xs font-semibold text-amber-300">
-                  <Crown size={14} className="shrink-0 text-amber-400" />
+                <div className="flex items-center gap-2 rounded-xl border border-amber-400/40 bg-amber-400/10 px-3.5 py-2.5 text-xs font-semibold text-accent-ink">
+                  <Crown size={14} className="shrink-0 text-accent-ink" />
                   <span>
                     Plano selecionado: <strong>{PLAN_LABELS[selectedPlanParam]}</strong> — crie ou entre na sua conta com o mesmo e-mail do pagamento.
                   </span>
@@ -533,7 +533,7 @@ export function AccountPage() {
                   </label>
 
                   {!hasAdmin && !publicMode && (
-                    <label className="flex items-center gap-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs font-semibold text-amber-200 cursor-pointer">
+                    <label className="flex items-center gap-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs font-semibold text-accent-ink cursor-pointer">
                       <input
                         type="checkbox"
                         checked={bootstrapAdmin}
@@ -544,7 +544,7 @@ export function AccountPage() {
                   )}
 
                   {authError && <p className="text-xs font-semibold text-risk">{authError}</p>}
-                  {authMsg && <p className="text-xs font-semibold text-emerald-400">{authMsg}</p>}
+                  {authMsg && <p className="text-xs font-semibold text-ok-ink">{authMsg}</p>}
                   <Button type="submit" variant="primary" size="md" disabled={registerMutation.isPending} className="w-full font-bold">
                     Criar Conta e Começar
                   </Button>
@@ -695,7 +695,7 @@ export function AccountPage() {
                 <p className="font-bold text-fg flex items-center gap-1.5">
                   <Webhook size={14} className="text-amber-400" /> Endpoint Webhook POST:
                 </p>
-                <code className="block break-all rounded bg-bg px-2 py-1.5 font-mono text-[11px] text-amber-300">
+                <code className="block break-all rounded bg-bg px-2 py-1.5 font-mono text-[11px] text-accent-ink">
                   /api/billing/webhook
                 </code>
                 <p className="text-fg-3 text-[11px]">

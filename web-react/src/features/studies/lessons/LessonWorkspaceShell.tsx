@@ -31,6 +31,7 @@ interface LessonWorkspaceShellProps {
   onSelectTab: (tab: LessonStageKey) => void;
   studySeconds: number;
   timerRunning: boolean;
+  hasSession?: boolean;
   onToggleTimer: () => void;
   onResetTimer: () => void;
   tutorOpen: boolean;
@@ -51,6 +52,7 @@ export function LessonWorkspaceShell({
   onSelectTab,
   studySeconds,
   timerRunning,
+  hasSession = false,
   onToggleTimer,
   onResetTimer,
   tutorOpen,
@@ -82,7 +84,7 @@ export function LessonWorkspaceShell({
               type="button"
               onClick={onToggleTimer}
               className="rounded p-1 text-fg-2 hover:text-fg"
-              title={timerRunning ? 'Pausar' : 'Retomar'}
+              title={!hasSession ? 'Iniciar sessão' : timerRunning ? 'Pausar' : 'Retomar'}
             >
               {timerRunning ? <Pause size={13} /> : <Play size={13} />}
             </button>

@@ -29,10 +29,12 @@ export function ObservatoryHealthBento({
   const eventEntries = Object.entries(timeline?.eventos ?? {}).filter(([, count]) => count > 0);
   const novos = timeline?.novos;
 
-  const siCompatibleCount = (portfolio?.itens ?? []).filter(
+  const sampleItems = portfolio?.itens;
+  const sampleTotal = sampleItems?.length ?? 0;
+  const siCompatibleCount = (sampleItems ?? []).filter(
     (it) => it.si?.estado === 'explicito' || it.si?.estado === 'categoria_inclui_curso',
   ).length;
-  const indigenousCount = (portfolio?.itens ?? []).filter(
+  const indigenousCount = (sampleItems ?? []).filter(
     (it) => it.indigenas?.estado === 'explicito_imediato' || it.indigenas?.estado === 'apenas_reserva',
   ).length;
 
@@ -173,11 +175,15 @@ export function ObservatoryHealthBento({
           </li>
           <li className="flex items-center justify-between rounded-xl border border-line bg-surface-2 px-3 py-2.5">
             <span className="text-fg-2">Compatíveis com SI (destaques)</span>
-            <span className="font-mono font-bold text-accent-ink tabular">{integer(siCompatibleCount)}</span>
+            <span className="font-mono font-bold text-accent-ink tabular">
+              {sampleTotal > 0 ? `${integer(siCompatibleCount)} de ${integer(sampleTotal)} destaque(s)` : '—'}
+            </span>
           </li>
           <li className="flex items-center justify-between rounded-xl border border-line bg-surface-2 px-3 py-2.5">
-            <span className="text-fg-2">Com reserva indígena identificada</span>
-            <span className="font-mono font-bold text-info-ink tabular">{integer(indigenousCount)}</span>
+            <span className="text-fg-2">Com reserva indígena (destaques)</span>
+            <span className="font-mono font-bold text-info-ink tabular">
+              {sampleTotal > 0 ? `${integer(indigenousCount)} de ${integer(sampleTotal)} destaque(s)` : '—'}
+            </span>
           </li>
         </ul>
 

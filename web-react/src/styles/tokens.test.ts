@@ -87,11 +87,35 @@ describe('contraste dos tokens de texto no tema claro (html.light)', () => {
   });
 
   for (const ink of ['accent-ink', 'ok-ink', 'info-ink', 'risk-ink']) {
-    it(`light: token semântico ${ink} sobre surface (#ffffff) atinge 4,5:1`, () => {
-      expect(ratio(lightToken(ink), lightToken('surface'))).toBeGreaterThanOrEqual(4.5);
-    });
-    it(`dark: token semântico ${ink} sobre surface (#0d1117) atinge 4,5:1`, () => {
-      expect(ratio(token(ink), token('surface'))).toBeGreaterThanOrEqual(4.5);
-    });
+    for (const surface of SURFACES) {
+      it(`light: token semântico ${ink} sobre ${surface} atinge 4,5:1`, () => {
+        expect(ratio(lightToken(ink), lightToken(surface))).toBeGreaterThanOrEqual(4.5);
+      });
+      it(`dark: token semântico ${ink} sobre ${surface} atinge 4,5:1`, () => {
+        expect(ratio(token(ink), token(surface))).toBeGreaterThanOrEqual(4.5);
+      });
+    }
   }
+
+  for (const actionToken of ['accent', 'verified']) {
+    for (const surface of ['bg', 'surface', 'surface-2']) {
+      it(`light: token de ação/selo ${actionToken} sobre ${surface} atinge 4,5:1`, () => {
+        expect(ratio(lightToken(actionToken), lightToken(surface))).toBeGreaterThanOrEqual(4.5);
+      });
+    }
+  }
+
+  it('views estudantis modificadas não usam classes pastel ilegíveis no tema claro', () => {
+    const files = [
+      'src/features/studies/JottaFlashcardView.tsx',
+      'src/features/my-contests/MyContestsPage.tsx',
+      'src/features/studies/StudyScheduleView.tsx',
+      'src/features/account/PlansAndAuthPage.tsx',
+    ];
+    const forbidden = /\btext-(?:amber-(?:200|300)|emerald-300|sky-300|rose-300|blue-400|purple-400)\b/;
+    for (const rel of files) {
+      const source = readFileSync(resolve(process.cwd(), rel), 'utf-8');
+      expect(source, `${rel} contém utilitário pastel sem contraste em html.light`).not.toMatch(forbidden);
+    }
+  });
 });

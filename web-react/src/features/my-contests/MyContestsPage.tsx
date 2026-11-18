@@ -144,18 +144,18 @@ export function MyContestsPage() {
               <div className="space-y-0.5">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-fg-3">Concursos em Foco</span>
                 <p className="font-display text-xl font-bold text-fg sm:text-2xl">{items.length}</p>
-                <p className="text-2xs text-amber-400 font-medium">Meta ativa selecionada</p>
+                <p className="text-2xs text-accent-ink font-medium">Meta ativa selecionada</p>
               </div>
               <div className="space-y-0.5">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-fg-3">Bancas Alvo</span>
                 <p className="font-display text-xl font-bold text-fg sm:text-2xl">
-                  {new Set(items.map((i) => i.banca).filter(Boolean)).size || 1}
+                  {new Set(items.map((i) => i.banca).filter(Boolean)).size}
                 </p>
                 <p className="text-2xs text-fg-3">Examinadoras mapeadas</p>
               </div>
               <div className="space-y-0.5">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-fg-3">Próximo Prazo</span>
-                <p className="font-display text-base font-bold text-amber-300 sm:text-lg truncate">
+                <p className="font-display text-base font-bold text-accent-ink sm:text-lg truncate">
                   {items[0]?.proximo_prazo?.data ? shortDate(items[0].proximo_prazo.data) : 'Em aberto'}
                 </p>
                 <p className="text-2xs text-fg-3 truncate">{items[0]?.proximo_prazo?.label || 'Inscrições'}</p>
@@ -165,7 +165,7 @@ export function MyContestsPage() {
                 <div>
                   <Link
                     to={`/estudos?concurso=${encodeURIComponent(items[0]?.contest_id ?? '')}`}
-                    className="inline-flex items-center gap-1 text-xs font-bold text-amber-400 hover:text-amber-300 transition-colors"
+                    className="inline-flex items-center gap-1 text-xs font-bold text-accent-ink hover:underline transition-colors"
                   >
                     <BookOpen size={13} /> Iniciar Aulas ›
                   </Link>
@@ -217,18 +217,18 @@ function MyContestCard({
   const dossierHref = `/dossie/${encodeURIComponent(item.contest_id)}`;
 
   return (
-    <GlowCard accent="amber" className="flex flex-col justify-between h-full group p-5">
+    <GlowCard accent="amber" className="group h-full" contentClassName="p-5 justify-between">
       <div>
         {/* Cabeçalho do Card: Instituição e Banca */}
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="min-w-0 flex-1 space-y-1">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-400/10 text-amber-400 border border-amber-400/20">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-400/10 text-accent-ink border border-amber-400/20">
                 <Award size={12} />
                 {boardName}
               </span>
               {item.si_compativel && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-ok-ink border border-emerald-500/20">
                   <CheckCircle2 size={12} />
                   Bacharelado em SI Compatível
                 </span>
@@ -246,7 +246,7 @@ function MyContestCard({
             onClick={onRemove}
             title="Remover do meu Painel de Foco"
             aria-label="Remover do meu Painel de Foco"
-            className="p-1.5 rounded-md border border-line bg-surface-2/60 text-fg-3 hover:text-rose-400 hover:border-rose-400/40 transition-colors shrink-0"
+            className="p-1.5 rounded-md border border-line bg-surface-2/60 text-fg-3 hover:text-risk-ink hover:border-rose-400/40 transition-colors shrink-0"
           >
             <Trash2 size={14} />
           </button>
@@ -256,7 +256,7 @@ function MyContestCard({
         <div className="mt-2 mb-3">
           <Link
             to={dossierHref}
-            className="font-display text-lg font-bold text-fg tracking-tight group-hover:text-amber-300 transition-colors line-clamp-1 block"
+            className="font-display text-lg font-bold text-fg tracking-tight group-hover:text-accent-ink transition-colors line-clamp-1 block"
           >
             {roleTitle}
           </Link>
@@ -271,7 +271,7 @@ function MyContestCard({
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 my-3.5 p-3 rounded-lg bg-surface-2/40 border border-line/60 text-xs">
           <div>
             <span className="text-fg-3 block text-2xs uppercase tracking-wider">Remuneração</span>
-            <span className="font-semibold text-emerald-400 text-sm">
+            <span className="font-semibold text-ok-ink text-sm">
               {item.remuneracao ? String(item.remuneracao).replace(/^"|"$/g, '') : 'Edital Oficial'}
             </span>
           </div>
@@ -287,7 +287,7 @@ function MyContestCard({
             <span className="text-fg-3 block text-2xs uppercase tracking-wider">
               {item.proximo_prazo?.label || 'Próximo Prazo'}
             </span>
-            <span className="font-medium text-amber-300">
+            <span className="font-medium text-accent-ink">
               {item.proximo_prazo?.data ? shortDate(item.proximo_prazo.data) : 'Edital aberto'}
             </span>
           </div>
@@ -297,19 +297,19 @@ function MyContestCard({
         <div className="flex flex-wrap items-center gap-1.5 pt-1">
           <Link
             to={studyHref}
-            className="rounded-lg border border-line bg-surface-2 px-2 py-1 text-[11px] font-semibold text-fg-3 hover:text-amber-400 hover:border-amber-400/40 transition-colors"
+            className="rounded-lg border border-line bg-surface-2 px-2 py-1 text-[11px] font-semibold text-fg-3 hover:text-accent-ink hover:border-amber-400/40 transition-colors"
           >
             Trilha de Aulas
           </Link>
           <Link
             to="/estudos/bancas"
-            className="rounded-lg border border-line bg-surface-2 px-2 py-1 text-[11px] font-semibold text-fg-3 hover:text-amber-400 hover:border-amber-400/40 transition-colors"
+            className="rounded-lg border border-line bg-surface-2 px-2 py-1 text-[11px] font-semibold text-fg-3 hover:text-accent-ink hover:border-amber-400/40 transition-colors"
           >
             DNA da Banca
           </Link>
           <Link
             to="/estudos/simulados"
-            className="rounded-lg border border-line bg-surface-2 px-2 py-1 text-[11px] font-semibold text-fg-3 hover:text-amber-400 hover:border-amber-400/40 transition-colors"
+            className="rounded-lg border border-line bg-surface-2 px-2 py-1 text-[11px] font-semibold text-fg-3 hover:text-accent-ink hover:border-amber-400/40 transition-colors"
           >
             Simulados
           </Link>

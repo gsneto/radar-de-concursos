@@ -40,4 +40,26 @@ describe('useUserStorage', () => {
     );
     expect(localResult.current[0]).toEqual(['seg-01']);
   });
+
+  it('não lê nem migra chave local enquanto ready=false (authMe carregando)', () => {
+    localStorage.setItem('radar:u:local:completed_lessons', JSON.stringify(['local-1']));
+    localStorage.setItem('radar_completed_lessons', JSON.stringify(['legacy-1']));
+
+    const { result, rerender } = renderHook(
+      ({ uid, ready }) =>
+        useUserStorage<string[]>(
+          'completed_lessons',
+          [],
+          uid,
+          'radar_completed_lessons',
+          ready,
+        ),
+      { initialProps: { uid: null as string | null, ready: false } },
+    );
+
+    expect(result.current[0]).toEqual([]);
+
+    rerender({ uid: 'bob-2', ready: true });
+    expect(result.current[0]).toEqual([]);
+  });
 });

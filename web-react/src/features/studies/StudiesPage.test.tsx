@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { StudiesPage } from './StudiesPage';
@@ -110,5 +110,60 @@ describe('StudiesPage', () => {
     renderPage();
 
     expect(await screen.findByText(/Falha ao carregar estudos/i)).toBeInTheDocument();
+  });
+
+  it('salva flashcard visual sem gravar literal undefined quando mnemônico está ausente', async () => {
+    const savedBodies: Array<{ verso?: string }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.includes('/api/estudos/flashcards') && init?.method === 'POST') {
+          savedBodies.push(JSON.parse(String(init.body)));
+          return new Response(JSON.stringify({ ok: true }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (url.includes('/api/estudos/flashcards/estatisticas')) {
+          return new Response(
+            JSON.stringify({ ativos: 0, arquivados: 0, novos: 0, pendentes: 0, revisoes: 0, acertos: 0, pct_acerto: null, basis: '0 ativos' }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('/api/estudos/flashcards/visuais')) {
+          return new Response(
+            JSON.stringify({
+              flashcards: [
+                {
+                  id: 'fc-sem-mnem',
+                  frente: 'Conceito ACID',
+                  verso: 'Atomicidade, Consistência, Isolamento e Durabilidade.',
+                  tag: 'Transações',
+                },
+              ],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('/api/estudos/flashcards')) {
+          return new Response(
+            JSON.stringify({ vencidos: [], novos: [], futuros: [] }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }),
+    );
+
+    renderPage('/estudos/flashcards');
+
+    const saveBtn = await screen.findByRole('button', { name: /\+ SM-2/i }, { timeout: 4000 });
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(savedBodies.length).toBe(1);
+    });
+    expect(savedBodies[0].verso).toBe('Atomicidade, Consistência, Isolamento e Durabilidade.');
+    expect(savedBodies[0].verso).not.toContain('undefined');
   });
 });

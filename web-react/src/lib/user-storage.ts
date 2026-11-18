@@ -35,22 +35,29 @@ export function useUserStorage<T>(
   initialValue: T,
   userId?: string | null,
   legacyKey?: string,
+  ready = true,
 ): [T, (next: T | ((prev: T) => T)) => void, () => void] {
   const fullKey = scopedStorageKey(baseKey, userId);
   const isLocalProfile = !userId || !userId.trim();
   const fallbackRef = useRef(initialValue);
 
-  const [entry, setEntry] = useState<{ key: string; value: T }>(() => ({
-    key: fullKey,
-    value: readFromStorage(fullKey, fallbackRef.current, isLocalProfile, legacyKey),
-  }));
+  const [entry, setEntry] = useState<{ key: string; value: T }>(() =>
+    ready
+      ? {
+          key: fullKey,
+          value: readFromStorage(fullKey, fallbackRef.current, isLocalProfile, legacyKey),
+        }
+      : { key: '__pending__', value: fallbackRef.current },
+  );
 
-  const currentValue =
-    entry.key === fullKey
+  const currentValue = !ready
+    ? fallbackRef.current
+    : entry.key === fullKey
       ? entry.value
       : readFromStorage(fullKey, fallbackRef.current, isLocalProfile, legacyKey);
 
   useEffect(() => {
+    if (!ready) return;
     setEntry((prev) =>
       prev.key === fullKey
         ? prev
@@ -59,29 +66,34 @@ export function useUserStorage<T>(
             value: readFromStorage(fullKey, fallbackRef.current, isLocalProfile, legacyKey),
           },
     );
-  }, [fullKey, isLocalProfile, legacyKey]);
+  }, [fullKey, isLocalProfile, legacyKey, ready]);
 
   const setValue = useCallback(
     (next: T | ((prev: T) => T)) => {
       setEntry((prev) => {
         const base =
-          prev.key === fullKey
+          ready && prev.key === fullKey
             ? prev.value
-            : readFromStorage(fullKey, fallbackRef.current, isLocalProfile, legacyKey);
+            : ready
+              ? readFromStorage(fullKey, fallbackRef.current, isLocalProfile, legacyKey)
+              : fallbackRef.current;
         const resolved = typeof next === 'function' ? (next as (p: T) => T)(base) : next;
-        try {
-          localStorage.setItem(fullKey, JSON.stringify(resolved));
-        } catch {
-          /* ignore quota/privacy errors */
+        if (ready) {
+          try {
+            localStorage.setItem(fullKey, JSON.stringify(resolved));
+          } catch {
+            /* ignore quota/privacy errors */
+          }
         }
-        return { key: fullKey, value: resolved };
+        return { key: ready ? fullKey : '__pending__', value: resolved };
       });
     },
-    [fullKey, isLocalProfile, legacyKey],
+    [fullKey, isLocalProfile, legacyKey, ready],
   );
 
   const clearValue = useCallback(() => {
-    setEntry({ key: fullKey, value: fallbackRef.current });
+    setEntry({ key: ready ? fullKey : '__pending__', value: fallbackRef.current });
+    if (!ready) return;
     try {
       localStorage.removeItem(fullKey);
       if (isLocalProfile && legacyKey) {
@@ -90,7 +102,7 @@ export function useUserStorage<T>(
     } catch {
       /* ignore */
     }
-  }, [fullKey, isLocalProfile, legacyKey]);
+  }, [fullKey, isLocalProfile, legacyKey, ready]);
 
   return [currentValue, setValue, clearValue];
 }

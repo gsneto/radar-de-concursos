@@ -205,11 +205,11 @@ html[data-theme='light'] {
   --color-fg-inverse: #ffffff;
 
   /* --- Semânticos: ação -------------------------------------------------- */
-  --color-accent: #d97706;
-  --color-accent-hover: #b45309;
-  --color-accent-soft: rgb(217 119 6 / 0.12);
-  --color-verified: #0d9488;
-  --color-verified-soft: rgb(13 148 136 / 0.12);
+  --color-accent: #b45309;
+  --color-accent-hover: #92400e;
+  --color-accent-soft: rgb(180 83 9 / 0.12);
+  --color-verified: #0f766e;
+  --color-verified-soft: rgb(15 118 110 / 0.12);
 
   /* --- Semânticos: estados funcionais ----------------------------------- */
   --color-ok: #15803d;
