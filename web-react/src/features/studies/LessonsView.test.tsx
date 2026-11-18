@@ -377,6 +377,80 @@ describe('LessonsView', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/Falha ao publicar aula no banco/i);
   });
+
+  it('atualiza o contador de porcentagem por etapa (0% -> 20% -> 40%) e grava histórico do que o aluno fez', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.includes('/api/auth/me')) {
+          return new Response(
+            JSON.stringify({
+              authenticated: true,
+              user: { id: 'usr-pct-1', nome: 'Carlos', email: 'c@radar.dev', role: 'student', plan: 'pro', status: 'active' },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('/api/estudos/aulas/bd-01')) {
+          return new Response(
+            JSON.stringify({
+              aula: {
+                id: 'bd-01',
+                disciplina: 'Banco de Dados',
+                titulo: 'Aula 01: Modelagem Conceitual',
+                objetivos: ['Compreender 1FN'],
+                teoria_resumida: '1FN exige valores atômicos.',
+                pontos_criticos: [],
+                radiografia_bancas: {},
+                quadro_visual: { titulo: 'Quadro 1FN', relacoes_conceituais: [] },
+                videoaulas: [],
+                flashcards: [],
+                questoes_ids: [],
+              },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('/api/estudos/aulas')) {
+          return new Response(
+            JSON.stringify({
+              aulas: [
+                {
+                  id: 'bd-01',
+                  disciplina: 'Banco de Dados',
+                  titulo: 'Aula 01: Modelagem Conceitual',
+                  objetivos: ['Compreender 1FN'],
+                  questoes_count: 0,
+                },
+              ],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }),
+    );
+
+    renderWithClient(<LessonsView />, ['/?aula=bd-01']);
+
+    expect(await screen.findByLabelText('Progresso das etapas da aula')).toHaveTextContent('0%');
+
+    // Concluir Etapa 1 (Resumo & Teoria) -> sobe para 20%
+    fireEvent.click(screen.getByRole('button', { name: /Concluir Etapa Atual/i }));
+    expect(screen.getByLabelText('Progresso das etapas da aula')).toHaveTextContent('20%');
+
+    // Ir para Etapa 2 e concluí-la -> sobe para 40%
+    fireEvent.click(screen.getByRole('button', { name: /2\. Quadro Digital/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Concluir Etapa Atual/i }));
+    expect(screen.getByLabelText('Progresso das etapas da aula')).toHaveTextContent('40%');
+
+    // Verifica que o histórico de atividades do aluno registrou as 2 etapas
+    const rawLog = localStorage.getItem('radar:u:usr-pct-1:student_activity_log');
+    expect(rawLog).not.toBeNull();
+    const parsedLog = JSON.parse(rawLog!);
+    expect(parsedLog.length).toBeGreaterThanOrEqual(2);
+    expect(parsedLog[0].pct).toBe(40);
+  });
 });
 
 describe('BancaRadiographyView', () => {

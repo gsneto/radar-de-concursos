@@ -6,6 +6,11 @@ import { keys, useAuthMe, useLesson, useLessons, useQuestions, useStudyPanel } f
 import { api } from '@/lib/api';
 import { useWorkspaceMode } from '@/lib/auth';
 import type { LessonFlashcard, LessonQuestionDetail } from '@/lib/types';
+import {
+  STAGE_LABELS,
+  useLessonStageProgress,
+  useStudentActivityLog,
+} from '@/lib/lesson-progress';
 import { useUserStorage } from '@/lib/user-storage';
 import { LessonCatalogView, type CreateCustomLessonInput } from './lessons/LessonCatalogView';
 import { LessonFlashcardsStage } from './lessons/LessonFlashcardsStage';
@@ -58,6 +63,8 @@ export function LessonsView() {
     'radar_favorite_flashcards',
     authReady,
   );
+  const stageProgress = useLessonStageProgress(userId, authReady);
+  const activityLog = useStudentActivityLog(userId, authReady);
 
   const [savedFlashcards, setSavedFlashcards] = useState<Record<string, boolean>>({});
   const [cardDifficultyRatings, setCardDifficultyRatings] = useState<Record<string, string>>({});
@@ -178,6 +185,82 @@ export function LessonsView() {
   const nextLesson =
     currentLessonIndex >= 0 && currentLessonIndex < lessons.length - 1 ? lessons[currentLessonIndex + 1] : null;
 
+  const handleCompleteAndAdvance = (fromStage: LessonStageKey, toStage: LessonStageKey) => {
+    if (activeLesson) {
+      const alreadyDone = stageProgress.isStageCompleted(activeLesson.id, fromStage);
+      const nextPct = stageProgress.markStageCompleted(activeLesson.id, fromStage);
+      if (!alreadyDone) {
+        activityLog.logActivity({
+          type: 'etapa_concluida',
+          title: `Concluiu ${STAGE_LABELS[fromStage]} (${nextPct}%)`,
+          subtitle: activeLesson.titulo,
+          disciplina: activeLesson.disciplina,
+          lessonId: activeLesson.id,
+          stage: fromStage,
+          pct: nextPct,
+        });
+      }
+      if (nextPct === 100 && !completedLessons.includes(activeLesson.id)) {
+        setCompletedLessons((prev) => (prev.includes(activeLesson.id) ? prev : [...prev, activeLesson.id]));
+        activityLog.logActivity({
+          type: 'aula_concluida',
+          title: `Aula 100% concluída: ${activeLesson.titulo}`,
+          disciplina: activeLesson.disciplina,
+          lessonId: activeLesson.id,
+          pct: 100,
+        });
+      }
+    }
+    setActiveTab(toStage);
+  };
+
+  const handleToggleStageCompleted = (stage: LessonStageKey) => {
+    if (!activeLesson) return;
+    const { completed, pct } = stageProgress.toggleStageCompleted(activeLesson.id, stage);
+    if (completed) {
+      activityLog.logActivity({
+        type: 'etapa_concluida',
+        title: `Concluiu ${STAGE_LABELS[stage]} (${pct}%)`,
+        subtitle: activeLesson.titulo,
+        disciplina: activeLesson.disciplina,
+        lessonId: activeLesson.id,
+        stage,
+        pct,
+      });
+      if (pct === 100 && !completedLessons.includes(activeLesson.id)) {
+        setCompletedLessons((prev) => (prev.includes(activeLesson.id) ? prev : [...prev, activeLesson.id]));
+        activityLog.logActivity({
+          type: 'aula_concluida',
+          title: `Aula 100% concluída: ${activeLesson.titulo}`,
+          disciplina: activeLesson.disciplina,
+          lessonId: activeLesson.id,
+          pct: 100,
+        });
+      }
+    } else if (completedLessons.includes(activeLesson.id)) {
+      setCompletedLessons((prev) => prev.filter((id) => id !== activeLesson.id));
+    }
+  };
+
+  const handleToggleLessonCompleted = () => {
+    if (!activeLesson) return;
+    const wasDone = completedLessons.includes(activeLesson.id);
+    if (wasDone) {
+      setCompletedLessons((prev) => prev.filter((id) => id !== activeLesson.id));
+      stageProgress.clearLessonStages(activeLesson.id);
+    } else {
+      stageProgress.markAllStagesCompleted(activeLesson.id);
+      setCompletedLessons((prev) => (prev.includes(activeLesson.id) ? prev : [...prev, activeLesson.id]));
+      activityLog.logActivity({
+        type: 'aula_concluida',
+        title: `Aula marcada como 100% concluída: ${activeLesson.titulo}`,
+        disciplina: activeLesson.disciplina,
+        lessonId: activeLesson.id,
+        pct: 100,
+      });
+    }
+  };
+
   const handleSaveFlashcard = async (fc: LessonFlashcard, customQualityLabel?: string) => {
     if (customQualityLabel) setCardDifficultyRatings((prev) => ({ ...prev, [fc.id]: customQualityLabel }));
     setActionError(null);
@@ -189,6 +272,13 @@ export function LessonsView() {
         fonte: activeLesson?.titulo || 'Aula GSN',
       });
       setSavedFlashcards((prev) => ({ ...prev, [fc.id]: true }));
+      activityLog.logActivity({
+        type: 'flashcard_salvo',
+        title: `Salvou flashcard na fila SM-2: ${fc.frente.slice(0, 64)}`,
+        subtitle: activeLesson?.titulo,
+        disciplina: activeLesson?.disciplina,
+        lessonId: activeLesson?.id,
+      });
       void queryClient.invalidateQueries({ queryKey: keys.flashQueue() });
       void queryClient.invalidateQueries({ queryKey: keys.flashStats() });
     } catch (err) {
@@ -200,6 +290,31 @@ export function LessonsView() {
     if (revealedQuestions[questionId]) return;
     setSelectedAnswers((prev) => ({ ...prev, [questionId]: optionKey }));
     setRevealedQuestions((prev) => ({ ...prev, [questionId]: true }));
+    const qObj = activeLessonQuestions.find((q) => q.id === questionId);
+    const isCorrect = qObj ? optionKey === qObj.gabarito : undefined;
+    activityLog.logActivity({
+      type: 'questao_respondida',
+      title: `Respondeu questão (${isCorrect ? 'Acerto ✓' : 'Revisar'}): ${(qObj?.topico || activeLesson?.titulo || 'Prática').slice(0, 56)}`,
+      subtitle: activeLesson?.titulo,
+      disciplina: qObj?.disciplina || activeLesson?.disciplina,
+      lessonId: activeLesson?.id,
+      correct: isCorrect,
+    });
+    if (activeLesson && !stageProgress.isStageCompleted(activeLesson.id, 'questoes')) {
+      const answeredAfter = Object.keys(revealedQuestions).length + 1;
+      if (answeredAfter >= Math.max(1, activeLessonQuestions.length)) {
+        const nextPct = stageProgress.markStageCompleted(activeLesson.id, 'questoes');
+        activityLog.logActivity({
+          type: 'etapa_concluida',
+          title: `Concluiu ${STAGE_LABELS.questoes} (${nextPct}%)`,
+          subtitle: activeLesson.titulo,
+          disciplina: activeLesson.disciplina,
+          lessonId: activeLesson.id,
+          stage: 'questoes',
+          pct: nextPct,
+        });
+      }
+    }
     void api
       .post('/api/estudos/tentativas', { questao_id: questionId, resposta: optionKey, modo: 'aula' })
       .then(() => {
@@ -232,6 +347,10 @@ export function LessonsView() {
     if (res?.aula?.id) handleSelectLesson(res.aula.id);
   };
 
+  const isActiveCompleted = Boolean(activeLesson && completedLessons.includes(activeLesson.id));
+  const activeCompletedStages = activeLesson ? stageProgress.getCompletedStages(activeLesson.id) : [];
+  const activeLessonPct = activeLesson ? stageProgress.getLessonPercent(activeLesson.id, isActiveCompleted) : 0;
+
   return (
     <div className="space-y-6">
       {actionError && (
@@ -251,6 +370,7 @@ export function LessonsView() {
           lessons={lessons}
           lessonsLoading={lessonsLoading}
           completedLessons={completedLessons}
+          getLessonPercent={stageProgress.getLessonPercent}
           totalEarnedXp={totalEarnedXp}
           selectedDisciplina={selectedDisciplina}
           onSelectDisciplina={setSelectedDisciplina}
@@ -265,6 +385,9 @@ export function LessonsView() {
           questionsCount={activeLessonQuestions.length}
           activeTab={activeTab}
           onSelectTab={setActiveTab}
+          completedStages={activeCompletedStages}
+          lessonPercent={activeLessonPct}
+          onToggleStageCompleted={handleToggleStageCompleted}
           studySeconds={openSession ? serverElapsed : localSeconds}
           timerRunning={openSession ? openSession.estado === 'em_andamento' : localRunning}
           hasSession={Boolean(openSession || localRunning || localSeconds > 0)}
@@ -272,22 +395,24 @@ export function LessonsView() {
           onResetTimer={() => void handleResetTimer()}
           tutorOpen={tutorOpen}
           onToggleTutor={() => setTutorOpen((o) => !o)}
-          isCompleted={Boolean(activeLesson && completedLessons.includes(activeLesson.id))}
-          onToggleCompleted={() =>
-            activeLesson &&
-            setCompletedLessons((prev) =>
-              prev.includes(activeLesson.id) ? prev.filter((id) => id !== activeLesson.id) : [...prev, activeLesson.id],
-            )
-          }
+          isCompleted={isActiveCompleted}
+          onToggleCompleted={handleToggleLessonCompleted}
           prevLesson={prevLesson}
           nextLesson={nextLesson}
           onSelectLesson={handleSelectLesson}
         >
           {activeLesson && activeTab === 'resumo' && (
-            <LessonTheoryStage lesson={activeLesson} onNextStage={() => setActiveTab('visual')} />
+            <LessonTheoryStage
+              lesson={activeLesson}
+              onNextStage={() => handleCompleteAndAdvance('resumo', 'visual')}
+            />
           )}
           {activeLesson && activeTab === 'visual' && (
-            <LessonVisualStage key={activeLesson.id} lesson={activeLesson} onNextStage={() => setActiveTab('video')} />
+            <LessonVisualStage
+              key={activeLesson.id}
+              lesson={activeLesson}
+              onNextStage={() => handleCompleteAndAdvance('visual', 'video')}
+            />
           )}
           {activeLesson && activeTab === 'video' && (
             <LessonVideoStage
@@ -295,13 +420,20 @@ export function LessonsView() {
               lesson={activeLesson}
               notes={lessonNotes[activeLesson.id] ?? []}
               onMarkChapterCompleted={(chapterId) => setCompletedChapters((prev) => ({ ...prev, [chapterId]: true }))}
-              onAddNote={(note) =>
+              onAddNote={(note) => {
                 setLessonNotes((prev) => ({
                   ...prev,
                   [activeLesson.id]: [note, ...(prev[activeLesson.id] ?? [])],
-                }))
-              }
-              onNextStage={() => setActiveTab('flashcards')}
+                }));
+                activityLog.logActivity({
+                  type: 'anotacao_video',
+                  title: `Registrou anotação na videoaula (${note.timestampLabel})`,
+                  subtitle: activeLesson.titulo,
+                  disciplina: activeLesson.disciplina,
+                  lessonId: activeLesson.id,
+                });
+              }}
+              onNextStage={() => handleCompleteAndAdvance('video', 'flashcards')}
             />
           )}
           {activeLesson && activeTab === 'flashcards' && (
@@ -312,7 +444,7 @@ export function LessonsView() {
               cardDifficultyRatings={cardDifficultyRatings}
               onSaveCard={(fc, rating) => void handleSaveFlashcard(fc, rating)}
               onToggleFavorite={(cardId) => setFavoriteFlashcards((prev) => ({ ...prev, [cardId]: !prev[cardId] }))}
-              onNextStage={() => setActiveTab('questoes')}
+              onNextStage={() => handleCompleteAndAdvance('flashcards', 'questoes')}
             />
           )}
           {activeLesson && activeTab === 'questoes' && (

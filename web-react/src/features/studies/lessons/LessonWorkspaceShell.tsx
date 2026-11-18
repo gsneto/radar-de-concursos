@@ -18,10 +18,11 @@ import {
 import { Button } from '@/components/ui/button';
 import { SkeletonRows } from '@/components/ui/states';
 import { clock } from '@/lib/format';
+import { LESSON_STAGES, type LessonStageKey } from '@/lib/lesson-progress';
 import type { LessonDetail, LessonSummary } from '@/lib/types';
 import { LessonTutorDrawer } from './LessonTutorDrawer';
 
-export type LessonStageKey = 'resumo' | 'visual' | 'video' | 'flashcards' | 'questoes';
+export type { LessonStageKey };
 
 interface LessonWorkspaceShellProps {
   lessonLoading: boolean;
@@ -29,6 +30,9 @@ interface LessonWorkspaceShellProps {
   questionsCount: number;
   activeTab: LessonStageKey;
   onSelectTab: (tab: LessonStageKey) => void;
+  completedStages?: LessonStageKey[];
+  lessonPercent?: number;
+  onToggleStageCompleted?: (stage: LessonStageKey) => void;
   studySeconds: number;
   timerRunning: boolean;
   hasSession?: boolean;
@@ -50,6 +54,9 @@ export function LessonWorkspaceShell({
   questionsCount,
   activeTab,
   onSelectTab,
+  completedStages = [],
+  lessonPercent = 0,
+  onToggleStageCompleted,
   studySeconds,
   timerRunning,
   hasSession = false,
@@ -64,6 +71,7 @@ export function LessonWorkspaceShell({
   onSelectLesson,
   children,
 }: LessonWorkspaceShellProps) {
+  const activeStageDone = completedStages.includes(activeTab) || isCompleted;
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line-strong bg-surface px-5 py-3.5 shadow-md">
@@ -163,6 +171,70 @@ export function LessonWorkspaceShell({
             </div>
           </div>
 
+          {/* Contador Visual de Porcentagem por Etapa (0% -> 20% -> 40% -> 60% -> 80% -> 100%) */}
+          <section
+            aria-label="Progresso das etapas da aula"
+            className="rounded-2xl border border-line-strong bg-surface p-4 shadow-sm space-y-3"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="inline-flex h-10 min-w-[56px] items-center justify-center rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-3 font-display text-base font-black tabular text-ok-ink">
+                  {lessonPercent}%
+                </span>
+                <div>
+                  <p className="text-xs font-extrabold uppercase tracking-wider text-fg">
+                    Domínio por Etapas da Aula ({isCompleted ? 5 : completedStages.length} de {LESSON_STAGES.length} concluídas)
+                  </p>
+                  <p className="text-2xs text-fg-3">
+                    Cada etapa concluída soma 20% ao seu progresso estruturado e registra atividade no seu histórico.
+                  </p>
+                </div>
+              </div>
+
+              {onToggleStageCompleted && (
+                <button
+                  type="button"
+                  onClick={() => onToggleStageCompleted(activeTab)}
+                  className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-extrabold transition-all ${
+                    activeStageDone
+                      ? 'border-emerald-500/50 bg-emerald-500/20 text-ok-ink'
+                      : 'border-amber-400/60 bg-amber-400/15 text-accent-ink hover:bg-amber-400 hover:text-slate-950'
+                  }`}
+                >
+                  <CheckCircle2 size={14} />
+                  {activeStageDone ? 'Etapa Atual Concluída ✓' : 'Concluir Etapa Atual (+20%)'}
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-5 gap-1.5">
+              {LESSON_STAGES.map((st) => {
+                const done = isCompleted || completedStages.includes(st.key);
+                const current = activeTab === st.key;
+                return (
+                  <div key={st.key} className="space-y-1">
+                    <div
+                      className={`h-2 w-full rounded-full transition-all duration-300 ${
+                        done
+                          ? 'bg-emerald-500'
+                          : current
+                            ? 'bg-amber-400/60'
+                            : 'bg-surface-2'
+                      }`}
+                    />
+                    <span
+                      className={`block truncate text-[10px] font-bold ${
+                        done ? 'text-ok-ink' : current ? 'text-accent-ink' : 'text-fg-3'
+                      }`}
+                    >
+                      {st.number}. {st.shortLabel} {done ? '✓' : ''}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 rounded-2xl border border-line-strong bg-surface-2 p-2 shadow-sm">
             {(
               [
@@ -174,6 +246,7 @@ export function LessonWorkspaceShell({
               ] as const
             ).map((stage) => {
               const Icon = stage.icon;
+              const stageDone = isCompleted || completedStages.includes(stage.key);
               return (
                 <button
                   key={stage.key}
@@ -182,10 +255,12 @@ export function LessonWorkspaceShell({
                   className={`flex items-center justify-center gap-2 rounded-xl px-3 py-3 text-xs font-extrabold transition-all ${
                     activeTab === stage.key
                       ? 'bg-amber-400 text-slate-950 shadow-sm'
-                      : 'bg-surface text-fg-2 hover:text-fg'
+                      : stageDone
+                        ? 'bg-emerald-500/10 text-ok-ink border border-emerald-500/30 hover:bg-emerald-500/20'
+                        : 'bg-surface text-fg-2 hover:text-fg'
                   }`}
                 >
-                  <Icon size={15} />
+                  {stageDone && activeTab !== stage.key ? <CheckCircle2 size={14} /> : <Icon size={15} />}
                   <span>{stage.label}</span>
                 </button>
               );

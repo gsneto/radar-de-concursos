@@ -27,6 +27,7 @@ interface LessonCatalogViewProps {
   lessons: LessonSummary[];
   lessonsLoading: boolean;
   completedLessons: string[];
+  getLessonPercent?: (lessonId: string, isCompleted?: boolean) => number;
   totalEarnedXp: number;
   selectedDisciplina: string;
   onSelectDisciplina: (disciplina: string) => void;
@@ -39,6 +40,7 @@ export function LessonCatalogView({
   lessons,
   lessonsLoading,
   completedLessons,
+  getLessonPercent,
   totalEarnedXp,
   selectedDisciplina,
   onSelectDisciplina,
@@ -249,6 +251,7 @@ export function LessonCatalogView({
               <div className="divide-y divide-line">
                 {grp.aulas.map((lesson) => {
                   const isDone = completedLessons.includes(lesson.id);
+                  const pct = getLessonPercent ? getLessonPercent(lesson.id, isDone) : isDone ? 100 : 0;
                   const qCount = lesson.questoes_count ?? lesson.total_questoes ?? 0;
                   const vCount = lesson.videoaulas_count ?? 2;
                   const fCount = lesson.flashcards_count ?? 6;
@@ -269,11 +272,18 @@ export function LessonCatalogView({
                           <span className="flex items-center gap-1 text-xs font-extrabold text-ok-ink">
                             <Zap size={13} /> +{lesson.xp_recompensa || 120} XP
                           </span>
-                          {isDone && (
-                            <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/20 px-2.5 py-0.5 text-xs font-bold text-ok-ink">
-                              <CheckCircle2 size={13} /> Concluída
-                            </span>
-                          )}
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-md px-2.5 py-0.5 text-xs font-bold tabular ${
+                              pct === 100
+                                ? 'bg-emerald-500/20 text-ok-ink'
+                                : pct > 0
+                                  ? 'bg-amber-400/15 text-accent-ink border border-amber-400/30'
+                                  : 'bg-surface-2 text-fg-3 border border-line'
+                            }`}
+                          >
+                            {pct === 100 ? <CheckCircle2 size={13} /> : null}
+                            {pct === 100 ? '100% Concluída' : `${pct}% das etapas`}
+                          </span>
                         </div>
                         <h4 className="font-display text-lg font-extrabold text-fg group-hover:text-accent-ink transition-colors">
                           {lesson.titulo}
