@@ -59,3 +59,39 @@ describe('contraste dos tokens de texto', () => {
     expect(luminance(hex(token('fg-3')))).toBeLessThan(luminance(hex(token('fg-2'))));
   });
 });
+
+describe('contraste dos tokens de texto no tema claro (html.light)', () => {
+  const lightStart = css.indexOf('html.light');
+  const lightEnd = css.indexOf('}', lightStart);
+  const lightBlock = css.slice(lightStart, lightEnd);
+
+  function lightToken(name: string): string {
+    const match = lightBlock.match(new RegExp(`--color-${name}:\\s*([^;]+);`));
+    if (!match) throw new Error(`token light ausente: ${name}`);
+    return match[1].trim();
+  }
+
+  for (const text of TEXTS) {
+    for (const surface of SURFACES) {
+      it(`light: ${text} sobre ${surface} atinge 4,5:1`, () => {
+        const value = ratio(lightToken(text), lightToken(surface));
+        expect(value).toBeGreaterThanOrEqual(4.5);
+      });
+    }
+  }
+
+  it('light: fg-3 continua mais discreto (maior luminância) que fg-2', () => {
+    expect(luminance(hex(lightToken('fg-3')))).toBeGreaterThan(
+      luminance(hex(lightToken('fg-2'))),
+    );
+  });
+
+  for (const ink of ['accent-ink', 'ok-ink', 'info-ink', 'risk-ink']) {
+    it(`light: token semântico ${ink} sobre surface (#ffffff) atinge 4,5:1`, () => {
+      expect(ratio(lightToken(ink), lightToken('surface'))).toBeGreaterThanOrEqual(4.5);
+    });
+    it(`dark: token semântico ${ink} sobre surface (#0d1117) atinge 4,5:1`, () => {
+      expect(ratio(token(ink), token('surface'))).toBeGreaterThanOrEqual(4.5);
+    });
+  }
+});

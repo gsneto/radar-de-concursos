@@ -40,39 +40,39 @@ const COLOR_STYLES: Record<
   }
 > = {
   amber: {
-    termBox: 'bg-amber-500/20 border-amber-400/50',
-    termText: 'text-amber-300',
+    termBox: 'bg-amber-500/15 border-amber-500/45',
+    termText: 'text-accent-ink',
     letterBadge: 'bg-amber-400 text-slate-950',
     stemLine: 'bg-amber-400',
-    pillBorder: 'border-amber-400/60 bg-amber-500/10',
-    pillText: 'text-amber-200',
+    pillBorder: 'border-amber-500/50 bg-amber-500/10',
+    pillText: 'text-accent-ink',
     cardAccent: 'border-t-amber-400',
   },
   sky: {
-    termBox: 'bg-sky-500/20 border-sky-400/50',
-    termText: 'text-sky-300',
+    termBox: 'bg-sky-500/15 border-sky-500/45',
+    termText: 'text-info-ink',
     letterBadge: 'bg-sky-400 text-slate-950',
     stemLine: 'bg-sky-400',
-    pillBorder: 'border-sky-400/60 bg-sky-500/10',
-    pillText: 'text-sky-200',
+    pillBorder: 'border-sky-500/50 bg-sky-500/10',
+    pillText: 'text-info-ink',
     cardAccent: 'border-t-sky-400',
   },
   emerald: {
-    termBox: 'bg-emerald-500/20 border-emerald-400/50',
-    termText: 'text-emerald-300',
+    termBox: 'bg-emerald-500/15 border-emerald-500/45',
+    termText: 'text-ok-ink',
     letterBadge: 'bg-emerald-400 text-slate-950',
     stemLine: 'bg-emerald-400',
-    pillBorder: 'border-emerald-400/60 bg-emerald-500/10',
-    pillText: 'text-emerald-200',
+    pillBorder: 'border-emerald-500/50 bg-emerald-500/10',
+    pillText: 'text-ok-ink',
     cardAccent: 'border-t-emerald-400',
   },
   rose: {
-    termBox: 'bg-rose-500/20 border-rose-400/50',
-    termText: 'text-rose-300',
+    termBox: 'bg-rose-500/15 border-rose-500/45',
+    termText: 'text-risk-ink',
     letterBadge: 'bg-rose-400 text-slate-950',
     stemLine: 'bg-rose-400',
-    pillBorder: 'border-rose-400/60 bg-rose-500/10',
-    pillText: 'text-rose-200',
+    pillBorder: 'border-rose-500/50 bg-rose-500/10',
+    pillText: 'text-risk-ink',
     cardAccent: 'border-t-rose-400',
   },
 };
@@ -379,8 +379,8 @@ export function JottaFlashcardGrid({
                       })}
                     </div>
 
-                    <div className="rounded-xl border-2 border-amber-400/40 bg-amber-400/10 px-3.5 py-2.5 text-center">
-                      <p className="text-xs font-extrabold uppercase tracking-wide text-amber-200 leading-relaxed">
+                    <div className="rounded-xl border-2 border-amber-500/40 bg-amber-500/10 px-3.5 py-2.5 text-center">
+                      <p className="text-xs font-extrabold uppercase tracking-wide text-accent-ink leading-relaxed">
                         ⚡ {schema?.regra_rodape || fc.mnemonico || fc.verso}
                       </p>
                     </div>
