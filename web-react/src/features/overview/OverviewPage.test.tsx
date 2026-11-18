@@ -142,6 +142,12 @@ describe('OverviewPage', () => {
     expect(screen.getByText('Fim das inscrições')).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Indicadores' })).toBeInTheDocument();
     expect(screen.getByText('Apenas agregador')).toBeInTheDocument();
+
+    // Garante que nenhuma telemetria fictícia do antigo RadarBento aparece na tela
+    expect(screen.queryByText(/ms resposta/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/radar ops-ciclo --auto/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/822 decisões registradas/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: /integridade e rastro operacional/i })).toBeInTheDocument();
   });
 
   it('exibe estados vazios honestos quando não há itens na carteira ou ciclos', async () => {
@@ -174,6 +180,7 @@ describe('OverviewPage', () => {
     expect(screen.getByText('Nenhum ciclo registrado')).toBeInTheDocument();
     expect(screen.getByText('Sem dados de cobertura')).toBeInTheDocument();
     expect(screen.getByText('Seu estudo começa aqui')).toBeInTheDocument();
+    expect(screen.getByText('Nenhum evento operacional registrado')).toBeInTheDocument();
   });
 
   it('exibe estado de erro e permite tentar novamente quando a API falha', async () => {
