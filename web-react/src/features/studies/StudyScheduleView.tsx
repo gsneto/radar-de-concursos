@@ -15,8 +15,9 @@ import {
   Trophy,
   Zap,
 } from 'lucide-react';
-import { useBancas, useMyContests } from '@/app/queries';
+import { useAuthMe, useBancas, useMyContests } from '@/app/queries';
 import { Button } from '@/components/ui/button';
+import { useUserStorage } from '@/lib/user-storage';
 
 export interface StudyBlock {
   id: string;
@@ -53,6 +54,8 @@ export function StudyScheduleView() {
   const [searchParams] = useSearchParams();
   const contestParam = searchParams.get('concurso');
 
+  const authMe = useAuthMe();
+  const userId = authMe.data?.user?.id ?? null;
   const { data: myContestsData } = useMyContests();
   const { data: bancasData } = useBancas();
 
@@ -72,36 +75,18 @@ export function StudyScheduleView() {
   // Preferências do ciclo
   const [hoursPreset, setHoursPreset] = useState<number>(20);
 
-  // Estado dos blocos concluídos (persistido no localStorage)
-  const [completedBlocks, setCompletedBlocks] = useState<Record<string, boolean>>(() => {
-    try {
-      const stored = localStorage.getItem('radar_weekly_study_schedule_completed');
-      return stored ? JSON.parse(stored) : {};
-    } catch {
-      return {};
-    }
-  });
+  // Estado dos blocos concluídos isolado por usuário no localStorage
+  const [completedBlocks, setCompletedBlocks, clearCompletedBlocks] = useUserStorage<
+    Record<string, boolean>
+  >('weekly_schedule_completed', {}, userId, 'radar_weekly_study_schedule_completed');
 
   const toggleBlock = (blockId: string) => {
-    setCompletedBlocks((prev) => {
-      const updated = { ...prev, [blockId]: !prev[blockId] };
-      try {
-        localStorage.setItem('radar_weekly_study_schedule_completed', JSON.stringify(updated));
-      } catch {
-        // ignore storage errors
-      }
-      return updated;
-    });
+    setCompletedBlocks((prev) => ({ ...prev, [blockId]: !prev[blockId] }));
   };
 
   const resetWeek = () => {
     if (window.confirm('Deseja zerar as marcações desta semana e iniciar um novo ciclo?')) {
-      setCompletedBlocks({});
-      try {
-        localStorage.removeItem('radar_weekly_study_schedule_completed');
-      } catch {
-        // ignore
-      }
+      clearCompletedBlocks();
     }
   };
 

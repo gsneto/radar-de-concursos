@@ -11,9 +11,9 @@ import {
   RotateCcw,
   Sparkles,
   Star,
-  X,
   Zap,
 } from 'lucide-react';
+import { ModalDialog } from '@/components/ui/dialog';
 import type { LessonFlashcard } from '@/lib/types';
 
 interface JottaFlashcardGridProps {
@@ -105,22 +105,15 @@ export function JottaFlashcardGrid({
 
   useEffect(() => {
     if (lightboxIndex === null) return;
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setLightboxIndex(null);
-      } else if (e.key === 'ArrowLeft') {
+      if (e.key === 'ArrowLeft') {
         setLightboxIndex((i) => (i !== null && i > 0 ? i - 1 : i));
       } else if (e.key === 'ArrowRight') {
         setLightboxIndex((i) => (i !== null && i < cards.length - 1 ? i + 1 : i));
       }
     };
     window.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.body.style.overflow = prevOverflow;
-      window.removeEventListener('keydown', onKeyDown);
-    };
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, [lightboxIndex, cards.length]);
 
   return (
@@ -450,61 +443,30 @@ export function JottaFlashcardGrid({
         })}
       </div>
 
-      {/* LIGHTBOX MODAL EM TELA CHEIA PARA ESTUDO E DOWNLOAD DA IMAGEM IA */}
+      {/* LIGHTBOX MODAL RADIX ACESSÍVEL PARA ESTUDO E DOWNLOAD DA IMAGEM IA */}
       {activeLightboxCard && lightboxIndex !== null && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Visualização ampliada do Flashcard em Imagem"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-4 backdrop-blur-md"
-          onClick={() => setLightboxIndex(null)}
-        >
-          <div
-            className="relative flex max-h-[94vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border-2 border-line-strong bg-surface shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header do Modal */}
-            <div className="flex items-center justify-between border-b border-line bg-surface-2 px-5 py-3">
-              <div className="min-w-0">
-                <span className="text-[10px] font-black uppercase tracking-widest text-amber-400">
-                  Flashcard em Imagem IA · {lightboxIndex + 1} de {cards.length}
-                </span>
-                <h3 className="truncate text-sm sm:text-base font-extrabold text-fg">
-                  {activeLightboxCard.esquema_jotta?.titulo || activeLightboxCard.frente}
-                </h3>
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0">
-                <a
-                  href={getCardImageUrl(activeLightboxCard)}
-                  download={`${activeLightboxCard.id}.${
-                    getCardImageUrl(activeLightboxCard).endsWith('.jpg') ? 'jpg' : 'svg'
-                  }`}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-amber-400 px-3.5 py-1.5 text-xs font-extrabold text-slate-950 hover:bg-amber-300 transition-colors"
-                >
-                  <Download size={14} /> Baixar Imagem
-                </a>
-                <button
-                  type="button"
-                  onClick={() => setLightboxIndex(null)}
-                  className="rounded-xl border border-line-strong bg-surface p-2 text-fg-2 hover:text-fg"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-            </div>
-
-            {/* Imagem Ampliada */}
-            <div className="flex-1 overflow-y-auto bg-slate-950/60 p-4 flex items-center justify-center">
-              <img
-                src={getCardImageUrl(activeLightboxCard)}
-                alt={activeLightboxCard.frente}
-                className="max-h-[75vh] w-auto rounded-xl border border-line shadow-xl object-contain bg-[#FAF6EC]"
-              />
-            </div>
-
-            {/* Navegação Anterior / Próximo no Modal */}
-            <div className="flex items-center justify-between border-t border-line bg-surface-2 px-5 py-3">
+        <ModalDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setLightboxIndex(null);
+          }}
+          eyebrow={`Flashcard em Imagem IA · ${lightboxIndex + 1} de ${cards.length}`}
+          title={activeLightboxCard.esquema_jotta?.titulo || activeLightboxCard.frente}
+          maxWidthClass="max-w-3xl"
+          bodyClassName="bg-slate-950/60 p-4 flex items-center justify-center"
+          headerActions={
+            <a
+              href={getCardImageUrl(activeLightboxCard)}
+              download={`${activeLightboxCard.id}.${
+                getCardImageUrl(activeLightboxCard).endsWith('.jpg') ? 'jpg' : 'svg'
+              }`}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-amber-400 px-3.5 py-1.5 text-xs font-extrabold text-slate-950 hover:bg-amber-300 transition-colors"
+            >
+              <Download size={14} /> Baixar Imagem
+            </a>
+          }
+          footer={
+            <div className="flex items-center justify-between gap-2">
               <button
                 type="button"
                 disabled={lightboxIndex <= 0}
@@ -529,8 +491,14 @@ export function JottaFlashcardGrid({
                 Próximo Flashcard <ChevronRight size={15} />
               </button>
             </div>
-          </div>
-        </div>
+          }
+        >
+          <img
+            src={getCardImageUrl(activeLightboxCard)}
+            alt={activeLightboxCard.frente}
+            className="max-h-[72vh] w-auto rounded-xl border border-line shadow-xl object-contain bg-[#FAF6EC]"
+          />
+        </ModalDialog>
       )}
     </div>
   );
