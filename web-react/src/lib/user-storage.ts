@@ -40,31 +40,48 @@ export function useUserStorage<T>(
   const isLocalProfile = !userId || !userId.trim();
   const fallbackRef = useRef(initialValue);
 
-  const [state, setState] = useState<T>(() =>
-    readFromStorage(fullKey, fallbackRef.current, isLocalProfile, legacyKey),
-  );
+  const [entry, setEntry] = useState<{ key: string; value: T }>(() => ({
+    key: fullKey,
+    value: readFromStorage(fullKey, fallbackRef.current, isLocalProfile, legacyKey),
+  }));
+
+  const currentValue =
+    entry.key === fullKey
+      ? entry.value
+      : readFromStorage(fullKey, fallbackRef.current, isLocalProfile, legacyKey);
 
   useEffect(() => {
-    setState(readFromStorage(fullKey, fallbackRef.current, isLocalProfile, legacyKey));
+    setEntry((prev) =>
+      prev.key === fullKey
+        ? prev
+        : {
+            key: fullKey,
+            value: readFromStorage(fullKey, fallbackRef.current, isLocalProfile, legacyKey),
+          },
+    );
   }, [fullKey, isLocalProfile, legacyKey]);
 
   const setValue = useCallback(
     (next: T | ((prev: T) => T)) => {
-      setState((prev) => {
-        const resolved = typeof next === 'function' ? (next as (p: T) => T)(prev) : next;
+      setEntry((prev) => {
+        const base =
+          prev.key === fullKey
+            ? prev.value
+            : readFromStorage(fullKey, fallbackRef.current, isLocalProfile, legacyKey);
+        const resolved = typeof next === 'function' ? (next as (p: T) => T)(base) : next;
         try {
           localStorage.setItem(fullKey, JSON.stringify(resolved));
         } catch {
           /* ignore quota/privacy errors */
         }
-        return resolved;
+        return { key: fullKey, value: resolved };
       });
     },
-    [fullKey],
+    [fullKey, isLocalProfile, legacyKey],
   );
 
   const clearValue = useCallback(() => {
-    setState(fallbackRef.current);
+    setEntry({ key: fullKey, value: fallbackRef.current });
     try {
       localStorage.removeItem(fullKey);
       if (isLocalProfile && legacyKey) {
@@ -75,5 +92,5 @@ export function useUserStorage<T>(
     }
   }, [fullKey, isLocalProfile, legacyKey]);
 
-  return [state, setValue, clearValue];
+  return [currentValue, setValue, clearValue];
 }

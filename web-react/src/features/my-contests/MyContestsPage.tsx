@@ -18,6 +18,7 @@ import { Card } from '@/components/ui/card';
 import { ErrorState, SkeletonCards } from '@/components/ui/states';
 import { shortDate } from '@/lib/format';
 import type { MyContest } from '@/lib/types';
+import { StudentOnboardingChecklist } from './StudentOnboardingChecklist';
 
 export function MyContestsPage() {
   const query = useMyContests();
@@ -70,6 +71,8 @@ export function MyContestsPage() {
           ) : null
         }
       />
+
+      <StudentOnboardingChecklist selectedContestsCount={items.length} />
 
       {items.length === 0 ? (
         /* Estado Inicial Vazio Acolhedor & Direcionado */

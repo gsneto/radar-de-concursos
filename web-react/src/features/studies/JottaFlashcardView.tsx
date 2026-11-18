@@ -316,12 +316,20 @@ export function JottaFlashcardGrid({
                       }}
                       className="group relative cursor-zoom-in overflow-hidden rounded-xl border-2 border-amber-950/20 bg-[#FAF6EC] shadow-md transition-transform duration-200 hover:scale-[1.01]"
                     >
-                      <img
-                        src={imgUrl}
-                        alt={schema?.titulo || fc.frente}
-                        loading="lazy"
-                        className="w-full h-auto object-contain block select-none"
-                      />
+                      <picture>
+                        {imgUrl.toLowerCase().endsWith('.jpg') && (
+                          <source srcSet={imgUrl.replace(/\.jpg$/i, '.webp')} type="image/webp" />
+                        )}
+                        <img
+                          src={imgUrl}
+                          alt={schema?.titulo || fc.frente}
+                          width={896}
+                          height={1200}
+                          loading="lazy"
+                          decoding="async"
+                          className="w-full h-auto object-contain block select-none"
+                        />
+                      </picture>
                       <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-slate-950/85 via-slate-950/40 to-transparent px-3.5 py-2.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
                         <span className="text-[11px] font-bold text-white flex items-center gap-1.5">
                           <Maximize2 size={13} className="text-amber-400" /> Clique para ampliar em tela cheia
@@ -493,11 +501,22 @@ export function JottaFlashcardGrid({
             </div>
           }
         >
-          <img
-            src={getCardImageUrl(activeLightboxCard)}
-            alt={activeLightboxCard.frente}
-            className="max-h-[72vh] w-auto rounded-xl border border-line shadow-xl object-contain bg-[#FAF6EC]"
-          />
+          <picture>
+            {getCardImageUrl(activeLightboxCard).toLowerCase().endsWith('.jpg') && (
+              <source
+                srcSet={getCardImageUrl(activeLightboxCard).replace(/\.jpg$/i, '.webp')}
+                type="image/webp"
+              />
+            )}
+            <img
+              src={getCardImageUrl(activeLightboxCard)}
+              alt={activeLightboxCard.frente}
+              width={896}
+              height={1200}
+              decoding="async"
+              className="max-h-[72vh] w-auto rounded-xl border border-line shadow-xl object-contain bg-[#FAF6EC]"
+            />
+          </picture>
         </ModalDialog>
       )}
     </div>

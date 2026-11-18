@@ -134,12 +134,18 @@ export function PlansPage() {
                 key={item.src}
                 className="group overflow-hidden rounded-xl border border-line-strong bg-[#FAF6EC] shadow-md transition-transform hover:scale-[1.02]"
               >
-                <img
-                  src={item.src}
-                  alt={item.title}
-                  loading="lazy"
-                  className="aspect-[4/5] w-full object-cover block"
-                />
+                <picture>
+                  <source srcSet={item.src.replace(/\.jpg$/i, '.webp')} type="image/webp" />
+                  <img
+                    src={item.src}
+                    alt={item.title}
+                    width={896}
+                    height={1200}
+                    loading="lazy"
+                    decoding="async"
+                    className="aspect-[4/5] w-full object-cover block"
+                  />
+                </picture>
                 <p className="border-t border-line bg-surface px-2.5 py-1.5 text-[10px] font-bold text-fg truncate">
                   {item.title}
                 </p>
